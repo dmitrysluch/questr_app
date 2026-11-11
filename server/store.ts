@@ -18,8 +18,8 @@ export async function getProfile(db: Db, userId: string): Promise<Profile | null
   return { displayName: r.display_name, avatarId: r.avatar_preset_id, introMarkdown: r.intro_markdown, revision: r.revision, completedAt: r.completed_at.toISOString(), tags };
 }
 export async function getMessages(db: Db, conversationId: string): Promise<ChatMessage[]> {
-  const { rows } = await db.query('SELECT id,role,content,created_at FROM ai_messages WHERE conversation_id=$1 ORDER BY sequence', [conversationId]);
-  return rows.map(r => ({ id: r.id, role: r.role, content: r.content, createdAt: r.created_at.toISOString() }));
+  const { rows } = await db.query('SELECT id,role,content,created_at,content_review FROM ai_messages WHERE conversation_id=$1 ORDER BY sequence', [conversationId]);
+  return rows.map(r => ({ id: r.id, role: r.role, content: r.content, createdAt: r.created_at.toISOString(), contentReview: r.content_review }));
 }
 export async function getConversation(db: Db, userId: string): Promise<Conversation | null> {
   const { rows } = await db.query("SELECT id,mode FROM ai_conversations WHERE user_id=$1 AND status='active'", [userId]);

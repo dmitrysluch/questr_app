@@ -10,6 +10,8 @@ import { TagPicker, TagPills } from './components/Tags.tsx';
 import { Markdown } from './components/Markdown.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Interview } from './components/Interview.tsx';
+import { ContentWarning } from './components/ContentReview.tsx';
+import type { BioReview, ContentSpan } from '../shared/content-policy.ts';
 
 const BioEditor = lazy(() => import('./components/BioEditor.tsx'));
 declare global {
@@ -28,6 +30,8 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [checkingBio, setCheckingBio] = useState(false);
+  const [bioReview, setBioReview] = useState<BioReview | null>(null);
   const [telegramNeeded, setTelegramNeeded] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
@@ -41,6 +45,7 @@ export function App() {
   const loadState = useCallback(async () => {
     const next = await api<AppState>('/me');
     setState(next); replace(next.draft);
+    setBioReview(next.bioReview);
     setShowProfile(next.user.status === 'active');
     setInvite(next.demoInvite ?? '');
     return next;
@@ -86,12 +91,31 @@ export function App() {
   async function go(step: Draft['currentStep']) {
     if (!draft || busy) return;
     if (step !== 'avatar' && !draft.avatarId) { setError(new ApiError('AVATAR_REQUIRED')); return; }
-    await run(async () => { edit({ currentStep: step }); await flush(); setShowProfile(false); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    await run(async () => {
+      if (step === 'review') {
+        setCheckingBio(true);
+        try {
+          const saved = await flush();
+          const result = await api<{ bioReview: BioReview }>('/draft/validate', { method: 'POST', body: { revision: saved?.revision } });
+          setBioReview(result.bioReview);
+          if (result.bioReview.status === 'blocked') {
+            edit({ currentStep: 'bio', mode: 'manual' }); await flush(); setShowProfile(false); return;
+          }
+        } finally { setCheckingBio(false); }
+      }
+      edit({ currentStep: step }); await flush(); setShowProfile(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   }
   async function publish() {
     await run(async () => {
       const saved = await flush();
-      const result = await api<{ profile: Profile }>('/profile/publish', { method: 'POST', body: { revision: saved?.revision } });
+      setCheckingBio(true);
+      let result: { profile: Profile };
+      try { result = await api<{ profile: Profile }>('/profile/publish', { method: 'POST', body: { revision: saved?.revision } }); }
+      catch (e) {
+        if (e instanceof ApiError && e.code === 'CONTENT_REQUIRES_CHANGES') setBioReview((e.details as { bioReview: BioReview }).bioReview);
+        throw e;
+      } finally { setCheckingBio(false); }
       setState(old => old ? { ...old, profile: result.profile, user: { ...old.user, status: 'active' } } : old);
       setShowProfile(true); window.scrollTo({ top: 0, behavior: 'smooth' });
     });
@@ -102,6 +126,7 @@ export function App() {
   const conflict = visibleError instanceof ApiError && visibleError.code === 'DRAFT_CONFLICT';
   const selectedAvatar = avatars.find(a => a.id === draft?.avatarId);
   const wordCount = draft?.introMarkdown.trim().split(/\s+/).filter(Boolean).length ?? 0;
+  const currentReview = bioReview?.introMarkdown === draft?.introMarkdown ? bioReview : null;
 
   return <div className="app-shell">
     <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR"><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>
@@ -164,21 +189,24 @@ export function App() {
             <div className="section-heading"><h2>{t('bio.tagsTitle')}</h2><span>{t('common.optional')}</span></div><p className="hint section-hint">{t('bio.tagsHint')}</p>
             <TagPicker value={draft.tags} onChange={tags => edit({ tags })} />
             <div className="story-heading"><h2>{t('bio.storyTitle')}</h2><p className="hint">{t('bio.storyHint')}</p></div>
+            <p className="hint content-disclosure">{t(config?.aiMode === 'openrouter' ? 'content.disclosure' : 'content.demoDisclosure')}</p>
+            {draft && <ContentWarning text={draft.introMarkdown} review={currentReview} />}
             <div className="editor-card"><div className="writing-tabs" role="tablist" aria-label={t('bio.storyTitle')}>
               <button role="tab" aria-selected={draft.mode === 'manual'} aria-controls="writing-panel" className={draft.mode === 'manual' ? 'active' : ''} onClick={() => edit({ mode: 'manual' })}><PenLine size={16} />{t('bio.write')}</button>
               <button role="tab" aria-selected={draft.mode === 'interview'} aria-controls="writing-panel" className={draft.mode === 'interview' ? 'active' : ''} onClick={() => edit({ mode: 'interview' })}><MessageCircle size={16} />{t('bio.ask')}<span className="tab-star">✦</span></button>
             </div><div id="writing-panel" role="tabpanel">
-              {draft.mode === 'manual' ? <><Suspense fallback={<div className="editor-loading"><LoaderCircle size={20} className="spin" /></div>}><BioEditor value={draft.introMarkdown} onChange={introMarkdown => edit({ introMarkdown })} /></Suspense><div className="editor-footer"><span>{t('bio.editorHint')}</span><span>{t('bio.words', { count: wordCount })}</span></div></> : config && <Interview config={config} conversation={state.conversation} proposal={state.proposal}
+              {draft.mode === 'manual' ? <><Suspense fallback={<div className="editor-loading"><LoaderCircle size={20} className="spin" /></div>}><BioEditor value={draft.introMarkdown} flagged={currentReview?.spans} onChange={introMarkdown => edit({ introMarkdown })} /></Suspense><div className="editor-footer"><span>{t('bio.editorHint')}</span><span>{t('bio.words', { count: wordCount })}</span></div></> : config && <Interview config={config} conversation={state.conversation} proposal={state.proposal} onBioReview={setBioReview}
                 hasBio={Boolean(draft.introMarkdown.trim())} onConversation={conversation => setState(old => old ? { ...old, conversation } : old)} onProposal={proposal => setState(old => old ? { ...old, proposal } : old)} flush={flush}
                 onApply={nextDraft => { replace(nextDraft); edit({ mode: 'manual' }); }} />}
             </div></div>
             <div className="story-footnote"><Leaf size={15} /><span>{t(draft.mode === 'manual' ? 'bio.emptyOkay' : 'assistant.private')}</span></div>
           </div><aside className="mini-profile"><p className="eyebrow">{t('preview.label')}</p><Character id={draft.avatarId} /><h3>{draft.displayName}</h3>{draft.tags.length ? <TagPills items={draft.tags.slice(0, 5)} /> : <p>{t('preview.empty')}</p>}<div className="mini-profile-divider" /><p className="mini-note">{t('side.note')}</p><span className="mini-spark">✳</span></aside></div>
-          <div className="page-actions"><button className="text-button" onClick={() => void go('avatar')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right"><SaveStatus state={saveState} /><button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t('bio.preview')}<ArrowRight size={17} /></button></div></div>
+          <div className="page-actions"><button className="text-button" onClick={() => void go('avatar')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right"><SaveStatus state={saveState} /><button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t(checkingBio ? 'content.checking' : 'bio.preview')}<ArrowRight size={17} /></button></div></div>
         </section> : <section>
           <PageHeading eyebrow="review.eyebrow" title="review.title" description="review.description" />
-          <ProfileCard profile={{ ...draft, avatarId: draft.avatarId!, completedAt: '' }} />
-          <div className="page-actions"><button className="text-button" disabled={busy} onClick={() => void go('bio')}><ArrowLeft size={16} />{t('review.edit')}</button><button className="pixel-button" disabled={busy} onClick={() => void publish()}>{busy ? <LoaderCircle size={17} className="spin" /> : <Check size={17} />}{t('review.finish')}</button></div>
+          <ContentWarning text={draft.introMarkdown} review={currentReview} />
+          <ProfileCard profile={{ ...draft, avatarId: draft.avatarId!, completedAt: '' }} flagged={currentReview?.spans} />
+          <div className="page-actions"><button className="text-button" disabled={busy} onClick={() => void go('bio')}><ArrowLeft size={16} />{t('review.edit')}</button><button className="pixel-button" disabled={busy} onClick={() => void publish()}>{busy ? <LoaderCircle size={17} className="spin" /> : <Check size={17} />}{t(checkingBio ? 'content.checking' : 'review.finish')}</button></div>
           <p className="review-privacy"><LockKeyhole size={13} />{t('review.private')}</p>
         </section>}
       </main>
@@ -194,10 +222,10 @@ function PageHeading({ eyebrow, title, description }: { eyebrow: TranslationKey;
 function SaveStatus({ state }: { state: 'saved' | 'saving' | 'error' }) {
   return <span className={`save-status ${state}`} role="status">{state === 'saving' ? <LoaderCircle size={14} className="spin" /> : <CheckCheck size={15} />}{t(state === 'saving' ? 'common.saving' : state === 'error' ? 'common.unsaved' : 'common.saved')}</span>;
 }
-function ProfileCard({ profile }: { profile: Profile }) {
+function ProfileCard({ profile, flagged }: { profile: Profile; flagged?: ContentSpan[] }) {
   return <article className="profile-card paper-card"><div className="profile-banner"><span className="pixel-spark" /><span>{t('profile.badge')}</span><span className="banner-stars">✧ · ✦</span></div>
     <div className="profile-identity"><Character id={profile.avatarId} /><div><span className="profile-hello">{t('nav.profile')}</span><h2 dir="auto">{profile.displayName}</h2>{profile.tags.length ? <TagPills items={profile.tags} /> : <p className="hint">{t('profile.noTags')}</p>}</div></div>
-    <div className="profile-body">{profile.introMarkdown.trim() ? <Markdown content={profile.introMarkdown} /> : <div className="empty-bio"><PenLine size={22} /><p>{t('profile.noBio')}</p></div>}</div>
+    <div className="profile-body">{profile.introMarkdown.trim() ? <Markdown content={profile.introMarkdown} flagged={flagged} /> : <div className="empty-bio"><PenLine size={22} /><p>{t('profile.noBio')}</p></div>}</div>
     <div className="profile-card-footer"><span className="tiny-flower">✳</span><span>{t('brand.tagline')}</span><span className="profile-brand">QUESTR</span></div>
   </article>;
 }

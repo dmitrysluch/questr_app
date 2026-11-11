@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(public code: string, public status = 0) { super(code); }
+  constructor(public code: string, public status = 0, public details?: unknown) { super(code); }
 }
 export async function api<T>(path: string, options?: { method?: string; body?: unknown }): Promise<T> {
   let response: Response;
@@ -11,6 +11,6 @@ export async function api<T>(path: string, options?: { method?: string; body?: u
     });
   } catch { throw new ApiError('NETWORK_ERROR'); }
   const result = await response.json().catch(() => ({ error: 'SERVER_ERROR' }));
-  if (!response.ok) throw new ApiError(result.error ?? 'SERVER_ERROR', response.status);
+  if (!response.ok) throw new ApiError(result.error ?? 'SERVER_ERROR', response.status, result.details);
   return result as T;
 }

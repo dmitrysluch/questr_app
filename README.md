@@ -58,6 +58,18 @@ The two model operations live in `server/assistant.ts`. A tool-using agent runti
 
 `AI_MODE=demo` is an explicitly labeled offline fixture for development and browser tests. It does not demonstrate the connected interview's language or editing ability. Its implementation is isolated in `server/demo-assistant.ts`.
 
+### Explicit-content checks
+
+The interview and drafting prompts prohibit explicitly sexual descriptions, invitations and requests. An independent model call through OpenRouter reviews each answer, the bio before preview/publication, and generated bio proposals. Ordinary romance, orientation, gender identity, and neutral non-graphic education or personal boundaries are allowed. The policy is defined in `shared/content-policy.ts`; the reviewer is in `server/moderation.ts`.
+
+- A flagged answer stays in the private conversation with muted red highlighting. The interviewer gently explains the profile rule and asks about another interest. Opening a conversation reviews older answers that have not been checked under the current policy/model.
+- A flagged bio stays editable, with the offending passages highlighted in both visual and Markdown modes. Highlighting never modifies the saved Markdown or undo history. An expandable list of exact passages also supports browsers without the CSS Custom Highlight API.
+- Private drafts continue to autosave, including text that needs changes. The server requires an approved content review before **Save my profile**, including direct API requests. Rejection or a provider outage leaves the previously saved profile intact. Generated proposals are checked before being offered for approval.
+- Reviews return exact excerpts; the server validates them against the source and converts them to UTF-16 ranges. Long bios are checked in overlapping chunks. Invalid responses and outages block publication instead of silently approving it.
+- Results are cached by exact text hash, policy version and configured model. Editing the text invalidates the visible highlights and requires another check. Revision checks prevent an old approval from publishing a concurrently edited bio. The migration retires pre-policy pending proposals; original bios and conversation text remain intact.
+
+The editor discloses that bio validation uses OpenRouter, including for manually written profiles. `AI_MODE=demo` uses only a few explicit test phrases, not a production moderation filter. Model classification can still make mistakes; this POC does not yet include a human appeal workflow.
+
 ## Connect @questr_game
 
 1. Serve the app behind HTTPS, for example at `https://questr.coffeecode.io`.
@@ -81,6 +93,7 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 | Profiles | `profile_drafts`, `profiles`, `profile_answers`, `profile_tags` |
 | Catalogs | `avatar_presets`, `tags`, `tag_translations` |
 | Interview | `ai_conversations`, `ai_messages`, `ai_proposals` |
+| Content review | `content_reviews` (text hash, policy/model key, verdict and spans); review metadata on `ai_messages` |
 | Operations | `schema_migrations`, `bot_updates` |
 
 - `intro_markdown` is PostgreSQL `TEXT`, without an artificial short-bio character limit. HTTP bodies have a 5 MiB transport limit; individual interview answers have a 12,000-character limit and AI context has a 120,000-character ceiling. These are operational limits, separate from profile length.
@@ -90,7 +103,7 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 - HTTP-only sessions expire after 14 days. All profile and interview endpoints operate on the authenticated owner; they do not accept a target user's ID.
 - Markdown rendering does not execute raw HTML or JSX. Unsafe URL protocols and external image embeds are excluded from the profile renderer.
 
-The POC retains its local records until its database is removed or records are explicitly deleted. Automatic retention jobs, account export/deletion UI, moderation, clubs, outings, and a city scene are outside this implementation. Set retention and operator policies before inviting real pilot users.
+The POC retains its local records until its database is removed or records are explicitly deleted. Automatic retention jobs, account export/deletion UI, human moderation tools, clubs, outings, and a city scene are outside this implementation. Set retention and operator policies before inviting real pilot users.
 
 ## Frontend and localization
 
@@ -111,7 +124,7 @@ npm run build
 
 Integration tests create a new, randomly named `questr_test_*` database, apply migrations, test against real PostgreSQL, and remove only that test database afterward. They are skipped unless `TEST_DATABASE_URL` is provided. The connection must have permission to create test databases.
 
-Browser tests cover desktop and mobile registration, source/visual Markdown conversion, custom tags, profile editing and reload, bio comparisons and reviewed interview proposals, concurrent changes, and unsafe Markdown rendering. They use a running dev server or start one with `AUTH_MODE=demo AI_MODE=demo` so automated runs make no paid model calls. An already-running target must also be in demo mode.
+Browser tests cover desktop and mobile registration, source/visual Markdown conversion, custom tags, profile editing and reload, bio comparisons and reviewed interview proposals, concurrent changes, unsafe Markdown rendering, and content highlights/correction in bios and chat. Integration tests also exercise direct publication rejection, review outages, edits during a review, and unsafe generated proposals. They use a running dev server or start one with `AUTH_MODE=demo AI_MODE=demo` so automated runs make no paid model calls. An already-running target must also be in demo mode.
 
 To run those same browser scenarios against a production Docker build configured in demo mode: `PLAYWRIGHT_BASE_URL=http://localhost:5180 npm run test:e2e`.
 

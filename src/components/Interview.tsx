@@ -6,31 +6,46 @@ import { api, ApiError } from '../api.ts';
 import { errorText, t } from '../i18n.ts';
 import { Markdown } from './Markdown.tsx';
 import { Modal } from './Modal.tsx';
+import { MarkedText } from './ContentReview.tsx';
+import type { BioReview } from '../../shared/content-policy.ts';
 
 interface Props {
   config: AppConfig;
   conversation: Conversation | null;
   proposal: Proposal | null;
   hasBio: boolean;
+  onBioReview: (value: BioReview) => void;
   onConversation: (value: Conversation) => void;
   onProposal: (value: Proposal | null) => void;
   flush: () => Promise<Draft | null>;
   onApply: (draft: Draft) => void;
 }
-export function Interview({ config, conversation, proposal, hasBio, onConversation, onProposal, flush, onApply }: Props) {
+export function Interview({ config, conversation, proposal, hasBio, onBioReview, onConversation, onProposal, flush, onApply }: Props) {
   const [answer, setAnswer] = useState('');
-  const [busy, setBusy] = useState<'start' | 'send' | 'compose' | 'apply' | null>(null);
+  const [busy, setBusy] = useState<'start' | 'send' | 'compose' | 'apply' | 'review' | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reviewing, setReviewing] = useState(Boolean(proposal));
   const [selectedCodes, setSelectedCodes] = useState<string[]>(proposal?.suggestedTags.map(t => t.code) ?? []);
   const [reviewView, setReviewView] = useState<'proposed' | 'current'>('proposed');
   const pendingRequest = useRef<{ requestId: string; content: string } | null>(null);
   const log = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!conversation?.id) return;
+    let active = true;
+    setBusy('review');
+    void api<{ conversation: Conversation }>('/assistant/review', { method: 'POST', body: {} })
+      .then(result => { if (active) onConversation(result.conversation); })
+      .catch(e => { if (active) setError(e); })
+      .finally(() => { if (active) setBusy(null); });
+    return () => { active = false; };
+  }, [conversation?.id]);
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [conversation?.messages.length, busy]);
   async function start() {
     setBusy('start'); setError(null);
     try {
-      await flush();
+      const draft = await flush();
+      const review = await api<{ bioReview: BioReview }>('/draft/validate', { method: 'POST', body: { revision: draft?.revision } });
+      onBioReview(review.bioReview);
       const result = await api<{ conversation: Conversation }>('/assistant/start', { method: 'POST', body: { consent: true } });
       onConversation(result.conversation);
     } catch (e) { setError(e); } finally { setBusy(null); }
@@ -87,9 +102,11 @@ export function Interview({ config, conversation, proposal, hasBio, onConversati
       <div className="chat-log" ref={log} role="log" aria-live="polite" aria-label={t('assistant.connected')}>
         {conversation.messages.map(message => <div key={message.id} className={`chat-message ${message.role}`}>
           <span className="message-name">{t(message.role === 'assistant' ? 'assistant.name' : 'assistant.you')}</span>
-          <p dir="auto">{message.content}</p>
+          <p dir="auto"><MarkedText text={message.content} spans={message.contentReview?.spans} /></p>
+          {message.contentReview?.status === 'blocked' && <span className="message-content-note">{t('content.messageNote')}</span>}
         </div>)}
         {busy === 'send' && <p className="chat-thinking"><LoaderCircle size={14} className="spin" />{t('assistant.thinking')}</p>}
+        {busy === 'review' && <p className="chat-thinking"><LoaderCircle size={14} className="spin" />{t('content.checkingMessages')}</p>}
       </div>
       {!reviewing && errorBlock}
       <form className="chat-input" onSubmit={event => { event.preventDefault(); void send(); }}>

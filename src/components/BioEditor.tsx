@@ -8,15 +8,19 @@ import {
 } from '@mdxeditor/editor';
 import '@mdxeditor/editor/style.css';
 import { t } from '../i18n.ts';
+import { useContentHighlights } from './ContentReview.tsx';
+import type { ContentSpan } from '../../shared/content-policy.ts';
 
-export default function BioEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+export default function BioEditor({ value, onChange, flagged = [] }: { value: string; onChange: (value: string) => void; flagged?: ContentSpan[] }) {
+  const container = useRef<HTMLDivElement>(null);
+  useContentHighlights(container, value, flagged, true);
   const ref = useRef<MDXEditorMethods>(null);
   const lastValue = useRef(value);
   const [error, setError] = useState(false);
   useEffect(() => {
     if (value !== lastValue.current) { lastValue.current = value; ref.current?.setMarkdown(value); }
   }, [value]);
-  return <div className="bio-editor" data-testid="bio-editor">
+  return <div className="bio-editor" data-testid="bio-editor" ref={container}>
     <MDXEditor ref={ref} markdown={value} suppressHtmlProcessing trim={false}
       translation={(key, fallback, values) => key === 'toolbar.richText' ? t('editor.visual') : key === 'toolbar.source' ? t('editor.markdown') : fallback.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''))}
       iconComponentFor={name => name === 'rich_text' ? <span className="editor-mode-label">{t('editor.visual')}</span> : name === 'markdown' ? <span className="editor-mode-label">{t('editor.markdown')}</span> : defaultSvgIcons[name]}

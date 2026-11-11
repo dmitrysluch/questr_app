@@ -9,6 +9,7 @@ import { createApp } from '../../server/app.ts';
 import { loadConfig } from '../../server/config.ts';
 import { hash } from '../../server/auth.ts';
 import { Interviewer } from '../../server/assistant.ts';
+import { ContentReviewer } from '../../server/moderation.ts';
 
 const connection = process.env.TEST_DATABASE_URL;
 let admin: Pool, pool: Pool, app: Express;
@@ -25,7 +26,7 @@ before(async () => {
 after(async () => {
   if (!connection) return;
   await pool?.end();
-  await admin.query(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
+  await admin.query(`DROP DATABASE IF EXISTS "${database}"`);
   await admin.end();
 });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
@@ -171,7 +172,7 @@ integration('OpenRouter uses saved bio at start, retains demo history, and appli
     }
     return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(value) } }] }));
   }) as typeof fetch;
-  const live = request.agent(createApp(pool, config, new Interviewer(config, fetcher)));
+  const live = request.agent(createApp(pool, config, new Interviewer(config, fetcher), new ContentReviewer({ ...config, aiMode: 'demo' })));
   const get = () => live.get('/api/me').set('Cookie', cookie);
   const post = (path: string, body: object) => live.post(path).set('Cookie', cookie).send(body);
   assert.equal((await get()).body.conversation, null);
@@ -199,10 +200,103 @@ integration('a failed generated opening is retryable and never inserts a scripte
     if (++calls === 1) return new Response('{}', { status: 503 });
     return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ question: 'What did you enjoy doing this week?' }) } }] }));
   }) as typeof fetch;
-  const { agent } = await registered(createApp(pool, config, new Interviewer(config, fetcher)));
+  const { agent } = await registered(createApp(pool, config, new Interviewer(config, fetcher), new ContentReviewer({ ...config, aiMode: 'demo' })));
   await agent.post('/api/assistant/start').send({ consent: true }).expect(503);
   assert.equal((await agent.get('/api/me')).body.conversation, null);
   const result = (await agent.post('/api/assistant/start').send({ consent: true }).expect(200)).body;
   assert.equal(result.conversation.messages.length, 1);
   assert.equal(calls, 2);
+});
+
+integration('explicit manual bios are highlighted and cannot overwrite a saved profile, even through direct API requests', async () => {
+  const { agent, draft } = await registered();
+  let saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss', introMarkdown: 'I like quiet coffee breaks.' }).expect(200)).body.draft;
+  await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
+  const phrase = 'I want to have **sex** with you.';
+  const text = `☕ I like **coffee**.\n\n${phrase}`;
+  saved = (await agent.put('/api/draft').send({ ...saved, introMarkdown: text }).expect(200)).body.draft;
+  const review = (await agent.post('/api/draft/validate').send({ revision: saved.revision }).expect(200)).body.bioReview;
+  assert.equal(review.status, 'blocked');
+  assert.equal(text.slice(review.spans[0].start, review.spans[0].end), phrase);
+  const rejected = (await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(422)).body;
+  assert.equal(rejected.error, 'CONTENT_REQUIRES_CHANGES');
+  assert.equal(rejected.details.bioReview.introMarkdown, text);
+  let state = (await agent.get('/api/me')).body;
+  assert.equal(state.draft.introMarkdown, text);
+  assert.equal(state.profile.introMarkdown, 'I like quiet coffee breaks.');
+  assert.equal(state.bioReview.status, 'blocked');
+  saved = (await agent.put('/api/draft').send({ ...saved, introMarkdown: 'I am gay, enjoy coffee and am open to dating.' }).expect(200)).body.draft;
+  assert.equal((await agent.get('/api/me')).body.bioReview, null);
+  await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
+  state = (await agent.get('/api/me')).body;
+  assert.equal(state.bioReview.status, 'approved');
+  assert.equal(state.profile.introMarkdown, saved.introMarkdown);
+});
+
+integration('chat flags survive reload, historical answers can be reviewed, and retries do not duplicate the redirection', async () => {
+  const { agent } = await registered();
+  await agent.post('/api/assistant/start').send({ consent: true }).expect(200);
+  const content = 'I want to have sex with you.';
+  const message = { requestId: randomUUID(), content };
+  let conversation = (await agent.post('/api/assistant/messages').send(message).expect(200)).body.conversation;
+  const userMessage = conversation.messages.find((m: any) => m.role === 'user');
+  assert.equal(userMessage.contentReview.status, 'blocked');
+  assert.match(conversation.messages.at(-1).content, /Please keep explicitly sexual messages out/);
+  await agent.post('/api/assistant/messages').send(message).expect(200);
+  await pool.query('UPDATE ai_messages SET content_review=NULL,review_version=NULL WHERE id=$1', [userMessage.id]);
+  await agent.post('/api/assistant/review').send({}).expect(200);
+  conversation = (await agent.get('/api/me')).body.conversation;
+  assert.equal(conversation.messages.filter((m: any) => m.role === 'user').length, 1);
+  assert.equal(conversation.messages.length, 3);
+  assert.equal(conversation.messages[1].contentReview.status, 'blocked');
+  assert.equal(conversation.messages[1].content, content);
+});
+
+integration('a moderation outage blocks profile publication without losing the private draft', async () => {
+  const config = { ...loadConfig(), aiMode: 'demo' as const, authMode: 'demo' as const };
+  const reviewer = new ContentReviewer({ ...config, aiMode: 'openrouter', openrouterModel: 'unavailable-test' }, (async () => new Response('{}', { status: 503 })) as typeof fetch);
+  const { agent, draft } = await registered(createApp(pool, config, new Interviewer(config), reviewer));
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss', introMarkdown: 'My words are still mine.' }).expect(200)).body.draft;
+  const result = (await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(503)).body;
+  assert.equal(result.error, 'CONTENT_REVIEW_UNAVAILABLE');
+  const state = (await agent.get('/api/me')).body;
+  assert.equal(state.profile, null); assert.equal(state.draft.introMarkdown, saved.introMarkdown);
+});
+
+integration('a bio edited while the reviewer runs cannot use the old text approval', async () => {
+  const config = { ...loadConfig(), aiMode: 'demo' as const, authMode: 'demo' as const };
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const reviewer = new ContentReviewer({ ...config, aiMode: 'openrouter', openrouterModel: 'race-review-test' }, (async () => {
+    entered(); await gate;
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{"explicit":false,"excerpts":[]}' } }] }));
+  }) as typeof fetch);
+  const { agent, draft } = await registered(createApp(pool, config, new Interviewer(config), reviewer));
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss', introMarkdown: 'Original safe bio.' }).expect(200)).body.draft;
+  const pending = agent.post('/api/profile/publish').send({ revision: saved.revision }).then(result => result);
+  await started;
+  await agent.put('/api/draft').send({ ...saved, introMarkdown: 'Changed during the review.' }).expect(200);
+  release();
+  const result = await pending;
+  assert.equal(result.status, 409); assert.equal(result.body.error, 'REVIEW_STALE');
+  assert.equal((await agent.get('/api/me')).body.profile, null);
+});
+
+integration('explicit model-generated proposals are rejected before storage or application', async () => {
+  const config = { ...loadConfig(), authMode: 'demo' as const, aiMode: 'openrouter' as const, openrouterApiKey: 'test' };
+  const fetcher = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(init.body as string);
+    const result = body.response_format.json_schema.name === 'questr_question' ? { question: 'What did you enjoy about your last coffee break?' } : {
+      introMarkdown: 'I want to have sex with you.', sourceIds: ['bio'], suggestedTags: [], changeSummary: 'Updated your bio.',
+    };
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(result) } }] }));
+  }) as typeof fetch;
+  const { agent, draft } = await registered(createApp(pool, config, new Interviewer(config, fetcher), new ContentReviewer({ ...config, aiMode: 'demo' })));
+  const saved = (await agent.put('/api/draft').send({ ...draft, introMarkdown: 'I love quiet coffee breaks.' }).expect(200)).body.draft;
+  await agent.post('/api/assistant/start').send({ consent: true }).expect(200);
+  const result = (await agent.post('/api/assistant/proposals').send({}).expect(422)).body;
+  assert.equal(result.error, 'ASSISTANT_DRAFT_REJECTED');
+  const state = (await agent.get('/api/me')).body;
+  assert.equal(state.proposal, null); assert.equal(state.draft.introMarkdown, saved.introMarkdown);
 });

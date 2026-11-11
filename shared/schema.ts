@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { avatars, tags } from './catalog.ts';
+import type { BioReview, ContentReview } from './content-policy.ts';
 
 export const localeSchema = z.literal('en');
 const emojiSchema = z.string().min(1).max(32).refine(value => {
@@ -41,7 +42,7 @@ export const proposalOutputSchema = z.object({
   suggestedTags: z.array(z.object({ code: z.string(), sourceId: z.string() }).strict()).max(12),
 }).strict();
 export type ProposalOutput = z.infer<typeof proposalOutputSchema>;
-export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; createdAt: string }
+export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; contentReview?: ContentReview | null }
 export interface Conversation { id: string; mode: 'demo' | 'openrouter'; messages: ChatMessage[] }
 export interface Proposal {
   id: string;
@@ -64,5 +65,6 @@ export interface AppState {
   conversation: Conversation | null;
   proposal: Proposal | null;
   demoInvite: string | null;
+  bioReview: BioReview | null;
 }
 export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string }

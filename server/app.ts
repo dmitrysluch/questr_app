@@ -9,6 +9,7 @@ import { AppError } from './errors.ts';
 import { createSession, demoInvite, findUser, hash, sessionToken, setSession, verifyTelegramInitData } from './auth.ts';
 import { transaction, transactionOnClient } from './db.ts';
 import { Interviewer } from './assistant.ts';
+import { ContentReviewer, reviewContent, storedReview } from './moderation.ts';
 import { getConversation, getDraft, getMessages, getProfile, getProposal, mapDraft, mapProposal } from './store.ts';
 import { aiConsentVersion, termsVersion } from '../shared/catalog.ts';
 import { draftInputSchema, messageSchema, registerSchema, tagKey, selectedTagsSchema, type ProfileTag } from '../shared/schema.ts';
@@ -16,7 +17,7 @@ import { draftInputSchema, messageSchema, registerSchema, tagKey, selectedTagsSc
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
 
-export function createApp(pool: Pool, config: Config, interviewer = new Interviewer(config)) {
+export function createApp(pool: Pool, config: Config, interviewer = new Interviewer(config), reviewer = new ContentReviewer(config)) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '5mb' }));
@@ -129,7 +130,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     ]);
     const consent = await pool.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='ai_interview' AND document_version=$2", [user.id, `${aiConsentVersion}:${config.aiMode}`]);
     const ready = conversation?.mode === config.aiMode && !!consent.rowCount;
-    res.json({ user, draft, profile, conversation: ready ? conversation : null, proposal: ready ? proposal : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
+    const review = draft ? await storedReview(pool, reviewer, draft.introMarkdown) : null;
+    res.json({ user, draft, profile, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
   });
   app.post('/api/register', async (req, res) => {
     const user = currentUser(res);
@@ -164,6 +166,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   app.post('/api/profile/publish', async (req, res) => {
     const { revision } = z.object({ revision: z.number().int().nonnegative() }).strict().parse(req.body);
     const userId = currentUser(res).id;
+    const checked = await validateDraft(userId, revision);
+    if (checked.status === 'blocked') throw new AppError(422, 'CONTENT_REQUIRES_CHANGES', { bioReview: checked });
     await transaction(pool, async client => {
       const { rows } = await client.query('SELECT * FROM profile_drafts WHERE user_id=$1 FOR UPDATE', [userId]);
       if (!rows[0] || rows[0].revision !== revision) throw new AppError(409, 'DRAFT_CONFLICT');
@@ -182,6 +186,21 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     res.json({ profile: await getProfile(pool, userId) });
   });
 
+  async function validateDraft(userId: string, revision: number) {
+    throttle(`review:${userId}`, 15);
+    const draft = await getDraft(pool, userId);
+    if (!draft || draft.revision !== revision) throw new AppError(409, 'DRAFT_CONFLICT');
+    const review = await reviewContent(pool, reviewer, draft.introMarkdown);
+    // Never attach a completed review to text edited while the model was running.
+    const latest = await getDraft(pool, userId);
+    if (!latest || latest.introMarkdown !== draft.introMarkdown) throw new AppError(409, 'REVIEW_STALE');
+    return { ...review, introMarkdown: draft.introMarkdown };
+  }
+  app.post('/api/draft/validate', async (req, res) => {
+    const { revision } = z.object({ revision: z.number().int().nonnegative() }).strict().parse(req.body);
+    res.json({ bioReview: await validateDraft(currentUser(res).id, revision) });
+  });
+
   app.post('/api/assistant/start', async (req, res) => {
     z.object({ consent: z.literal(true) }).strict().parse(req.body);
     const user = currentUser(res);
@@ -190,9 +209,10 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       const existing = await getConversation(client, user.id);
       if (existing?.mode === config.aiMode && existing.messages.length) return;
       const draft = (await getDraft(client, user.id))!;
+      const bioReview = await reviewContent(client, reviewer, draft.introMarkdown);
       // Generate before switching modes. A failed provider request is safely retryable,
       // and a consented upgrade retains answers from the old demo conversation.
-      const question = await interviewer.question(existing?.messages ?? [], draft.introMarkdown);
+      const question = await interviewer.question(existing?.messages ?? [], draft.introMarkdown, bioReview.status === 'blocked');
       await transactionOnClient(client, async tx => {
         const id = existing?.id ?? (await tx.query('INSERT INTO ai_conversations(user_id,locale,mode) VALUES($1,$2,$3) RETURNING id', [user.id, user.locale, config.aiMode])).rows[0].id;
         await tx.query('UPDATE ai_conversations SET mode=$2,updated_at=now() WHERE id=$1', [id, config.aiMode]);
@@ -209,6 +229,18 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     if (!conversation || conversation.mode !== config.aiMode) throw new AppError(400, 'CONVERSATION_REQUIRED');
     return conversation;
   }
+  app.post('/api/assistant/review', async (_req, res) => {
+    const userId = currentUser(res).id;
+    await lockAssistant(userId, async client => {
+      const conversation = await requireConversation(client, userId);
+      const { rows } = await client.query("SELECT id,content FROM ai_messages WHERE conversation_id=$1 AND role='user' AND review_version IS DISTINCT FROM $2 ORDER BY sequence", [conversation.id, reviewer.key]);
+      for (const row of rows) {
+        const review = await reviewContent(client, reviewer, row.content);
+        await client.query('UPDATE ai_messages SET content_review=$2,review_version=$3 WHERE id=$1', [row.id, JSON.stringify(review), reviewer.key]);
+      }
+    });
+    res.json({ conversation: await getConversation(pool, userId) });
+  });
   app.post('/api/assistant/messages', async (req, res) => {
     const input = messageSchema.parse(req.body);
     const userId = currentUser(res).id;
@@ -219,8 +251,10 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       const userMessage = inserted.rows[0] ?? (await client.query('SELECT id,content FROM ai_messages WHERE conversation_id=$1 AND request_id=$2', [conversation.id, input.requestId])).rows[0];
       if (userMessage.content && userMessage.content !== input.content) throw new AppError(409, 'REQUEST_CONFLICT');
       if ((await client.query('SELECT 1 FROM ai_messages WHERE reply_to=$1', [userMessage.id])).rowCount) return;
+      const review = await reviewContent(client, reviewer, input.content);
+      await client.query('UPDATE ai_messages SET content_review=$2,review_version=$3 WHERE id=$1', [userMessage.id, JSON.stringify(review), reviewer.key]);
       const messages = await getMessages(client, conversation.id);
-      const question = await interviewer.question(messages, draft.introMarkdown);
+      const question = await interviewer.question(messages, draft.introMarkdown, review.status === 'blocked');
       await client.query("INSERT INTO ai_messages(conversation_id,role,content,reply_to) VALUES($1,'assistant',$2,$3) ON CONFLICT(reply_to) DO NOTHING", [conversation.id, question, userMessage.id]);
       await client.query('UPDATE ai_conversations SET updated_at=now() WHERE id=$1', [conversation.id]);
     });
@@ -233,6 +267,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       const conversation = await requireConversation(client, userId);
       const draft = (await getDraft(client, userId))!;
       const proposal = await interviewer.proposal(conversation.messages, draft.introMarkdown);
+      if ((await reviewContent(client, reviewer, proposal.introMarkdown)).status === 'blocked') throw new AppError(422, 'ASSISTANT_DRAFT_REJECTED');
       return transactionOnClient(client, async tx => {
         await tx.query("UPDATE ai_proposals SET status='rejected',updated_at=now() WHERE user_id=$1 AND status='pending'", [userId]);
         const { rows } = await tx.query(`INSERT INTO ai_proposals(user_id,conversation_id,based_on_draft_revision,intro_markdown,suggested_tags,source_ids,base_markdown,change_summary)
@@ -273,7 +308,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     app.get('/{*path}', (_req, res) => res.sendFile(resolve(dist, 'index.html')));
   }
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (error instanceof AppError) return res.status(error.status).json({ error: error.code });
+    if (error instanceof AppError) return res.status(error.status).json({ error: error.code, ...(error.details ? { details: error.details } : {}) });
     if (error instanceof ZodError) return res.status(400).json({ error: 'INVALID_INPUT' });
     if ((error as { type?: string })?.type === 'entity.too.large') return res.status(413).json({ error: 'REQUEST_TOO_LARGE' });
     if (error instanceof SyntaxError) return res.status(400).json({ error: 'INVALID_INPUT' });

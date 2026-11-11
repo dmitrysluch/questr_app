@@ -13,11 +13,61 @@ async function register(page: Page) {
 }
 async function markdown(page: Page, content: string) {
   await page.getByLabel('Markdown', { exact: true }).click();
-  await page.locator('.cm-content[contenteditable=true]').fill(content);
+  const editor = page.locator('.cm-content[contenteditable=true]');
+  await editor.click();
+  await editor.press('ControlOrMeta+a');
+  await page.keyboard.insertText(content);
+  await expect(editor).toHaveText(content.replaceAll('\n', ''));
 }
 async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
+
+async function highlightedText(page: Page) {
+  return page.evaluate(() => [...(CSS.highlights.get('questr-explicit') ?? [])].map(range => range.toString()).join('\n'));
+}
+
+test('explicit bio passages are highlighted in both editor modes, kept privately, and must be corrected', async ({ page }, info) => {
+  await register(page);
+  const text = 'I enjoy **coffee**.\n\nI want to have **sex** with you.\n\nI am gay and open to dating.';
+  await markdown(page, text);
+  await page.getByRole('button', { name: 'Preview my profile' }).click();
+  await expect(page.getByRole('alert')).toContainText('A few words need a second look.');
+  await expect.poll(() => highlightedText(page)).toContain('I want to have **sex** with you.');
+  expect((await (await page.request.get('/api/me')).json()).profile).toBeNull();
+  await page.getByLabel('Visual', { exact: true }).click();
+  await expect.poll(() => highlightedText(page)).toContain('I want to have sex with you.');
+  expect((await (await page.request.get('/api/me')).json()).draft.introMarkdown).toBe(text);
+  await noOverflow(page);
+  await page.screenshot({ path: `.artifacts/${info.project.name}-content-review.png`, fullPage: true });
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText('A few words need a second look.');
+  await expect.poll(() => highlightedText(page)).toContain('I want to have sex with you.');
+  await markdown(page, 'I enjoy **coffee**. I am gay and open to dating.');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect.poll(() => highlightedText(page)).toBe('');
+  await page.getByRole('button', { name: 'Preview my profile' }).click();
+  await page.getByRole('button', { name: 'Save my profile' }).click();
+  await expect(page.locator('.profile-body')).toContainText('I am gay and open to dating.');
+});
+
+test('explicit answers receive muted highlights and a gentle change of topic, including after reload', async ({ page }, info) => {
+  await register(page);
+  await page.getByRole('tab', { name: 'Ask me questions' }).click();
+  await page.getByRole('button', { name: 'Let’s talk' }).click();
+  const text = 'I want to have sex with you.';
+  await page.getByRole('textbox', { name: 'Whatever comes to mind…' }).fill(text);
+  await page.getByRole('button', { name: 'Send answer' }).click();
+  await expect(page.getByRole('log').locator('mark')).toHaveText(text);
+  await expect(page.locator('.chat-message.assistant').last()).toContainText('Please keep explicitly sexual messages out of your profile.');
+  await expect(page.locator('.chat-message.assistant').last()).not.toContainText(text);
+  await noOverflow(page);
+  await page.screenshot({ path: `.artifacts/${info.project.name}-chat-content-review.png`, fullPage: true });
+  await page.reload();
+  await expect(page.getByRole('log').locator('mark')).toHaveText(text);
+  await expect(page.getByRole('textbox', { name: 'Whatever comes to mind…' })).toBeEnabled();
+  expect(await page.locator('.chat-message.user').count()).toBe(1);
+});
 
 test('registration, avatar, custom tags, Markdown, profile editing and reload', async ({ page }, info) => {
   const errors: string[] = [];
