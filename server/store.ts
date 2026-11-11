@@ -26,7 +26,7 @@ export async function getConversation(db: Db, userId: string): Promise<Conversat
   return rows[0] ? { id: rows[0].id, mode: rows[0].mode, messages: await getMessages(db, rows[0].id) } : null;
 }
 export function mapProposal(row: Record<string, any>): Proposal {
-  return { id: row.id, introMarkdown: row.intro_markdown, basedOnRevision: row.based_on_draft_revision, suggestedTags: row.suggested_tags, sourceMap: row.source_map, status: row.status };
+  return { id: row.id, introMarkdown: row.intro_markdown, baseMarkdown: row.base_markdown, changeSummary: row.change_summary, basedOnRevision: row.based_on_draft_revision, suggestedTags: row.suggested_tags, sourceIds: row.source_ids, status: row.status };
 }
 export async function getProposal(db: Db, userId: string): Promise<Proposal | null> {
   const { rows } = await db.query("SELECT * FROM ai_proposals WHERE user_id=$1 AND status='pending' ORDER BY created_at DESC LIMIT 1", [userId]);

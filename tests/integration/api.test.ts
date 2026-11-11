@@ -8,6 +8,7 @@ import { migrate } from '../../server/migrate.ts';
 import { createApp } from '../../server/app.ts';
 import { loadConfig } from '../../server/config.ts';
 import { hash } from '../../server/auth.ts';
+import { Interviewer } from '../../server/assistant.ts';
 
 const connection = process.env.TEST_DATABASE_URL;
 let admin: Pool, pool: Pool, app: Express;
@@ -28,16 +29,16 @@ after(async () => {
   await admin.end();
 });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
-async function browser() {
-  const agent = request.agent(app);
-  await agent.post('/api/auth/demo').send({}).expect(200);
+async function browser(target: Express = app) {
+  const agent = request.agent(target);
+  const auth = await agent.post('/api/auth/demo').send({}).expect(200);
   const { body } = await agent.get('/api/me').expect(200);
-  return { agent, state: body };
+  return { agent, state: body, cookie: auth.headers['set-cookie'][0].split(';')[0] };
 }
-async function registered() {
-  const { agent, state } = await browser();
+async function registered(target: Express = app) {
+  const { agent, state, cookie } = await browser(target);
   const result = await agent.post('/api/register').send({ displayName: 'Moss', invite: state.demoInvite, adult: true, terms: true, locale: 'en' }).expect(200);
-  return { agent, state, draft: result.body.draft };
+  return { agent, state, cookie, draft: result.body.draft };
 }
 integration('unregistered access, foreign origins and non-JSON mutations are rejected', async () => {
   await request(app).get('/api/me').expect(401);
@@ -84,7 +85,7 @@ integration('draft versions prevent lost updates; publication round-trips long M
   assert.equal(state.user.status, 'active'); assert.equal(state.draft.introMarkdown, text);
   assert.ok(!JSON.stringify(state).includes('telegram_user_id'));
 });
-integration('AI needs explicit consent; retries do not duplicate answers and proposal approval preserves wording', async () => {
+integration('AI needs explicit consent; retries do not duplicate answers and offline proposals require approval', async () => {
   const { agent, draft } = await registered();
   const content = 'I go bouldering on Tuesdays. Usually I fall off a lot, and then get coffee.';
   const body = { requestId: randomUUID(), content };
@@ -97,7 +98,7 @@ integration('AI needs explicit consent; retries do not duplicate answers and pro
   const proposal = (await agent.post('/api/assistant/proposals').send({}).expect(200)).body.proposal;
   assert.ok(proposal.introMarkdown.includes(content));
   const applied = (await agent.post(`/api/assistant/proposals/${proposal.id}/apply`).send({ revision: draft.revision, tagCodes: [] }).expect(200)).body.draft;
-  assert.equal(applied.introMarkdown, `## A little about me\n\n${content}`);
+  assert.equal(applied.introMarkdown, content);
 });
 integration('stale AI proposals cannot overwrite manual edits and other users cannot approve them', async () => {
   const { agent, draft } = await registered();
@@ -144,4 +145,64 @@ integration('signed Telegram login and retried bot starts share one private iden
   assert.ok(!JSON.stringify(state).includes('Private Telegram name'));
   data.set('user', JSON.stringify({ id: telegramId + 1 }));
   await request(telegramApp).post('/api/auth/telegram').send({ initData: data.toString() }).expect(401);
+});
+
+integration('OpenRouter uses saved bio at start, retains demo history, and applies a rewritten draft only after approval', async () => {
+  const { agent: demo, cookie, draft } = await registered();
+  await demo.post('/api/assistant/start').send({ consent: true }).expect(200);
+  await demo.post('/api/assistant/messages').send({ requestId: randomUUID(), content: 'I keep a notebook of ideas for tiny train games.' }).expect(200);
+  const existing = 'I make tiny games. Coffee is non-negotiable.';
+  let saved = (await demo.put('/api/draft').send({ ...draft, introMarkdown: existing }).expect(200)).body.draft;
+  let questionCalls = 0;
+  const config = { ...loadConfig(), authMode: 'demo' as const, aiMode: 'openrouter' as const, openrouterApiKey: 'test' };
+  const fetcher = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(init.body as string);
+    const input = JSON.parse(body.messages[1].content);
+    let value;
+    if (body.response_format.json_schema.name === 'questr_question') {
+      assert.equal(input.currentBio, existing);
+      assert.ok(input.transcript.some((m: any) => m.content.includes('notebook')));
+      questionCalls++;
+      value = { question: 'What is one idea from that notebook?' };
+    } else {
+      assert.equal(input.currentBio.markdown, existing);
+      const evidence = input.transcript.find((m: any) => m.role === 'user');
+      value = { introMarkdown: 'I make tiny games and keep a notebook of train-game ideas. Coffee is non-negotiable.', changeSummary: 'Wove the notebook detail into your existing bio.', sourceIds: ['bio', evidence.id], suggestedTags: [] };
+    }
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(value) } }] }));
+  }) as typeof fetch;
+  const live = request.agent(createApp(pool, config, new Interviewer(config, fetcher)));
+  const get = () => live.get('/api/me').set('Cookie', cookie);
+  const post = (path: string, body: object) => live.post(path).set('Cookie', cookie).send(body);
+  assert.equal((await get()).body.conversation, null);
+  await post('/api/assistant/proposals', {}).expect(403);
+  const conversation = (await post('/api/assistant/start', { consent: true }).expect(200)).body.conversation;
+  assert.equal(conversation.messages.filter((m: any) => m.role === 'user').length, 1);
+  assert.equal(conversation.messages.at(-1).content, 'What is one idea from that notebook?');
+  await post('/api/assistant/start', { consent: true }).expect(200);
+  assert.equal(questionCalls, 1);
+  const proposal = (await post('/api/assistant/proposals', {}).expect(200)).body.proposal;
+  assert.equal(proposal.baseMarkdown, existing);
+  assert.equal((await get()).body.draft.introMarkdown, existing);
+  const resumed = (await get()).body.proposal;
+  assert.equal(resumed.changeSummary, proposal.changeSummary);
+  assert.deepEqual(resumed.sourceIds, proposal.sourceIds);
+  saved = (await post(`/api/assistant/proposals/${proposal.id}/apply`, { revision: saved.revision, tagCodes: [] }).expect(200)).body.draft;
+  assert.equal(saved.introMarkdown, proposal.introMarkdown);
+  assert.equal(saved.introMarkdown.match(/tiny games/g).length, 1);
+});
+
+integration('a failed generated opening is retryable and never inserts a scripted substitute', async () => {
+  let calls = 0;
+  const config = { ...loadConfig(), authMode: 'demo' as const, aiMode: 'openrouter' as const, openrouterApiKey: 'test' };
+  const fetcher = (async () => {
+    if (++calls === 1) return new Response('{}', { status: 503 });
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ question: 'What did you enjoy doing this week?' }) } }] }));
+  }) as typeof fetch;
+  const { agent } = await registered(createApp(pool, config, new Interviewer(config, fetcher)));
+  await agent.post('/api/assistant/start').send({ consent: true }).expect(503);
+  assert.equal((await agent.get('/api/me')).body.conversation, null);
+  const result = (await agent.post('/api/assistant/start').send({ consent: true }).expect(200)).body;
+  assert.equal(result.conversation.messages.length, 1);
+  assert.equal(calls, 2);
 });

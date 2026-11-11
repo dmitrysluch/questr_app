@@ -22,12 +22,5 @@ export const tags = [
   { code: 'art', emoji: '🎨', label: 'Art & making', keywords: ['painting', 'drawing', 'pottery', 'crafts'] },
 ] as const;
 
-export const sectionLabels = {
-  about: 'A little about me',
-  interests: 'Things I get into',
-  together: 'Better with company',
-  try: 'On my someday list',
-} as const;
-export type SectionKey = keyof typeof sectionLabels;
 export const termsVersion = '2026-11-11';
-export const aiConsentVersion = '2026-11-11';
+export const aiConsentVersion = '2026-11-11-adaptive-v2';

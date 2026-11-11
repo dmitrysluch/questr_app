@@ -30,34 +30,33 @@ docker compose up -d --build
 
 Open **http://localhost:5180**. This serves the production frontend and API from one origin. The PostgreSQL volume keeps data across container restarts. `docker compose down` stops the containers and preserves that volume.
 
-## Connect the interviewer
+## Connect the interviewer through OpenRouter
 
 Set these values in your local `.env`, then restart the server (or recreate the app container):
 
 ```dotenv
-AI_MODE=openai
-OPENAI_API_KEY=your-server-side-api-key
-OPENAI_MODEL=gpt-4.1-mini
+AI_MODE=openrouter
+OPENROUTER_API_KEY=your-server-side-openrouter-key
+OPENROUTER_MODEL=openai/gpt-6-luna
 ```
 
-The server uses the OpenAI Responses API with structured output and `store: false`. API keys never reach the browser. `store: false` disables storing the response as a retrievable API object; it is not a claim about the provider's separate abuse-monitoring retention policies. See [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs) and [API data controls](https://developers.openai.com/api/docs/guides/your-data).
+All model requests go to OpenRouter's Chat Completions endpoint, including models whose IDs start with `openai/`. There are no direct OpenAI API calls. The model is configurable; choose one supporting structured outputs. Requests use JSON Schema and `provider.require_parameters=true`, with `data_collection=deny` for provider routing. This is not a blanket promise about all retention policies. See [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs) and [provider data policies](https://openrouter.ai/docs/guides/routing/provider-selection#requiring-providers-to-comply-with-data-policies).
 
-Before an interview starts, the user sees which provider will process their answers and explicitly starts the conversation. Only interview text, their current bio, and an interest catalog enter the model context. Telegram details and account IDs do not. The server sends opaque per-request answer references instead of database IDs.
+The interface explains that OpenRouter forwards the interview to the configured model provider before the user starts. Only the current bio, conversation and interest catalog enter the model context; Telegram details, account IDs and database message IDs do not. An explicit start is required when switching providers. Existing demo answers are retained and become available to the connected interviewer after that consent.
 
-### The wording contract
+### Conversation and drafting
 
-This is stronger than a prompt telling a model to edit lightly:
+- The first question is generated from the existing bio. Every follow-up gets the latest saved bio and complete conversation, so it can pursue a concrete detail rather than follow a questionnaire.
+- The interviewer asks one small, approachable question at a time, explores recent examples, respects skipped topics and corrections, and follows the user's language.
+- The editor starts from the existing bio. It may rewrite sentences, weave in answers, reorder passages and improve flow while retaining substantive details and the person's voice. Instructions prohibit invented facts and generic flattering filler.
+- A proposal contains the **complete updated bio**, a brief change summary and source references. It is not appended to the old text. The original bio is saved alongside it for the **Current bio / Proposed bio** comparison, including after a reload.
+- The user can discard or explicitly apply a proposal. Applying checks the draft revision, so an outdated proposal cannot overwrite newer edits. Publishing the profile remains a separate action.
+- Provenance validation rejects missing, invented, assistant-only and duplicate source references, and invalid tag references. It does **not** establish the semantic truth of every generated sentence. The review step is intentional; the old verbatim-only guarantee no longer applies.
+- A provider failure keeps the existing bio and any received answers. It never silently falls back to scripted questions. Retrying an answer uses the same request ID to avoid duplicates.
 
-1. The interviewer asks one clarifying question at a time and follows the user's specific interests.
-2. For a bio, the model returns section keys and references to whole original answers. It cannot supply biography sentences.
-3. The server validates each reference and inserts the original answer verbatim. It may add fixed headings and paragraph breaks. Existing manually written Markdown is preserved.
-4. Unknown references, assistant-message references, duplicate sources and unsupported tag references are rejected.
-5. The user reviews the proposal, original answers, and suggested tags before applying it to the private draft.
-6. Applying a proposal checks the draft revision. If the user has edited the draft in the meantime, the proposal is rejected as stale. Saving the profile is a separate action.
+The two model operations live in `server/assistant.ts`. A tool-using agent runtime is unnecessary for this scope: the server already supplies the owned bio and conversation, validates the response, and handles persistence/approval. If the assistant later needs to inspect clubs or activities, those capabilities can be exposed as bounded tools.
 
-This deliberately favors fidelity over smooth prose. Fragmentary answers may still read like fragments; the interviewer is instructed to ask for clarification, and the user can edit the resulting bio. A new interview never requires finishing a fixed number of questions. Demo questions are scripted and do not provide a real model's understanding of corrections or nuance.
-
-The current safeguards preserve wording, but do not prove the semantic correctness of every model-selected tag or source grouping. That is why proposals require review.
+`AI_MODE=demo` is an explicitly labeled offline fixture for development and browser tests. It does not demonstrate the connected interview's language or editing ability. Its implementation is isolated in `server/demo-assistant.ts`.
 
 ## Connect @questr_game
 
@@ -112,15 +111,15 @@ npm run build
 
 Integration tests create a new, randomly named `questr_test_*` database, apply migrations, test against real PostgreSQL, and remove only that test database afterward. They are skipped unless `TEST_DATABASE_URL` is provided. The connection must have permission to create test databases.
 
-Browser tests cover desktop and mobile registration, source/visual Markdown conversion, custom tags, profile editing and reload, exact-wording interview proposals, concurrent changes, and unsafe Markdown rendering. They use the running dev server or start one when needed. The default configuration must remain in demo mode for these tests.
+Browser tests cover desktop and mobile registration, source/visual Markdown conversion, custom tags, profile editing and reload, bio comparisons and reviewed interview proposals, concurrent changes, and unsafe Markdown rendering. They use a running dev server or start one with `AUTH_MODE=demo AI_MODE=demo` so automated runs make no paid model calls. An already-running target must also be in demo mode.
 
-To run those same browser scenarios against the production Docker build: `PLAYWRIGHT_BASE_URL=http://localhost:5180 npm run test:e2e`.
+To run those same browser scenarios against a production Docker build configured in demo mode: `PLAYWRIGHT_BASE_URL=http://localhost:5180 npm run test:e2e`.
 
 ## Layout
 
 ```text
 db/migrations/     Versioned PostgreSQL schema
-server/           Express API, auth, migrations, interview and source validation
+server/           Express API, auth, migrations, interview and proposal validation
 shared/           Validation schemas and stable catalog definitions
 src/              Registration, editor, interview and profile UI
 public/avatars/   Twelve original pixel character SVGs

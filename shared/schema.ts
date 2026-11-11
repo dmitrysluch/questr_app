@@ -34,22 +34,23 @@ export const messageSchema = z.object({
   requestId: z.uuid(),
   content: z.string().trim().min(1).max(12000),
 }).strict();
-export const proposalPlanSchema = z.object({
-  sections: z.array(z.object({
-    heading: z.enum(['about', 'interests', 'together', 'try']),
-    messageIds: z.array(z.string()).min(1),
-  }).strict()).max(4),
-  suggestedTags: z.array(z.object({ code: z.string(), sourceMessageId: z.string() }).strict()).max(12),
+export const proposalOutputSchema = z.object({
+  introMarkdown: z.string().min(1).refine(value => Boolean(value.trim())),
+  changeSummary: z.string().trim().min(1).max(1500),
+  sourceIds: z.array(z.string()).min(1),
+  suggestedTags: z.array(z.object({ code: z.string(), sourceId: z.string() }).strict()).max(12),
 }).strict();
-export type ProposalPlan = z.infer<typeof proposalPlanSchema>;
+export type ProposalOutput = z.infer<typeof proposalOutputSchema>;
 export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; createdAt: string }
-export interface Conversation { id: string; mode: 'demo' | 'openai'; messages: ChatMessage[] }
+export interface Conversation { id: string; mode: 'demo' | 'openrouter'; messages: ChatMessage[] }
 export interface Proposal {
   id: string;
   introMarkdown: string;
   basedOnRevision: number;
-  suggestedTags: { code: string; sourceMessageId: string }[];
-  sourceMap: { heading: string; messageIds: string[] }[];
+  baseMarkdown: string;
+  changeSummary: string;
+  suggestedTags: { code: string; sourceId: string }[];
+  sourceIds: string[];
   status: 'pending' | 'accepted' | 'rejected';
 }
 export interface Profile {
@@ -64,4 +65,4 @@ export interface AppState {
   proposal: Proposal | null;
   demoInvite: string | null;
 }
-export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openai'; botUsername: string; termsVersion: string }
+export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string }

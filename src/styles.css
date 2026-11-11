@@ -272,7 +272,10 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .terms-body { font-size: 13px; color: #806b53; line-height: 1.8; }
 .terms-body ul { padding-inline-start: 20px; }
 .terms-body li { margin-block: 12px; }
-.verbatim-badge { display: inline-flex; align-items: center; gap: 7px; color: #6a7750; background: #e8ecd9; border: 1px solid #cdd4b8; padding: 7px 10px; font-size: 10px; margin: 4px 0 17px; }
+.proposal-summary { font-size: 13px; line-height: 1.7; padding: 12px 15px; background: #e8ecd9; color: #556342; border-inline-start: 3px solid #a2ad87; }
+.proposal-views { display: flex; gap: 5px; margin-top: 20px; }
+.proposal-views button { padding: 10px 14px; color: var(--muted); border: 1px solid #e0d4c2; background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.proposal-views button[aria-selected=true] { color: #9e4f34; border-bottom: 2px solid #a95135; background: #fffdf6; }
 .proposal-preview { background: #fffdf6; border: 1px solid #e0d4c2; padding: 23px; max-height: 43vh; overflow-y: auto; }
 .proposal-tags { margin-top: 23px; }
 .proposal-tags h3 { font-size: 14px; margin: 0; }

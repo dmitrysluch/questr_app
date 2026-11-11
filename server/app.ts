@@ -7,8 +7,8 @@ import type { Pool, PoolClient } from 'pg';
 import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
 import { createSession, demoInvite, findUser, hash, sessionToken, setSession, verifyTelegramInitData } from './auth.ts';
-import { transaction } from './db.ts';
-import { firstQuestion, Interviewer } from './assistant.ts';
+import { transaction, transactionOnClient } from './db.ts';
+import { Interviewer } from './assistant.ts';
 import { getConversation, getDraft, getMessages, getProfile, getProposal, mapDraft, mapProposal } from './store.ts';
 import { aiConsentVersion, termsVersion } from '../shared/catalog.ts';
 import { draftInputSchema, messageSchema, registerSchema, tagKey, selectedTagsSchema, type ProfileTag } from '../shared/schema.ts';
@@ -127,7 +127,9 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const [draft, profile, conversation, proposal] = await Promise.all([
       getDraft(pool, user.id), getProfile(pool, user.id), getConversation(pool, user.id), getProposal(pool, user.id),
     ]);
-    res.json({ user, draft, profile, conversation: conversation?.mode === config.aiMode ? conversation : null, proposal, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
+    const consent = await pool.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='ai_interview' AND document_version=$2", [user.id, `${aiConsentVersion}:${config.aiMode}`]);
+    const ready = conversation?.mode === config.aiMode && !!consent.rowCount;
+    res.json({ user, draft, profile, conversation: ready ? conversation : null, proposal: ready ? proposal : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
   });
   app.post('/api/register', async (req, res) => {
     const user = currentUser(res);
@@ -183,12 +185,20 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   app.post('/api/assistant/start', async (req, res) => {
     z.object({ consent: z.literal(true) }).strict().parse(req.body);
     const user = currentUser(res);
-    await transaction(pool, async client => {
-      await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [user.id]);
+    await lockAssistant(user.id, async client => {
       await client.query("INSERT INTO user_consents(user_id,kind,document_version) VALUES($1,'ai_interview',$2) ON CONFLICT DO NOTHING", [user.id, `${aiConsentVersion}:${config.aiMode}`]);
-      await client.query("UPDATE ai_conversations SET status='closed',updated_at=now() WHERE user_id=$1 AND status='active' AND mode<>$2", [user.id, config.aiMode]);
-      const result = await client.query("INSERT INTO ai_conversations(user_id,locale,mode) VALUES($1,$2,$3) ON CONFLICT(user_id) WHERE status='active' DO NOTHING RETURNING id", [user.id, 'en', config.aiMode]);
-      if (result.rows[0]) await client.query("INSERT INTO ai_messages(conversation_id,role,content) VALUES($1,'assistant',$2)", [result.rows[0].id, firstQuestion]);
+      const existing = await getConversation(client, user.id);
+      if (existing?.mode === config.aiMode && existing.messages.length) return;
+      const draft = (await getDraft(client, user.id))!;
+      // Generate before switching modes. A failed provider request is safely retryable,
+      // and a consented upgrade retains answers from the old demo conversation.
+      const question = await interviewer.question(existing?.messages ?? [], draft.introMarkdown);
+      await transactionOnClient(client, async tx => {
+        const id = existing?.id ?? (await tx.query('INSERT INTO ai_conversations(user_id,locale,mode) VALUES($1,$2,$3) RETURNING id', [user.id, user.locale, config.aiMode])).rows[0].id;
+        await tx.query('UPDATE ai_conversations SET mode=$2,updated_at=now() WHERE id=$1', [id, config.aiMode]);
+        await tx.query("INSERT INTO ai_messages(conversation_id,role,content) VALUES($1,'assistant',$2)", [id, question]);
+        await tx.query("UPDATE ai_proposals SET status='rejected',updated_at=now() WHERE user_id=$1 AND status='pending'", [user.id]);
+      });
     });
     res.json({ conversation: await getConversation(pool, user.id) });
   });
@@ -196,7 +206,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const consent = await client.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='ai_interview' AND document_version=$2", [userId, `${aiConsentVersion}:${config.aiMode}`]);
     if (!consent.rowCount) throw new AppError(403, 'AI_CONSENT_REQUIRED');
     const conversation = await getConversation(client, userId);
-    if (!conversation) throw new AppError(400, 'CONVERSATION_REQUIRED');
+    if (!conversation || conversation.mode !== config.aiMode) throw new AppError(400, 'CONVERSATION_REQUIRED');
     return conversation;
   }
   app.post('/api/assistant/messages', async (req, res) => {
@@ -210,7 +220,6 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       if (userMessage.content && userMessage.content !== input.content) throw new AppError(409, 'REQUEST_CONFLICT');
       if ((await client.query('SELECT 1 FROM ai_messages WHERE reply_to=$1', [userMessage.id])).rowCount) return;
       const messages = await getMessages(client, conversation.id);
-      if (draft.introMarkdown.length + messages.reduce((n, m) => n + m.content.length, 0) > 120000) throw new AppError(413, 'AI_CONTEXT_TOO_LONG');
       const question = await interviewer.question(messages, draft.introMarkdown);
       await client.query("INSERT INTO ai_messages(conversation_id,role,content,reply_to) VALUES($1,'assistant',$2,$3) ON CONFLICT(reply_to) DO NOTHING", [conversation.id, question, userMessage.id]);
       await client.query('UPDATE ai_conversations SET updated_at=now() WHERE id=$1', [conversation.id]);
@@ -223,12 +232,11 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const result = await lockAssistant(userId, async client => {
       const conversation = await requireConversation(client, userId);
       const draft = (await getDraft(client, userId))!;
-      if (draft.introMarkdown.length + conversation.messages.reduce((n, m) => n + m.content.length, 0) > 120000) throw new AppError(413, 'AI_CONTEXT_TOO_LONG');
       const proposal = await interviewer.proposal(conversation.messages, draft.introMarkdown);
-      return transaction(pool, async tx => {
+      return transactionOnClient(client, async tx => {
         await tx.query("UPDATE ai_proposals SET status='rejected',updated_at=now() WHERE user_id=$1 AND status='pending'", [userId]);
-        const { rows } = await tx.query(`INSERT INTO ai_proposals(user_id,conversation_id,based_on_draft_revision,intro_markdown,suggested_tags,source_map)
-          VALUES($1,$2,$3,$4,$5,$6) RETURNING *`, [userId, conversation.id, draft.revision, proposal.introMarkdown, JSON.stringify(proposal.suggestedTags), JSON.stringify(proposal.sourceMap)]);
+        const { rows } = await tx.query(`INSERT INTO ai_proposals(user_id,conversation_id,based_on_draft_revision,intro_markdown,suggested_tags,source_ids,base_markdown,change_summary)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [userId, conversation.id, draft.revision, proposal.introMarkdown, JSON.stringify(proposal.suggestedTags), JSON.stringify(proposal.sourceIds), draft.introMarkdown, proposal.changeSummary]);
         return mapProposal(rows[0]);
       });
     });

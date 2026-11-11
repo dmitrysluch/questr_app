@@ -11,23 +11,26 @@ interface Props {
   config: AppConfig;
   conversation: Conversation | null;
   proposal: Proposal | null;
+  hasBio: boolean;
   onConversation: (value: Conversation) => void;
   onProposal: (value: Proposal | null) => void;
   flush: () => Promise<Draft | null>;
   onApply: (draft: Draft) => void;
 }
-export function Interview({ config, conversation, proposal, onConversation, onProposal, flush, onApply }: Props) {
+export function Interview({ config, conversation, proposal, hasBio, onConversation, onProposal, flush, onApply }: Props) {
   const [answer, setAnswer] = useState('');
   const [busy, setBusy] = useState<'start' | 'send' | 'compose' | 'apply' | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reviewing, setReviewing] = useState(Boolean(proposal));
   const [selectedCodes, setSelectedCodes] = useState<string[]>(proposal?.suggestedTags.map(t => t.code) ?? []);
+  const [reviewView, setReviewView] = useState<'proposed' | 'current'>('proposed');
   const pendingRequest = useRef<{ requestId: string; content: string } | null>(null);
   const log = useRef<HTMLDivElement>(null);
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [conversation?.messages.length, busy]);
   async function start() {
     setBusy('start'); setError(null);
     try {
+      await flush();
       const result = await api<{ conversation: Conversation }>('/assistant/start', { method: 'POST', body: { consent: true } });
       onConversation(result.conversation);
     } catch (e) { setError(e); } finally { setBusy(null); }
@@ -51,7 +54,7 @@ export function Interview({ config, conversation, proposal, onConversation, onPr
     try {
       await flush();
       const result = await api<{ proposal: Proposal }>('/assistant/proposals', { method: 'POST', body: {} });
-      onProposal(result.proposal); setSelectedCodes(result.proposal.suggestedTags.map(t => t.code)); setReviewing(true);
+      onProposal(result.proposal); setSelectedCodes(result.proposal.suggestedTags.map(t => t.code)); setReviewView('proposed'); setReviewing(true);
     } catch (e) { setError(e); } finally { setBusy(null); }
   }
   async function apply() {
@@ -96,8 +99,8 @@ export function Interview({ config, conversation, proposal, onConversation, onPr
       </form>
       <div className="chat-actions">
         <button className="text-button subtle" disabled={!!busy} onClick={() => void send(t('assistant.skipMessage'))}>{t('assistant.skip')}</button>
-        <button className="outline-button small" disabled={!!busy || !conversation.messages.some(m => m.role === 'user')} onClick={() => void compose()}>
-          {busy === 'compose' ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={16} />}{t(busy === 'compose' ? 'assistant.structuring' : 'assistant.compose')}
+        <button className="outline-button small" disabled={!!busy || (!hasBio && !conversation.messages.some(m => m.role === 'user'))} onClick={() => void compose()}>
+          {busy === 'compose' ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={16} />}{t(busy === 'compose' ? 'assistant.structuring' : hasBio ? 'assistant.update' : 'assistant.compose')}
         </button>
       </div>
       <p className="chat-footnote">{t('assistant.keepTalking')}</p>
@@ -105,8 +108,14 @@ export function Interview({ config, conversation, proposal, onConversation, onPr
     </>}
     {reviewing && proposal && <Modal title={t('proposal.title')} wide onClose={() => { if (!busy) setReviewing(false); }}>
       <p className="modal-description">{t('proposal.description')}</p>
-      <div className="verbatim-badge"><Check size={14} />{t('proposal.verbatim')}</div>
-      <div className="proposal-preview"><Markdown content={proposal.introMarkdown} /></div>
+      <p className="proposal-summary" dir="auto">{proposal.changeSummary}</p>
+      <div className="proposal-views" role="tablist" aria-label={t('proposal.compare')}>
+        <button role="tab" aria-selected={reviewView === 'proposed'} onClick={() => setReviewView('proposed')}>{t('proposal.proposed')}</button>
+        <button role="tab" aria-selected={reviewView === 'current'} onClick={() => setReviewView('current')}>{t('proposal.current')}</button>
+      </div>
+      <div className="proposal-preview" role="tabpanel" aria-label={t(reviewView === 'proposed' ? 'proposal.proposed' : 'proposal.current')}>
+        {reviewView === 'current' && !proposal.baseMarkdown ? <p className="hint">{t('proposal.empty')}</p> : <Markdown content={reviewView === 'proposed' ? proposal.introMarkdown : proposal.baseMarkdown} />}
+      </div>
       {!!proposal.suggestedTags.length && <div className="proposal-tags"><h3>{t('proposal.tags')}</h3><p className="hint">{t('proposal.tagHint')}</p><div className="tag-list">
         {proposal.suggestedTags.map(suggestion => {
           const tag = tags.find(t => t.code === suggestion.code)!;
@@ -116,7 +125,8 @@ export function Interview({ config, conversation, proposal, onConversation, onPr
         })}
       </div></div>}
       <details className="source-answers"><summary>{t('proposal.sources')}</summary>
-        {proposal.sourceMap.flatMap(s => s.messageIds).map(id => <blockquote key={id}>{conversation?.messages.find(m => m.id === id)?.content}</blockquote>)}
+        {proposal.sourceIds.filter(id => id !== 'bio').map(id => <blockquote key={id}>{conversation?.messages.find(m => m.id === id)?.content}</blockquote>)}
+        {proposal.sourceIds.includes('bio') && <p>{t('proposal.bioSource')}</p>}
       </details>
       {errorBlock}
       <div className="modal-actions"><button className="text-button" disabled={!!busy} onClick={() => void discard()}>{t('proposal.discard')}</button>

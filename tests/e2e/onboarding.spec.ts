@@ -56,29 +56,41 @@ test('registration, avatar, custom tags, Markdown, profile editing and reload', 
   expect(errors).toEqual([]);
 });
 
-test('Ask me questions produces a reviewable bio with exact original answers', async ({ page }, info) => {
+test('interview drafts retain the existing bio and support comparison, discard, resume and approval', async ({ page }, info) => {
   await register(page);
+  const existing = 'I make **tiny train games**. Coffee is non-negotiable.';
+  await markdown(page, existing);
   await page.getByRole('tab', { name: 'Ask me questions' }).click();
-  await expect(page.getByText('Your phrasing stays yours.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Your story, your say.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Let’s talk' }).click();
   const first = 'I climb badly, enthusiastically. Mostly bouldering — the puzzles get me.';
   const second = 'I like figuring out one move for an hour. A coffee afterwards is part of the ritual.';
   await page.getByRole('textbox', { name: 'Whatever comes to mind…' }).fill(first);
   await page.getByRole('button', { name: 'Send answer' }).click();
-  await expect(page.getByRole('log')).toContainText('What do you enjoy most about climbing');
+  await expect(page.getByRole('log')).toContainText('What was one fun moment from your last climbing session?');
   await page.getByRole('textbox', { name: 'Whatever comes to mind…' }).fill(second);
   await page.getByRole('button', { name: 'Send answer' }).click();
-  await expect(page.getByRole('button', { name: 'Put my answers together' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Update my bio' })).toBeEnabled();
   await page.screenshot({ path: `.artifacts/${info.project.name}-interview.png`, fullPage: true });
-  await page.getByRole('button', { name: 'Put my answers together' }).click();
+  await page.getByRole('button', { name: 'Update my bio' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.locator('.proposal-preview')).toContainText(first);
   await expect(dialog.locator('.proposal-preview')).toContainText(second);
+  await dialog.getByRole('tab', { name: 'Current bio' }).click();
+  await expect(dialog.locator('.proposal-preview')).toContainText('tiny train games');
+  await expect(dialog.locator('.proposal-preview')).not.toContainText(first);
+  await dialog.getByRole('button', { name: 'Keep my current bio' }).click();
+  expect((await (await page.request.get('/api/me')).json()).draft.introMarkdown).toBe(existing);
+  await page.getByRole('button', { name: 'Update my bio' }).click();
+  await expect(dialog.locator('.proposal-preview')).toContainText(first);
+  await page.reload();
+  await expect(dialog.locator('.proposal-preview')).toContainText('tiny train games');
   await dialog.getByRole('button', { name: 'Use this bio & selected tags' }).click();
   await expect(page.getByRole('tab', { name: 'Write myself' })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('button', { name: 'Preview my profile' }).click();
   await expect(page.locator('.profile-body')).toContainText(first);
   await expect(page.locator('.profile-body')).toContainText(second);
+  await expect(page.locator('.profile-body')).toContainText('Coffee is non-negotiable.');
   await page.getByRole('button', { name: 'Save my profile' }).click();
   await page.reload();
   await expect(page.locator('.profile-body')).toContainText(first);

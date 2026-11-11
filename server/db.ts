@@ -3,6 +3,12 @@ export const createPool = (connectionString: string) => new pg.Pool({ connection
 export type Pool = pg.Pool;
 export async function transaction<T>(pool: Pool, run: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
+  try { return await transactionOnClient(client, run); }
+  finally { client.release(); }
+}
+// Assistant operations already hold a connection for their advisory lock.
+// Reuse it so concurrent generations cannot exhaust the pool waiting for a second one.
+export async function transactionOnClient<T>(client: PoolClient, run: (client: PoolClient) => Promise<T>): Promise<T> {
   try {
     await client.query('BEGIN');
     const result = await run(client);
@@ -11,5 +17,5 @@ export async function transaction<T>(pool: Pool, run: (client: PoolClient) => Pr
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
-  } finally { client.release(); }
+  }
 }
