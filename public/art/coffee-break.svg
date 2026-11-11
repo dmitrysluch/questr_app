@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100" shape-rendering="crispEdges" role="img" aria-label="Pixel art coffee, books and a house plant">
+<rect x="12" y="87" width="137" height="3" fill="#d3bfa4"/>
+<rect x="18" y="90" width="127" height="2" fill="#eadccc"/>
+<path d="M21 66h47v3h3v16H19V69h2Z" fill="#51413c"/>
+<rect x="22" y="69" width="45" height="13" fill="#b77657"/>
+<rect x="26" y="72" width="41" height="7" fill="#e9d9b6"/>
+<rect x="28" y="74" width="36" height="1" fill="#c6b38f"/>
+<rect x="24" y="69" width="3" height="13" fill="#935a45"/>
+<rect x="28" y="66" width="44" height="3" fill="#809076"/>
+<rect x="25" y="55" width="43" height="11" fill="#536a5c"/>
+<rect x="29" y="57" width="36" height="7" fill="#e6d8b9"/>
+<rect x="31" y="59" width="31" height="1" fill="#c6b79b"/>
+<rect x="26" y="55" width="3" height="11" fill="#78917a"/>
+<rect x="31" y="52" width="34" height="3" fill="#8b9c83"/>
+<rect x="119" y="31" width="3" height="28" fill="#6a7954"/>
+<path d="M119 44v-9h-8v-3h-6v6h3v3h6v3Zm3 4v-9h6v-4h8v6h-3v4h-6v3Zm-3-17v-9h-4v-4h-7v8h4v3h4v2Zm3 4v-9h6v-3h7v6h-4v3h-5v3Z" fill="#84946b"/>
+<rect x="110" y="34" width="7" height="3" fill="#a2af81"/>
+<rect x="127" y="37" width="6" height="3" fill="#a2af81"/>
+<rect x="110" y="20" width="4" height="4" fill="#a2af81"/>
+<path d="M106 57h30v7h-3v15h-3v6h-18v-6h-3V64h-3Z" fill="#775044"/>
+<path d="M109 60h24v3h-3v15h-2v4h-14v-4h-2V63h-3Z" fill="#bc8262"/>
+<rect x="112" y="64" width="4" height="13" fill="#d69b75"/>
+<rect x="106" y="57" width="30" height="3" fill="#d49d77"/>
+<rect x="110" y="55" width="22" height="2" fill="#51443b"/>
+<rect x="66" y="82" width="42" height="3" fill="#a78f73"/>
+<rect x="70" y="85" width="34" height="2" fill="#cdbb9b"/>
+<path d="M74 48h24v6h10v3h3v14h-3v3H98v5h-3v3H77v-3h-3Z" fill="#554338"/>
+<rect x="77" y="51" width="18" height="26" fill="#e1c69a"/>
+<rect x="79" y="52" width="5" height="23" fill="#f2dfb8"/>
+<rect x="95" y="57" width="3" height="14" fill="#c3a478"/>
+<rect x="98" y="57" width="8" height="3" fill="#c3a478"/>
+<rect x="104" y="60" width="3" height="8" fill="#c3a478"/>
+<rect x="98" y="68" width="8" height="3" fill="#c3a478"/>
+<rect x="76" y="48" width="21" height="3" fill="#ead4ae"/>
+<rect x="79" y="49" width="15" height="2" fill="#76523a"/>
+<rect x="82" y="58" width="9" height="9" fill="#bf8c5e"/>
+<rect x="84" y="60" width="5" height="5" fill="#e7c692"/>
+<path d="M80 42v-5h3v-7h-3v-6h3v-4h3v6h-3v4h3v8h-3v4Z" fill="#c3ad91"/>
+<path d="M90 43v-5h3v-5h-3v-5h3v-3h2v6h-2v2h3v7h-3v3Z" fill="#ded0b8"/>
+<rect x="40" y="43" width="3" height="3" fill="#bca784"/>
+<rect x="38" y="41" width="7" height="1" fill="#bca784"/>
+<rect x="41" y="38" width="1" height="7" fill="#bca784"/>
+</svg>

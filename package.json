@@ -1,0 +1,44 @@
+{
+  "name": "questr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
+    "dev:client": "vite --host 0.0.0.0",
+    "dev:server": "tsx watch --env-file-if-exists=.env server/index.ts",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx --env-file-if-exists=.env server/index.ts",
+    "db:migrate": "tsx --env-file-if-exists=.env server/migrate.ts",
+    "invite": "tsx --env-file-if-exists=.env scripts/invite.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "test:integration": "tsx --env-file-if-exists=.env --test tests/integration/*.test.ts",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@mdxeditor/editor": "4.5.0",
+    "express": "^5.2.1",
+    "lucide-react": "^0.468.0",
+    "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tsx": "^4.21.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/supertest": "^6.0.0",
+    "supertest": "^7.1.0",
+    "typescript": "^5.9.3",
+    "vite": "8.3.8"
+  }
+}
