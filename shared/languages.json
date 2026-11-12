@@ -1,0 +1,742 @@
+[
+  {
+    "code": "ab",
+    "label": "Abkhazian"
+  },
+  {
+    "code": "aa",
+    "label": "Afar"
+  },
+  {
+    "code": "af",
+    "label": "Afrikaans"
+  },
+  {
+    "code": "ak",
+    "label": "Akan"
+  },
+  {
+    "code": "sq",
+    "label": "Albanian"
+  },
+  {
+    "code": "am",
+    "label": "Amharic"
+  },
+  {
+    "code": "ar",
+    "label": "Arabic"
+  },
+  {
+    "code": "an",
+    "label": "Aragonese"
+  },
+  {
+    "code": "hy",
+    "label": "Armenian"
+  },
+  {
+    "code": "as",
+    "label": "Assamese"
+  },
+  {
+    "code": "av",
+    "label": "Avaric"
+  },
+  {
+    "code": "ae",
+    "label": "Avestan"
+  },
+  {
+    "code": "ay",
+    "label": "Aymara"
+  },
+  {
+    "code": "az",
+    "label": "Azerbaijani"
+  },
+  {
+    "code": "bm",
+    "label": "Bambara"
+  },
+  {
+    "code": "ba",
+    "label": "Bashkir"
+  },
+  {
+    "code": "eu",
+    "label": "Basque"
+  },
+  {
+    "code": "be",
+    "label": "Belarusian"
+  },
+  {
+    "code": "bn",
+    "label": "Bengali"
+  },
+  {
+    "code": "bh",
+    "label": "Bihari languages"
+  },
+  {
+    "code": "bi",
+    "label": "Bislama"
+  },
+  {
+    "code": "bs",
+    "label": "Bosnian"
+  },
+  {
+    "code": "br",
+    "label": "Breton"
+  },
+  {
+    "code": "bg",
+    "label": "Bulgarian"
+  },
+  {
+    "code": "my",
+    "label": "Burmese"
+  },
+  {
+    "code": "ca",
+    "label": "Catalan"
+  },
+  {
+    "code": "ch",
+    "label": "Chamorro"
+  },
+  {
+    "code": "ce",
+    "label": "Chechen"
+  },
+  {
+    "code": "zh",
+    "label": "Chinese"
+  },
+  {
+    "code": "cu",
+    "label": "Church Slavic"
+  },
+  {
+    "code": "cv",
+    "label": "Chuvash"
+  },
+  {
+    "code": "kw",
+    "label": "Cornish"
+  },
+  {
+    "code": "co",
+    "label": "Corsican"
+  },
+  {
+    "code": "cr",
+    "label": "Cree"
+  },
+  {
+    "code": "hr",
+    "label": "Croatian"
+  },
+  {
+    "code": "cs",
+    "label": "Czech"
+  },
+  {
+    "code": "da",
+    "label": "Danish"
+  },
+  {
+    "code": "dv",
+    "label": "Dhivehi"
+  },
+  {
+    "code": "nl",
+    "label": "Dutch"
+  },
+  {
+    "code": "dz",
+    "label": "Dzongkha"
+  },
+  {
+    "code": "en",
+    "label": "English"
+  },
+  {
+    "code": "eo",
+    "label": "Esperanto"
+  },
+  {
+    "code": "et",
+    "label": "Estonian"
+  },
+  {
+    "code": "ee",
+    "label": "Ewe"
+  },
+  {
+    "code": "fo",
+    "label": "Faroese"
+  },
+  {
+    "code": "fj",
+    "label": "Fijian"
+  },
+  {
+    "code": "fi",
+    "label": "Finnish"
+  },
+  {
+    "code": "fr",
+    "label": "French"
+  },
+  {
+    "code": "ff",
+    "label": "Fulah"
+  },
+  {
+    "code": "gl",
+    "label": "Galician"
+  },
+  {
+    "code": "lg",
+    "label": "Ganda"
+  },
+  {
+    "code": "ka",
+    "label": "Georgian"
+  },
+  {
+    "code": "de",
+    "label": "German"
+  },
+  {
+    "code": "gn",
+    "label": "Guarani"
+  },
+  {
+    "code": "gu",
+    "label": "Gujarati"
+  },
+  {
+    "code": "ht",
+    "label": "Haitian"
+  },
+  {
+    "code": "ha",
+    "label": "Hausa"
+  },
+  {
+    "code": "he",
+    "label": "Hebrew"
+  },
+  {
+    "code": "hz",
+    "label": "Herero"
+  },
+  {
+    "code": "hi",
+    "label": "Hindi"
+  },
+  {
+    "code": "ho",
+    "label": "Hiri Motu"
+  },
+  {
+    "code": "hu",
+    "label": "Hungarian"
+  },
+  {
+    "code": "is",
+    "label": "Icelandic"
+  },
+  {
+    "code": "io",
+    "label": "Ido"
+  },
+  {
+    "code": "ig",
+    "label": "Igbo"
+  },
+  {
+    "code": "id",
+    "label": "Indonesian"
+  },
+  {
+    "code": "ia",
+    "label": "Interlingua (International Auxiliary Language Association)"
+  },
+  {
+    "code": "ie",
+    "label": "Interlingue"
+  },
+  {
+    "code": "iu",
+    "label": "Inuktitut"
+  },
+  {
+    "code": "ik",
+    "label": "Inupiaq"
+  },
+  {
+    "code": "ga",
+    "label": "Irish"
+  },
+  {
+    "code": "it",
+    "label": "Italian"
+  },
+  {
+    "code": "ja",
+    "label": "Japanese"
+  },
+  {
+    "code": "jv",
+    "label": "Javanese"
+  },
+  {
+    "code": "kl",
+    "label": "Kalaallisut"
+  },
+  {
+    "code": "kn",
+    "label": "Kannada"
+  },
+  {
+    "code": "kr",
+    "label": "Kanuri"
+  },
+  {
+    "code": "ks",
+    "label": "Kashmiri"
+  },
+  {
+    "code": "kk",
+    "label": "Kazakh"
+  },
+  {
+    "code": "km",
+    "label": "Khmer"
+  },
+  {
+    "code": "ki",
+    "label": "Kikuyu"
+  },
+  {
+    "code": "rw",
+    "label": "Kinyarwanda"
+  },
+  {
+    "code": "ky",
+    "label": "Kirghiz"
+  },
+  {
+    "code": "kv",
+    "label": "Komi"
+  },
+  {
+    "code": "kg",
+    "label": "Kongo"
+  },
+  {
+    "code": "ko",
+    "label": "Korean"
+  },
+  {
+    "code": "kj",
+    "label": "Kuanyama"
+  },
+  {
+    "code": "ku",
+    "label": "Kurdish"
+  },
+  {
+    "code": "lo",
+    "label": "Lao"
+  },
+  {
+    "code": "la",
+    "label": "Latin"
+  },
+  {
+    "code": "lv",
+    "label": "Latvian"
+  },
+  {
+    "code": "li",
+    "label": "Limburgan"
+  },
+  {
+    "code": "ln",
+    "label": "Lingala"
+  },
+  {
+    "code": "lt",
+    "label": "Lithuanian"
+  },
+  {
+    "code": "lu",
+    "label": "Luba-Katanga"
+  },
+  {
+    "code": "lb",
+    "label": "Luxembourgish"
+  },
+  {
+    "code": "mk",
+    "label": "Macedonian"
+  },
+  {
+    "code": "mg",
+    "label": "Malagasy"
+  },
+  {
+    "code": "ms",
+    "label": "Malay (macrolanguage)"
+  },
+  {
+    "code": "ml",
+    "label": "Malayalam"
+  },
+  {
+    "code": "mt",
+    "label": "Maltese"
+  },
+  {
+    "code": "gv",
+    "label": "Manx"
+  },
+  {
+    "code": "mi",
+    "label": "Maori"
+  },
+  {
+    "code": "mr",
+    "label": "Marathi"
+  },
+  {
+    "code": "mh",
+    "label": "Marshallese"
+  },
+  {
+    "code": "el",
+    "label": "Modern Greek (1453-)"
+  },
+  {
+    "code": "mn",
+    "label": "Mongolian"
+  },
+  {
+    "code": "na",
+    "label": "Nauru"
+  },
+  {
+    "code": "nv",
+    "label": "Navajo"
+  },
+  {
+    "code": "ng",
+    "label": "Ndonga"
+  },
+  {
+    "code": "ne",
+    "label": "Nepali (macrolanguage)"
+  },
+  {
+    "code": "nd",
+    "label": "North Ndebele"
+  },
+  {
+    "code": "se",
+    "label": "Northern Sami"
+  },
+  {
+    "code": "no",
+    "label": "Norwegian"
+  },
+  {
+    "code": "nb",
+    "label": "Norwegian Bokmål"
+  },
+  {
+    "code": "nn",
+    "label": "Norwegian Nynorsk"
+  },
+  {
+    "code": "ny",
+    "label": "Nyanja"
+  },
+  {
+    "code": "oc",
+    "label": "Occitan (post 1500)"
+  },
+  {
+    "code": "oj",
+    "label": "Ojibwa"
+  },
+  {
+    "code": "or",
+    "label": "Oriya (macrolanguage)"
+  },
+  {
+    "code": "om",
+    "label": "Oromo"
+  },
+  {
+    "code": "os",
+    "label": "Ossetian"
+  },
+  {
+    "code": "pi",
+    "label": "Pali"
+  },
+  {
+    "code": "pa",
+    "label": "Panjabi"
+  },
+  {
+    "code": "fa",
+    "label": "Persian"
+  },
+  {
+    "code": "pl",
+    "label": "Polish"
+  },
+  {
+    "code": "pt",
+    "label": "Portuguese"
+  },
+  {
+    "code": "ps",
+    "label": "Pushto"
+  },
+  {
+    "code": "qu",
+    "label": "Quechua"
+  },
+  {
+    "code": "ro",
+    "label": "Romanian"
+  },
+  {
+    "code": "rm",
+    "label": "Romansh"
+  },
+  {
+    "code": "rn",
+    "label": "Rundi"
+  },
+  {
+    "code": "ru",
+    "label": "Russian"
+  },
+  {
+    "code": "sm",
+    "label": "Samoan"
+  },
+  {
+    "code": "sg",
+    "label": "Sango"
+  },
+  {
+    "code": "sa",
+    "label": "Sanskrit"
+  },
+  {
+    "code": "sc",
+    "label": "Sardinian"
+  },
+  {
+    "code": "gd",
+    "label": "Scottish Gaelic"
+  },
+  {
+    "code": "sr",
+    "label": "Serbian"
+  },
+  {
+    "code": "sh",
+    "label": "Serbo-Croatian"
+  },
+  {
+    "code": "sn",
+    "label": "Shona"
+  },
+  {
+    "code": "ii",
+    "label": "Sichuan Yi"
+  },
+  {
+    "code": "sd",
+    "label": "Sindhi"
+  },
+  {
+    "code": "si",
+    "label": "Sinhala"
+  },
+  {
+    "code": "sk",
+    "label": "Slovak"
+  },
+  {
+    "code": "sl",
+    "label": "Slovenian"
+  },
+  {
+    "code": "so",
+    "label": "Somali"
+  },
+  {
+    "code": "nr",
+    "label": "South Ndebele"
+  },
+  {
+    "code": "st",
+    "label": "Southern Sotho"
+  },
+  {
+    "code": "es",
+    "label": "Spanish"
+  },
+  {
+    "code": "su",
+    "label": "Sundanese"
+  },
+  {
+    "code": "sw",
+    "label": "Swahili (macrolanguage)"
+  },
+  {
+    "code": "ss",
+    "label": "Swati"
+  },
+  {
+    "code": "sv",
+    "label": "Swedish"
+  },
+  {
+    "code": "tl",
+    "label": "Tagalog"
+  },
+  {
+    "code": "ty",
+    "label": "Tahitian"
+  },
+  {
+    "code": "tg",
+    "label": "Tajik"
+  },
+  {
+    "code": "ta",
+    "label": "Tamil"
+  },
+  {
+    "code": "tt",
+    "label": "Tatar"
+  },
+  {
+    "code": "te",
+    "label": "Telugu"
+  },
+  {
+    "code": "th",
+    "label": "Thai"
+  },
+  {
+    "code": "bo",
+    "label": "Tibetan"
+  },
+  {
+    "code": "ti",
+    "label": "Tigrinya"
+  },
+  {
+    "code": "to",
+    "label": "Tonga (Tonga Islands)"
+  },
+  {
+    "code": "ts",
+    "label": "Tsonga"
+  },
+  {
+    "code": "tn",
+    "label": "Tswana"
+  },
+  {
+    "code": "tr",
+    "label": "Turkish"
+  },
+  {
+    "code": "tk",
+    "label": "Turkmen"
+  },
+  {
+    "code": "tw",
+    "label": "Twi"
+  },
+  {
+    "code": "ug",
+    "label": "Uighur"
+  },
+  {
+    "code": "uk",
+    "label": "Ukrainian"
+  },
+  {
+    "code": "ur",
+    "label": "Urdu"
+  },
+  {
+    "code": "uz",
+    "label": "Uzbek"
+  },
+  {
+    "code": "ve",
+    "label": "Venda"
+  },
+  {
+    "code": "vi",
+    "label": "Vietnamese"
+  },
+  {
+    "code": "vo",
+    "label": "Volapük"
+  },
+  {
+    "code": "wa",
+    "label": "Walloon"
+  },
+  {
+    "code": "cy",
+    "label": "Welsh"
+  },
+  {
+    "code": "fy",
+    "label": "Western Frisian"
+  },
+  {
+    "code": "wo",
+    "label": "Wolof"
+  },
+  {
+    "code": "xh",
+    "label": "Xhosa"
+  },
+  {
+    "code": "yi",
+    "label": "Yiddish"
+  },
+  {
+    "code": "yo",
+    "label": "Yoruba"
+  },
+  {
+    "code": "za",
+    "label": "Zhuang"
+  },
+  {
+    "code": "zu",
+    "label": "Zulu"
+  }
+]

@@ -300,3 +300,50 @@ test('interest limit blocks additions until a selected tag is removed', async ({
   expect(updated.tags).toHaveLength(30);
   expect(updated.tags.some((tag: any) => tag.code === 'coffee')).toBe(true);
 });
+
+test('spoken languages and private country/city/online adventure filters persist independently', async ({ page }, info) => {
+  await register(page);
+  const spoken = page.getByRole('combobox', { name: 'Languages I speak', exact: true });
+  await spoken.fill('рус');
+  await page.getByRole('option', { name: /^Russian/ }).click();
+  await spoken.fill('English');
+  await spoken.press('Enter');
+  await expect(page.getByRole('button', { name: 'Remove English', exact: true })).toBeVisible();
+  await spoken.press('Escape');
+  await page.getByText('Adventure filters', { exact: true }).click();
+  const where = page.getByRole('combobox', { name: 'Where', exact: true });
+  await where.fill('Israel');
+  await page.getByRole('option', { name: /^All Israel/ }).click();
+  await page.getByRole('button', { name: 'Use languages I speak' }).click();
+  await page.getByRole('button', { name: 'Save filters' }).click();
+  await expect(page.getByRole('button', { name: 'Save filters' })).toBeDisabled();
+  let state = await (await page.request.get('/api/me')).json();
+  expect(state.discovery.locationIds).toEqual(['country:IL']);
+  expect(state.discovery.languageCodes).toEqual(['en', 'ru']);
+  await page.getByRole('button', { name: 'Remove All Israel' }).click();
+  for (const [query, name] of [['Хайфа', /^Haifa/], ['Tel-Aviv', /^Tel Aviv/], ['Online', /^Online/]] as const) {
+    await where.fill(query);
+    await page.getByRole('option', { name }).click();
+  }
+  await page.getByRole('button', { name: 'Save filters' }).click();
+  await expect(page.getByRole('button', { name: 'Save filters' })).toBeDisabled();
+  await noOverflow(page);
+  await page.screenshot({ path: `.artifacts/${info.project.name}-discovery-filters.png`, fullPage: true });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Remove Russian', exact: true })).toBeVisible();
+  await page.getByText('Adventure filters', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove Haifa' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove Tel Aviv' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove Online' })).toBeVisible();
+  state = await (await page.request.get('/api/me')).json();
+  expect(state.user.locale).toBe('en');
+  expect(state.draft.spokenLanguages).toEqual(['ru', 'en']);
+  expect(state.discovery.locationIds).toEqual(['city:293397', 'city:294801', 'online']);
+  await page.getByRole('button', { name: 'Preview character' }).click();
+  await page.getByRole('button', { name: 'Save character' }).click();
+  await expect(page.locator('.profile-card .spoken-languages')).toContainText('Russian · English');
+  await expect(page.locator('.profile-card')).not.toContainText('Haifa');
+  await expect(page.locator('.profile-card')).not.toContainText('Online');
+  await noOverflow(page);
+  await page.screenshot({ path: `.artifacts/${info.project.name}-profile-languages.png`, fullPage: true });
+});

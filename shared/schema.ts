@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { avatars, tags } from './catalog.ts';
 import type { BioReview, ContentReview } from './content-policy.ts';
+import { spokenLanguagesSchema, type DiscoveryPreferences } from './discovery.ts';
 
 export const localeSchema = z.literal('en');
 const emojiSchema = z.string().min(1).max(32).refine(value => {
@@ -21,6 +22,7 @@ export const draftInputSchema = z.object({
   avatarId: z.string().refine(id => avatars.some(a => a.id === id)).nullable(),
   introMarkdown: z.string(),
   tags: selectedTagsSchema,
+  spokenLanguages: spokenLanguagesSchema.default([]),
   mode: z.enum(['manual', 'interview']),
   currentStep: z.enum(['avatar', 'bio', 'review']),
 }).strict();
@@ -58,7 +60,7 @@ export interface Proposal {
 }
 export interface Profile {
   displayName: string; avatarId: string; introMarkdown: string;
-  tags: ProfileTag[]; revision: number; completedAt: string;
+  tags: ProfileTag[]; spokenLanguages: string[]; revision: number; completedAt: string;
 }
 export interface AppState {
   user: { id: string; status: 'pending_invite' | 'onboarding' | 'active' | 'blocked'; locale: string };
@@ -68,5 +70,6 @@ export interface AppState {
   proposal: Proposal | null;
   demoInvite: string | null;
   bioReview: BioReview | null;
+  discovery: DiscoveryPreferences;
 }
 export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string }

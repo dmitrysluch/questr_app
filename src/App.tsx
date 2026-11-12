@@ -11,6 +11,7 @@ import { Markdown } from './components/Markdown.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Interview } from './components/Interview.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
+import { LanguagePicker, SpokenLanguages, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview, ContentSpan } from '../shared/content-policy.ts';
 
 const BioEditor = lazy(() => import('./components/BioEditor.tsx'));
@@ -154,6 +155,7 @@ export function App() {
         </section> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} />
+          <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
 
           <div className="page-actions"><span className="privacy-note"><LockKeyhole size={14} />{t('review.private')}</span><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
         </section> : currentStep === 'avatar' ? <section>
@@ -173,6 +175,7 @@ export function App() {
         </section> : currentStep === 'bio' ? <section>
           <PageHeading title="bio.title" />
           <div className="bio-layout"><div className="bio-main">
+            <div className="profile-languages"><LanguagePicker label={t('languages.spoken')} value={draft.spokenLanguages} onChange={spokenLanguages => edit({ spokenLanguages })} /></div>
             <div className="section-heading"><h2>{t('bio.tagsTitle')}</h2><span>{t('common.optional')}</span></div>
             <TagPicker value={draft.tags} onChange={tags => edit({ tags })} />
             <div className="story-heading"><h2>{t('bio.storyTitle')}</h2></div>
@@ -186,6 +189,7 @@ export function App() {
                 onApply={nextDraft => { replace(nextDraft); edit({ mode: 'manual' }); }} />}
             </div></div>
             <details className="bio-disclosure"><summary>{t('content.howUsed')}</summary><p>{t(config?.aiMode === 'openrouter' ? 'content.disclosure' : 'content.demoDisclosure')}</p></details>
+            <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
           </div></div>
           <div className="page-actions"><button className="text-button" onClick={() => void go('avatar')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right"><SaveStatus state={saveState} /><button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t(checkingBio ? 'content.checking' : 'bio.preview')}<ArrowRight size={17} /></button></div></div>
         </section> : <section>
@@ -210,7 +214,7 @@ function SaveStatus({ state }: { state: 'saved' | 'saving' | 'error' }) {
 }
 function ProfileCard({ profile, flagged }: { profile: Profile; flagged?: ContentSpan[] }) {
   return <article className="profile-card paper-card"><div className="profile-banner"><span className="pixel-spark" /><span>{t('profile.badge')}</span><span className="banner-stars">✧ · ✦</span></div>
-    <div className="profile-identity"><Character id={profile.avatarId} /><div><h2 dir="auto">{profile.displayName}</h2>{!!profile.tags.length && <TagPills items={profile.tags} />}</div></div>
+    <div className="profile-identity"><Character id={profile.avatarId} /><div><h2 dir="auto">{profile.displayName}</h2><SpokenLanguages codes={profile.spokenLanguages} />{!!profile.tags.length && <TagPills items={profile.tags} />}</div></div>
     <div className="profile-body">{profile.introMarkdown.trim() ? <Markdown content={profile.introMarkdown} flagged={flagged} /> : <div className="empty-bio"><PenLine size={22} /><p>{t('profile.noBio')}</p></div>}</div>
 
   </article>;

@@ -2,7 +2,9 @@
 
 A Telegram Mini App POC for an invite-only community built around doing things together. English first, coffee colors, pixel characters, and readable typography.
 
-The POC covers registration, avatar selection, emoji tags, a long-form Markdown profile, and an optional **Ask me questions** interview. Profiles are currently visible only to their owner.
+The POC covers registration, avatar selection, emoji tags, spoken languages, a long-form Markdown profile, and an optional **Ask me questions** interview. Profiles are currently visible only to their owner. Private adventure filters support countries, cities, Online and event languages.
+
+The [geography and access design](docs/discovery-and-access.md) describes the implemented location catalog, filter matching, scoped roles, expiring grants and transactional usage budgets. Events have a database foundation; event/feed/chat screens and reputation automation are not implemented yet.
 
 ## Interface and interests
 
@@ -100,8 +102,10 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 | Area | Tables |
 | --- | --- |
 | Identity and access | `users`, `telegram_accounts`, `sessions`, `invites`, `user_consents` |
-| Profiles | `profile_drafts`, `profiles`, `profile_answers`, `profile_tags` |
-| Catalogs | `avatar_presets`, `tags`, `tag_translations` |
+| Profiles | `profile_drafts`, `profiles`, `profile_answers`, `profile_tags`, `profile_languages` |
+| Catalogs | `avatar_presets`, `tags`, `tag_translations`, `languages`, `locations` |
+| Discovery | `discovery_preferences`, `discovery_locations`, `discovery_languages`, `events` |
+| Authorization | `roles`, `role_capabilities`, `role_assignments`, `capability_budgets`, `capability_usage`, `permission_audit` |
 | Interview | `ai_conversations`, `ai_messages`, `ai_proposals` |
 | Content review | `content_reviews` (text hash, policy/model key, verdict and spans); review metadata on `ai_messages` |
 | Operations | `schema_migrations`, `bot_updates` |

@@ -13,6 +13,9 @@ import { ContentReviewer, reviewContent, storedReview } from './moderation.ts';
 import { getConversation, getDraft, getMessages, getProfile, getProposal, mapDraft, mapProposal } from './store.ts';
 import { aiConsentVersion, termsVersion } from '../shared/catalog.ts';
 import { draftInputSchema, messageSchema, registerSchema, tagKey, selectedTagsSchema, type ProfileTag } from '../shared/schema.ts';
+import { locationIdSchema } from '../shared/discovery.ts';
+import { getDiscovery, saveDiscovery, searchLocations } from './discovery.ts';
+import { grantMember, requireCapability } from './permissions.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
@@ -58,9 +61,11 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
 
   app.post('/api/auth/demo', async (req, res) => {
     if (config.authMode !== 'demo') throw new AppError(404, 'NOT_FOUND');
-    throttle(`auth:${req.ip}`, 30);
     let user = await findUser(req, pool);
     if (!user) {
+      // Resuming a valid local session does not create an account. Keep the
+      // creation limit for anonymous browsers without charging every reload.
+      throttle(`auth:${req.ip}`, 30);
       const created = await transaction(pool, async client => {
         const { rows } = await client.query('INSERT INTO users DEFAULT VALUES RETURNING id,status,locale');
         return { user: rows[0], token: await createSession(rows[0].id, client) };
@@ -125,13 +130,13 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   });
   app.get('/api/me', async (_req, res) => {
     const user = currentUser(res);
-    const [draft, profile, conversation, proposal] = await Promise.all([
-      getDraft(pool, user.id), getProfile(pool, user.id), getConversation(pool, user.id), getProposal(pool, user.id),
+    const [draft, profile, conversation, proposal, discovery] = await Promise.all([
+      getDraft(pool, user.id), getProfile(pool, user.id), getConversation(pool, user.id), getProposal(pool, user.id), getDiscovery(pool, user.id),
     ]);
     const consent = await pool.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='ai_interview' AND document_version=$2", [user.id, `${aiConsentVersion}:${config.aiMode}`]);
     const ready = conversation?.mode === config.aiMode && !!consent.rowCount;
     const review = draft ? await storedReview(pool, reviewer, draft.introMarkdown) : null;
-    res.json({ user, draft, profile, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
+    res.json({ user, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
   });
   app.post('/api/register', async (req, res) => {
     const user = currentUser(res);
@@ -148,6 +153,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       await client.query("UPDATE users SET status='onboarding',locale=$2,updated_at=now() WHERE id=$1", [user.id, input.locale]);
       for (const kind of ['adult', 'terms']) await client.query('INSERT INTO user_consents(user_id,kind,document_version) VALUES($1,$2,$3)', [user.id, kind, termsVersion]);
       await client.query('INSERT INTO profile_drafts(user_id,display_name) VALUES($1,$2)', [user.id, input.displayName]);
+      await grantMember(client, user.id);
     });
     res.json({ draft: await getDraft(pool, user.id) });
   });
@@ -156,19 +162,22 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     next();
   });
   app.put('/api/draft', async (req, res) => {
+    await requireCapability(pool, currentUser(res).id, 'profile.edit', { type: 'profile', id: currentUser(res).id });
     const input = draftInputSchema.parse(req.body);
     const { rows } = await pool.query(`UPDATE profile_drafts SET display_name=$2,avatar_preset_id=$3,intro_markdown=$4,tags=$5,
-      mode=$6,current_step=$7,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
-    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision]);
+      mode=$6,current_step=$7,spoken_languages=$9,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
+    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages]);
     if (!rows[0]) throw new AppError(409, 'DRAFT_CONFLICT');
     res.json({ draft: mapDraft(rows[0]) });
   });
   app.post('/api/profile/publish', async (req, res) => {
     const { revision } = z.object({ revision: z.number().int().nonnegative() }).strict().parse(req.body);
     const userId = currentUser(res).id;
+    await requireCapability(pool, userId, 'profile.edit', { type: 'profile', id: userId });
     const checked = await validateDraft(userId, revision);
     if (checked.status === 'blocked') throw new AppError(422, 'CONTENT_REQUIRES_CHANGES', { bioReview: checked });
     await transaction(pool, async client => {
+      await requireCapability(client, userId, 'profile.edit', { type: 'profile', id: userId });
       const { rows } = await client.query('SELECT * FROM profile_drafts WHERE user_id=$1 FOR UPDATE', [userId]);
       if (!rows[0] || rows[0].revision !== revision) throw new AppError(409, 'DRAFT_CONFLICT');
       const draft = draftInputSchema.parse(mapDraft(rows[0]));
@@ -177,6 +186,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,avatar_preset_id=EXCLUDED.avatar_preset_id,
         intro_markdown=EXCLUDED.intro_markdown,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown]);
       await client.query('DELETE FROM profile_tags WHERE user_id=$1', [userId]);
+      await client.query('DELETE FROM profile_languages WHERE user_id=$1', [userId]);
+      await client.query('INSERT INTO profile_languages(user_id,language_code,position) SELECT $1,code,ordinality-1 FROM unnest($2::text[]) WITH ORDINALITY AS x(code,ordinality)', [userId, draft.spokenLanguages]);
       for (const [i, tag] of draft.tags.entries()) {
         await client.query('INSERT INTO profile_tags(user_id,tag_id,custom_label,custom_emoji,locale,position) VALUES($1,$2,$3,$4,$5,$6)',
           [userId, tag.kind === 'catalog' ? tag.code : null, tag.kind === 'custom' ? tag.label : null, tag.kind === 'custom' ? tag.emoji : null, tag.kind === 'custom' ? tag.locale : null, i]);
@@ -184,6 +195,15 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       await client.query("UPDATE users SET status='active',updated_at=now() WHERE id=$1", [userId]);
     });
     res.json({ profile: await getProfile(pool, userId) });
+  });
+
+  app.get('/api/locations', async (req, res) => {
+    const input = z.object({ q: z.string().max(100).optional(), parentId: locationIdSchema.optional(), ids: z.string().max(2000).optional() }).strict().parse(req.query);
+    const ids = input.ids === undefined ? undefined : z.array(locationIdSchema).max(50).parse(input.ids.split(','));
+    res.json({ locations: await searchLocations(pool, { query: input.q, parentId: input.parentId, ids }) });
+  });
+  app.put('/api/discovery', async (req, res) => {
+    res.json({ discovery: await saveDiscovery(pool, currentUser(res).id, req.body) });
   });
 
   async function validateDraft(userId: string, revision: number) {
@@ -283,6 +303,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const id = z.uuid().parse(req.params.id);
     const input = z.object({ revision: z.number().int().nonnegative(), tagCodes: z.array(z.string()).max(12) }).strict().parse(req.body);
     const userId = currentUser(res).id;
+    await requireCapability(pool, userId, 'profile.edit', { type: 'profile', id: userId });
     await transaction(pool, async client => {
       const proposal = (await client.query("SELECT * FROM ai_proposals WHERE id=$1 AND user_id=$2 AND status='pending' FOR UPDATE", [id, userId])).rows[0];
       if (!proposal) throw new AppError(404, 'NOT_FOUND');

@@ -326,3 +326,148 @@ integration('topic-change retries retain one control event, preserve the bio and
   assert.equal(state.conversation.messages[1].contentReview, null);
   assert.equal(state.draft.introMarkdown, draft.introMarkdown);
 });
+
+integration('spoken languages round-trip publicly; discovery stays private, separate and versioned', async () => {
+  const { agent, draft, state } = await registered();
+  const updated = { ...draft, avatarId: 'moss', spokenLanguages: ['ru', 'en'], introMarkdown: 'Coffee and climbing.' };
+  const saved = (await agent.put('/api/draft').send(updated).expect(200)).body.draft;
+  assert.deepEqual(saved.spokenLanguages, ['ru', 'en']);
+  await agent.put('/api/draft').send({ ...saved, spokenLanguages: ['en', 'en'] }).expect(400);
+  await agent.put('/api/draft').send({ ...saved, spokenLanguages: ['unknown'] }).expect(400);
+  await agent.put('/api/draft').send({ ...saved, roles: ['admin'] }).expect(400);
+  const preferences = { revision: 0, locationIds: ['city:294801', 'city:293397', 'online'], languageCodes: ['en', 'ru'] };
+  const discovery = (await agent.put('/api/discovery').send(preferences).expect(200)).body.discovery;
+  await agent.put('/api/discovery').send(preferences).expect(409);
+  await agent.put('/api/discovery').send({ ...discovery, locationIds: ['city:999999999'] }).expect(400);
+  await agent.put('/api/discovery').send({ ...discovery, languageCodes: ['xx'] }).expect(400);
+  const profile = (await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200)).body.profile;
+  assert.deepEqual(profile.spokenLanguages, ['ru', 'en']);
+  assert.ok(!('discovery' in profile)); assert.ok(!('locationIds' in profile));
+  const current = (await agent.get('/api/me')).body;
+  assert.equal(current.user.locale, 'en');
+  assert.equal(current.draft.revision, saved.revision); // Filters don't invalidate bio proposals.
+  assert.deepEqual(current.discovery, discovery);
+  const stranger = await registered();
+  assert.deepEqual((await stranger.agent.get('/api/me')).body.discovery.locationIds, []);
+  assert.equal((await pool.query("SELECT count(*)::int AS count FROM role_assignments WHERE user_id=$1 AND role_code='member'", [state.user.id])).rows[0].count, 1);
+});
+
+integration('location search supports aliases, hierarchy and Online without crossing countries', async () => {
+  const { agent } = await registered();
+  for (const query of ['Haifa', 'Хайфа', 'חיפה']) {
+    const locations = (await agent.get('/api/locations').query({ q: query }).expect(200)).body.locations;
+    assert.ok(locations.some((location: any) => location.id === 'city:294801' && location.parentId === 'country:IL'));
+  }
+  const telAviv = (await agent.get('/api/locations').query({ q: 'Tel-Aviv' }).expect(200)).body.locations;
+  assert.ok(telAviv.some((location: any) => location.id === 'city:293397'));
+  const israel = (await agent.get('/api/locations').query({ q: 'ישראל' }).expect(200)).body.locations;
+  assert.ok(israel.some((location: any) => location.id === 'country:IL'));
+  const cities = (await agent.get('/api/locations').query({ parentId: 'country:IL' }).expect(200)).body.locations;
+  assert.ok(cities.length); assert.ok(cities.every((location: any) => location.kind === 'city' && location.parentId === 'country:IL'));
+  const online = (await agent.get('/api/locations').query({ ids: 'online' }).expect(200)).body.locations;
+  assert.equal(online[0].parentId, null);
+  await agent.get('/api/locations').query({ ids: 'malformed' }).expect(400);
+});
+
+integration('event discovery combines country descendants or exact cities/Online with event language', async () => {
+  const { eventMatchesDiscovery, saveDiscovery } = await import('../../server/discovery.ts');
+  const { agent, draft, state } = await registered();
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
+  await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
+  const events: Record<string, string> = {};
+  for (const [key, location, language] of [['haifa', 'city:294801', 'ru'], ['telAviv', 'city:293397', 'en'], ['jerusalem', 'city:281184', 'en'], ['amman', 'city:250441', 'en'], ['online', 'online', 'ru'], ['hebrew', 'city:294801', 'he']]) {
+    events[key] = (await pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at,status) VALUES($1,'Test quest',$2,$3,now()+interval '1 day','published') RETURNING id", [state.user.id, location, language])).rows[0].id;
+  }
+  const matches = async () => {
+    const result: Record<string, boolean> = {};
+    for (const [key, id] of Object.entries(events)) result[key] = await eventMatchesDiscovery(pool, state.user.id, id);
+    return result;
+  };
+  assert.ok(Object.values(await matches()).every(value => !value));
+  let prefs = await saveDiscovery(pool, state.user.id, { revision: 0, locationIds: ['country:IL'], languageCodes: ['ru', 'en'] });
+  assert.deepEqual(await matches(), { haifa: true, telAviv: true, jerusalem: true, amman: false, online: false, hebrew: false });
+  prefs = await saveDiscovery(pool, state.user.id, { ...prefs, locationIds: ['city:294801', 'city:293397', 'online'] });
+  assert.deepEqual(await matches(), { haifa: true, telAviv: true, jerusalem: false, amman: false, online: true, hebrew: false });
+  await saveDiscovery(pool, state.user.id, { ...prefs, languageCodes: [] });
+  assert.ok(Object.values(await matches()).every(value => !value));
+  await assert.rejects(pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at) VALUES($1,'Country is a filter','country:IL','en',now())", [state.user.id]), /city or Online/);
+});
+
+integration('permissions enforce ownership, location/event scopes, expiry, revocation and blocked accounts', async () => {
+  const { can } = await import('../../server/permissions.ts');
+  const { agent, draft, state } = await registered();
+  const id = state.user.id;
+  assert.equal(await can(pool, id, 'profile.edit', { type: 'profile', id }), true);
+  assert.equal(await can(pool, id, 'profile.edit', { type: 'profile', id: randomUUID() }), false);
+  assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'online' }), false); // onboarding
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
+  await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
+  // Restrict the test account's member grant to Israel to exercise ancestry.
+  await pool.query("UPDATE role_assignments SET location_id='country:IL' WHERE user_id=$1", [id]);
+  assert.equal(await can(pool, id, 'profile.edit', { type: 'profile', id }), true);
+  assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'city:294801' }), true);
+  assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'city:250441' }), false);
+  assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'online' }), false);
+  assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'city:999999999' }), false);
+  const event = (await pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at) VALUES($1,'Scoped quest','online','en',now()) RETURNING id", [id])).rows[0].id;
+  const grant = (await pool.query("INSERT INTO role_assignments(user_id,role_code,event_id,reason) VALUES($1,'organizer',$2,'Test host') RETURNING id", [id, event])).rows[0].id;
+  assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: event }), true);
+  assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: randomUUID() }), false);
+  assert.equal(await can(pool, id, 'events.group_chat', { type: 'event', id: event }), true);
+  await pool.query("UPDATE role_assignments SET valid_from=now()+interval '1 day' WHERE id=$1", [grant]);
+  assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: event }), false);
+  await pool.query("UPDATE role_assignments SET valid_from=now()-interval '2 days',valid_until=now()-interval '1 day' WHERE id=$1", [grant]);
+  assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: event }), false);
+  await pool.query('UPDATE role_assignments SET valid_until=NULL,revoked_at=now() WHERE id=$1', [grant]);
+  assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: event }), false);
+  await pool.query("UPDATE events SET status='completed' WHERE id=$1", [event]);
+  assert.equal(await can(pool, id, 'events.view', { type: 'event', id: event }), false);
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,event_id,reason) VALUES($1,'participant',$2,'Accepted participant')", [id, event]);
+  assert.equal(await can(pool, id, 'events.view', { type: 'event', id: event }), true);
+  assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: event }), false);
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Explicit admin test')", [id]);
+  assert.equal(await can(pool, id, 'admin', { type: 'global' }), true);
+  assert.equal(await can(pool, id, 'dm.message', { type: 'profile', id }), false);
+  await pool.query("UPDATE users SET status='blocked' WHERE id=$1", [id]);
+  assert.equal(await can(pool, id, 'admin', { type: 'global' }), false);
+  await agent.get('/api/me').expect(403);
+});
+
+integration('budgets are atomic, rolling, retry-safe, rollback-safe and survive overlapping/replaced grants', async () => {
+  const { consumeCapability } = await import('../../server/permissions.ts');
+  const { transaction } = await import('../../server/db.ts');
+  const { agent, draft, state } = await registered();
+  const id = state.user.id;
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
+  await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'member','Overlapping grant')", [id]);
+  await pool.query("UPDATE capability_budgets SET max_uses=1 WHERE user_id=$1 AND capability='events.create'", [id]);
+  const consume = (requestId: string, location = 'online') => transaction(pool, db => consumeCapability(db, id, 'events.create', { type: 'location', id: location }, requestId));
+  const key = randomUUID();
+  await assert.rejects(transaction(pool, async db => { await consumeCapability(db, id, 'events.create', { type: 'location', id: 'online' }, key); throw new Error('Action failed'); }), /Action failed/);
+  const outcomes = await Promise.allSettled([consume(key), consume(randomUUID()), consume(randomUUID())]);
+  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+  const usedKey = (await pool.query("SELECT request_id FROM capability_usage WHERE user_id=$1", [id])).rows[0].request_id;
+  assert.equal(await consume(usedKey), 'replay');
+  await assert.rejects(consume(usedKey, 'city:294801'), (error: any) => error.code === 'REQUEST_CONFLICT');
+  await pool.query("DELETE FROM role_assignments WHERE user_id=$1", [id]);
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'member','Replacement grant')", [id]);
+  await assert.rejects(consume(randomUUID()), (error: any) => error.code === 'BUDGET_EXHAUSTED');
+  await pool.query("UPDATE capability_budgets SET max_uses=2 WHERE user_id=$1 AND capability='events.create'", [id]);
+  assert.equal(await consume(randomUUID()), 'new');
+  await assert.rejects(consume(randomUUID()), (error: any) => error.code === 'BUDGET_EXHAUSTED');
+  await pool.query("UPDATE capability_usage SET used_at=now()-interval '8 days' WHERE user_id=$1", [id]);
+  assert.equal(await consume(randomUUID()), 'new');
+  await pool.query("UPDATE capability_budgets SET max_uses=0 WHERE user_id=$1 AND capability='events.create'", [id]);
+  await assert.rejects(consume(randomUUID()), (error: any) => error.code === 'BUDGET_EXHAUSTED');
+});
+
+integration('demo account creation stays limited while existing sessions can resume', async () => {
+  const target = createApp(pool, { ...loadConfig(), authMode: 'demo', aiMode: 'demo' });
+  const existing = request.agent(target);
+  await existing.post('/api/auth/demo').send({}).expect(200);
+  for (let index = 0; index < 35; index++) await existing.post('/api/auth/demo').send({}).expect(200);
+  for (let index = 0; index < 29; index++) await request(target).post('/api/auth/demo').send({}).expect(200);
+  await request(target).post('/api/auth/demo').send({}).expect(429);
+  await existing.post('/api/auth/demo').send({}).expect(200);
+});
