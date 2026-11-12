@@ -284,6 +284,7 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .source-answers summary { cursor: pointer; }
 .source-answers blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin-inline: 0; padding-left: 15px; border-left: 2px solid #cfb794; color: #77644d; }
 .content-flag { color: #824b4a; background: #efd9d5; border-radius: 2px; padding: 1px 0; text-decoration: underline; text-decoration-color: #b9827e; text-underline-offset: 3px; }
+.chat-topic-change { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); font-size: 11px; margin: 16px 0; }
 ::highlight(questr-explicit) { color: #824b4a; background-color: #efd9d5; text-decoration: underline; text-decoration-color: #b9827e; }
 .content-warning { border: 1px solid #d8b6af; border-inline-start: 3px solid #b78179; background: #f6e9e4; color: #825a53; padding: 14px 16px; font-size: 12px; line-height: 1.7; margin: 14px 0; }
 .content-warning p { margin: 5px 0; overflow-wrap: anywhere; white-space: pre-wrap; }

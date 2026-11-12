@@ -10,11 +10,12 @@ export function demoQuestion(messages: ChatMessage[], bio: string): string {
     [/film|cinema|arthouse|movie/, 'What was the last film you wanted to tell someone about?'],
     [/music|edm|techno|concert/, 'What have you been listening to this week?'],
   ];
+  if (messages.at(-1)?.kind === 'change_topic') return questions.map(([, question]) => question).find(question => !asked.has(question)) ?? 'What kind of company do you enjoy?';
   if (!/^please skip/i.test(last)) for (const [pattern, question] of questions) if (pattern.test(last) && !asked.has(question)) return question;
   return ['What is something you enjoyed doing this week?', 'What happened the last time you did that?', 'What would you like to try with a new friend?'].find(q => !asked.has(q)) ?? 'Which part would you like to tell me more about?';
 }
 export function demoProposal(messages: ChatMessage[], bio: string): ProposalOutput {
-  const answers = messages.filter(m => m.role === 'user' && m.contentReview?.status !== 'blocked' && m.content.trim().split(/\s+/).length > 2 && !/^(please\s+)?(skip\b|ask\b|next question|another question|thanks\b|thank you\b)/i.test(m.content.trim()) && !bio.includes(m.content));
+  const answers = messages.filter(m => m.role === 'user' && m.kind !== 'change_topic' && m.contentReview?.status !== 'blocked' && m.content.trim().split(/\s+/).length > 2 && !/^(please\s+)?(skip\b|ask\b|next question|another question|thanks\b|thank you\b)/i.test(m.content.trim()) && !bio.includes(m.content));
   return {
     introMarkdown: [bio, ...answers.map(m => m.content)].filter(Boolean).join('\n\n'),
     changeSummary: bio ? 'Kept your existing bio and added your new answers. This offline demo does not rewrite prose.' : 'Collected your answers into a draft. This offline demo does not rewrite prose.',

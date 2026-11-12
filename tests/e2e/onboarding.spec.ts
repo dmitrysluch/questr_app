@@ -197,3 +197,28 @@ test('the visual formatting toolbar saves real Markdown', async ({ page }) => {
   const state = await (await page.request.get('/api/me')).json();
   expect(state.draft.introMarkdown).toBe('**Words with weight.**');
 });
+
+test('Change topic asks elsewhere, preserves unsent text, and survives reload without becoming a bio answer', async ({ page }, info) => {
+  await register(page);
+  await markdown(page, 'I like bouldering with friends.');
+  await page.getByRole('tab', { name: 'Ask me questions' }).click();
+  await page.getByRole('button', { name: 'Let’s talk' }).click();
+  await expect(page.getByRole('log')).toContainText('climbing');
+  const answer = page.getByRole('textbox', { name: 'Whatever comes to mind…' });
+  await answer.fill('An unfinished thought I want to keep.');
+  await page.getByRole('button', { name: 'Change topic', exact: true }).click();
+  await expect(page.getByRole('log')).toContainText('You asked to change the topic');
+  await expect(page.locator('.chat-message.assistant').last()).toContainText('coffee');
+  await expect(answer).toHaveValue('An unfinished thought I want to keep.');
+  await noOverflow(page);
+  await page.screenshot({ path: `.artifacts/${info.project.name}-change-topic.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Update my bio' }).click();
+  await expect(page.getByRole('dialog').locator('.proposal-preview')).toHaveText('I like bouldering with friends.');
+  await page.getByRole('button', { name: 'Keep my current bio' }).click();
+  await page.reload();
+  await expect(page.getByRole('log')).toContainText('You asked to change the topic');
+  await expect(page.locator('.chat-message.assistant').last()).toContainText('coffee');
+  const state = await (await page.request.get('/api/me')).json();
+  expect(state.conversation.messages.filter((m: any) => m.kind === 'change_topic')).toHaveLength(1);
+  expect(state.conversation.messages.filter((m: any) => m.role === 'user' && m.kind === 'text')).toHaveLength(0);
+});

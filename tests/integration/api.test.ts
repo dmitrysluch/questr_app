@@ -300,3 +300,29 @@ integration('explicit model-generated proposals are rejected before storage or a
   const state = (await agent.get('/api/me')).body;
   assert.equal(state.proposal, null); assert.equal(state.draft.introMarkdown, saved.introMarkdown);
 });
+
+integration('topic-change retries retain one control event, preserve the bio and never create source material', async () => {
+  let fail = true;
+  const config = { ...loadConfig(), authMode: 'demo' as const, aiMode: 'openrouter' as const, openrouterApiKey: 'test' };
+  const fetcher = (async (_url: string, init: RequestInit) => {
+    const input = JSON.parse(JSON.parse(init.body as string).messages[1].content);
+    if (input.topicChangeRequested && fail) { fail = false; return new Response('{}', { status: 503 }); }
+    return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ question: input.topicChangeRequested ? 'What kind of music do you enjoy?' : 'What do you enjoy about climbing?' }) } }] }));
+  }) as typeof fetch;
+  const { agent, draft } = await registered(createApp(pool, config, new Interviewer(config, fetcher), new ContentReviewer({ ...config, aiMode: 'demo' })));
+  await agent.post('/api/assistant/start').send({ consent: true }).expect(200);
+  const input = { requestId: randomUUID(), action: 'change_topic' };
+  await agent.post('/api/assistant/messages').send(input).expect(503);
+  let state = (await agent.get('/api/me')).body;
+  assert.equal(state.conversation.messages.at(-1).kind, 'change_topic');
+  await agent.post('/api/assistant/messages').send(input).expect(200);
+  await agent.post('/api/assistant/messages').send(input).expect(200);
+  await agent.post('/api/assistant/messages').send({ requestId: input.requestId, content: 'Different content' }).expect(409);
+  await agent.post('/api/assistant/messages').send({ ...input, content: 'Mixed payload' }).expect(400);
+  await agent.post('/api/assistant/proposals').send({}).expect(422);
+  state = (await agent.get('/api/me')).body;
+  assert.equal(state.conversation.messages.length, 3);
+  assert.equal(state.conversation.messages.at(-1).content, 'What kind of music do you enjoy?');
+  assert.equal(state.conversation.messages[1].contentReview, null);
+  assert.equal(state.draft.introMarkdown, draft.introMarkdown);
+});

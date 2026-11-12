@@ -37,17 +37,19 @@ Set these values in your local `.env`, then restart the server (or recreate the 
 ```dotenv
 AI_MODE=openrouter
 OPENROUTER_API_KEY=your-server-side-openrouter-key
-OPENROUTER_MODEL=openai/gpt-6-luna
+OPENROUTER_MODEL=openai/gpt-6.1-terra
+OPENROUTER_REASONING_EFFORT=high
 ```
 
-All model requests go to OpenRouter's Chat Completions endpoint, including models whose IDs start with `openai/`. There are no direct OpenAI API calls. The model is configurable; choose one supporting structured outputs. Requests use JSON Schema and `provider.require_parameters=true`, with `data_collection=deny` for provider routing. This is not a blanket promise about all retention policies. See [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs) and [provider data policies](https://openrouter.ai/docs/guides/routing/provider-selection#requiring-providers-to-comply-with-data-policies).
+All model requests go to OpenRouter's Chat Completions endpoint, including models whose IDs start with `openai/`. There are no direct OpenAI API calls. The model is configurable; choose one supporting structured outputs and reasoning. Requests use JSON Schema, `reasoning: { effort: "high", exclude: true }` by default, and `provider.require_parameters=true`, with `data_collection=deny` for provider routing. The output budget includes room for reasoning; reasoning text is not displayed or persisted. This is not a blanket promise about all retention policies. See [OpenRouter reasoning settings](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens), [structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs), and [provider data policies](https://openrouter.ai/docs/guides/routing/provider-selection#requiring-providers-to-comply-with-data-policies).
 
 The interface explains that OpenRouter forwards the interview to the configured model provider before the user starts. Only the current bio, conversation and interest catalog enter the model context; Telegram details, account IDs and database message IDs do not. An explicit start is required when switching providers. Existing demo answers are retained and become available to the connected interviewer after that consent.
 
 ### Conversation and drafting
 
-- The first question is generated from the existing bio. Every follow-up gets the latest saved bio and complete conversation, so it can pursue a concrete detail rather than follow a questionnaire.
-- The interviewer asks one small, approachable question at a time, explores recent examples, respects skipped topics and corrections, and follows the user's language.
+- The first question is generated using the existing bio, selected interests and a varied starting angle. Every follow-up receives the latest saved bio, interests and complete conversation.
+- The interviewer aims for material useful in a bio: interests, tastes, habits and ways of spending time together. It asks one easy question at a time, avoids demanding recalled episodes or technical details, and moves on when an aspect has enough substance. The full editable prompt is in [`server/interview-prompt.ts`](server/interview-prompt.ts).
+- **Change topic** sends a typed control event, immediately requesting a substantially different area. It preserves unsent textarea text. The event persists through reloads and retries but is excluded from bio sources. Automatic topic changes are guided by the prompt and conversation; they do not require a button press.
 - The editor starts from the existing bio. It may rewrite sentences, weave in answers, reorder passages and improve flow while retaining substantive details and the person's voice. Instructions prohibit invented facts and generic flattering filler.
 - A proposal contains the **complete updated bio**, a brief change summary and source references. It is not appended to the old text. The original bio is saved alongside it for the **Current bio / Proposed bio** comparison, including after a reload.
 - The user can discard or explicitly apply a proposal. Applying checks the draft revision, so an outdated proposal cannot overwrite newer edits. Publishing the profile remains a separate action.
@@ -66,7 +68,7 @@ The interview and drafting prompts prohibit explicitly sexual descriptions, invi
 - A flagged bio stays editable, with the offending passages highlighted in both visual and Markdown modes. Highlighting never modifies the saved Markdown or undo history. An expandable list of exact passages also supports browsers without the CSS Custom Highlight API.
 - Private drafts continue to autosave, including text that needs changes. The server requires an approved content review before **Save my profile**, including direct API requests. Rejection or a provider outage leaves the previously saved profile intact. Generated proposals are checked before being offered for approval.
 - Reviews return exact excerpts; the server validates them against the source and converts them to UTF-16 ranges. Long bios are checked in overlapping chunks. Invalid responses and outages block publication instead of silently approving it.
-- Results are cached by exact text hash, policy version and configured model. Editing the text invalidates the visible highlights and requires another check. Revision checks prevent an old approval from publishing a concurrently edited bio. The migration retires pre-policy pending proposals; original bios and conversation text remain intact.
+- Results are cached by exact text hash, policy version, configured model and reasoning effort. Editing the text invalidates the visible highlights and requires another check. Revision checks prevent an old approval from publishing a concurrently edited bio. The migration retires pre-policy pending proposals; original bios and conversation text remain intact.
 
 The editor discloses that bio validation uses OpenRouter, including for manually written profiles. `AI_MODE=demo` uses only a few explicit test phrases, not a production moderation filter. Model classification can still make mistakes; this POC does not yet include a human appeal workflow.
 
@@ -124,7 +126,7 @@ npm run build
 
 Integration tests create a new, randomly named `questr_test_*` database, apply migrations, test against real PostgreSQL, and remove only that test database afterward. They are skipped unless `TEST_DATABASE_URL` is provided. The connection must have permission to create test databases.
 
-Browser tests cover desktop and mobile registration, source/visual Markdown conversion, custom tags, profile editing and reload, bio comparisons and reviewed interview proposals, concurrent changes, unsafe Markdown rendering, and content highlights/correction in bios and chat. Integration tests also exercise direct publication rejection, review outages, edits during a review, and unsafe generated proposals. They use a running dev server or start one with `AUTH_MODE=demo AI_MODE=demo` so automated runs make no paid model calls. An already-running target must also be in demo mode.
+Browser tests cover desktop and mobile registration, source/visual Markdown conversion, custom tags, profile editing and reload, bio comparisons and reviewed interview proposals, topic changes with unsent text, concurrent changes, unsafe Markdown rendering, and content highlights/correction in bios and chat. Integration tests also exercise direct publication rejection, review outages, edits during a review, unsafe generated proposals, and idempotent topic-change retries. They use a running dev server or start one with `AUTH_MODE=demo AI_MODE=demo` so automated runs make no paid model calls. An already-running target must also be in demo mode.
 
 To run those same browser scenarios against a production Docker build configured in demo mode: `PLAYWRIGHT_BASE_URL=http://localhost:5180 npm run test:e2e`.
 

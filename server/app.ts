@@ -212,7 +212,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       const bioReview = await reviewContent(client, reviewer, draft.introMarkdown);
       // Generate before switching modes. A failed provider request is safely retryable,
       // and a consented upgrade retains answers from the old demo conversation.
-      const question = await interviewer.question(existing?.messages ?? [], draft.introMarkdown, bioReview.status === 'blocked');
+      const question = await interviewer.question(existing?.messages ?? [], draft.introMarkdown, bioReview.status === 'blocked', draft.tags);
       await transactionOnClient(client, async tx => {
         const id = existing?.id ?? (await tx.query('INSERT INTO ai_conversations(user_id,locale,mode) VALUES($1,$2,$3) RETURNING id', [user.id, user.locale, config.aiMode])).rows[0].id;
         await tx.query('UPDATE ai_conversations SET mode=$2,updated_at=now() WHERE id=$1', [id, config.aiMode]);
@@ -233,7 +233,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const userId = currentUser(res).id;
     await lockAssistant(userId, async client => {
       const conversation = await requireConversation(client, userId);
-      const { rows } = await client.query("SELECT id,content FROM ai_messages WHERE conversation_id=$1 AND role='user' AND review_version IS DISTINCT FROM $2 ORDER BY sequence", [conversation.id, reviewer.key]);
+      const { rows } = await client.query("SELECT id,content FROM ai_messages WHERE conversation_id=$1 AND role='user' AND kind='text' AND review_version IS DISTINCT FROM $2 ORDER BY sequence", [conversation.id, reviewer.key]);
       for (const row of rows) {
         const review = await reviewContent(client, reviewer, row.content);
         await client.query('UPDATE ai_messages SET content_review=$2,review_version=$3 WHERE id=$1', [row.id, JSON.stringify(review), reviewer.key]);
@@ -243,18 +243,20 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   });
   app.post('/api/assistant/messages', async (req, res) => {
     const input = messageSchema.parse(req.body);
+    const kind = 'action' in input ? input.action : 'text';
+    const content = 'content' in input ? input.content : '';
     const userId = currentUser(res).id;
     await lockAssistant(userId, async client => {
       const conversation = await requireConversation(client, userId);
       const draft = (await getDraft(client, userId))!;
-      const inserted = await client.query("INSERT INTO ai_messages(conversation_id,role,content,request_id) VALUES($1,'user',$2,$3) ON CONFLICT(conversation_id,request_id) DO NOTHING RETURNING id", [conversation.id, input.content, input.requestId]);
-      const userMessage = inserted.rows[0] ?? (await client.query('SELECT id,content FROM ai_messages WHERE conversation_id=$1 AND request_id=$2', [conversation.id, input.requestId])).rows[0];
-      if (userMessage.content && userMessage.content !== input.content) throw new AppError(409, 'REQUEST_CONFLICT');
+      const inserted = await client.query("INSERT INTO ai_messages(conversation_id,role,content,request_id,kind) VALUES($1,'user',$2,$3,$4) ON CONFLICT(conversation_id,request_id) DO NOTHING RETURNING id,content,kind", [conversation.id, content, input.requestId, kind]);
+      const userMessage = inserted.rows[0] ?? (await client.query('SELECT id,content,kind FROM ai_messages WHERE conversation_id=$1 AND request_id=$2', [conversation.id, input.requestId])).rows[0];
+      if (userMessage.content !== content || userMessage.kind !== kind) throw new AppError(409, 'REQUEST_CONFLICT');
       if ((await client.query('SELECT 1 FROM ai_messages WHERE reply_to=$1', [userMessage.id])).rowCount) return;
-      const review = await reviewContent(client, reviewer, input.content);
-      await client.query('UPDATE ai_messages SET content_review=$2,review_version=$3 WHERE id=$1', [userMessage.id, JSON.stringify(review), reviewer.key]);
+      const review = kind === 'text' ? await reviewContent(client, reviewer, content) : null;
+      if (review) await client.query('UPDATE ai_messages SET content_review=$2,review_version=$3 WHERE id=$1', [userMessage.id, JSON.stringify(review), reviewer.key]);
       const messages = await getMessages(client, conversation.id);
-      const question = await interviewer.question(messages, draft.introMarkdown, review.status === 'blocked');
+      const question = await interviewer.question(messages, draft.introMarkdown, review?.status === 'blocked', draft.tags);
       await client.query("INSERT INTO ai_messages(conversation_id,role,content,reply_to) VALUES($1,'assistant',$2,$3) ON CONFLICT(reply_to) DO NOTHING", [conversation.id, question, userMessage.id]);
       await client.query('UPDATE ai_conversations SET updated_at=now() WHERE id=$1', [conversation.id]);
     });

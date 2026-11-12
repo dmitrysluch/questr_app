@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, LoaderCircle, MessageCircle, Send, ShieldCheck, WandSparkles } from 'lucide-react';
-import type { AppConfig, Conversation, Draft, Proposal } from '../../shared/schema.ts';
+import { ArrowRight, Check, LoaderCircle, MessageCircle, Send, ShieldCheck, Shuffle, WandSparkles } from 'lucide-react';
+import type { AppConfig, Conversation, Draft, Proposal, InterviewInput } from '../../shared/schema.ts';
 import { tags } from '../../shared/catalog.ts';
 import { api, ApiError } from '../api.ts';
 import { errorText, t } from '../i18n.ts';
@@ -22,12 +22,12 @@ interface Props {
 }
 export function Interview({ config, conversation, proposal, hasBio, onBioReview, onConversation, onProposal, flush, onApply }: Props) {
   const [answer, setAnswer] = useState('');
-  const [busy, setBusy] = useState<'start' | 'send' | 'compose' | 'apply' | 'review' | null>(null);
+  const [busy, setBusy] = useState<'start' | 'send' | 'change_topic' | 'compose' | 'apply' | 'review' | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reviewing, setReviewing] = useState(Boolean(proposal));
   const [selectedCodes, setSelectedCodes] = useState<string[]>(proposal?.suggestedTags.map(t => t.code) ?? []);
   const [reviewView, setReviewView] = useState<'proposed' | 'current'>('proposed');
-  const pendingRequest = useRef<{ requestId: string; content: string } | null>(null);
+  const pendingRequest = useRef<{ signature: string; input: InterviewInput } | null>(null);
   const log = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!conversation?.id) return;
@@ -50,14 +50,16 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
       onConversation(result.conversation);
     } catch (e) { setError(e); } finally { setBusy(null); }
   }
-  async function send(content = answer) {
-    if (!content.trim() || busy) return;
-    setBusy('send'); setError(null);
-    if (pendingRequest.current?.content !== content.trim()) pendingRequest.current = { requestId: crypto.randomUUID(), content: content.trim() };
+  async function send(changeTopic = false) {
+    if ((!changeTopic && !answer.trim()) || busy) return;
+    setBusy(changeTopic ? 'change_topic' : 'send'); setError(null);
+    const payload = changeTopic ? { action: 'change_topic' as const } : { content: answer.trim() };
+    const signature = JSON.stringify(payload);
+    if (pendingRequest.current?.signature !== signature) pendingRequest.current = { signature, input: { requestId: crypto.randomUUID(), ...payload } };
     try {
       await flush();
-      const result = await api<{ conversation: Conversation }>('/assistant/messages', { method: 'POST', body: pendingRequest.current });
-      onConversation(result.conversation); setAnswer(''); pendingRequest.current = null;
+      const result = await api<{ conversation: Conversation }>('/assistant/messages', { method: 'POST', body: pendingRequest.current.input });
+      onConversation(result.conversation); if (!changeTopic) setAnswer(''); pendingRequest.current = null;
     } catch (e) {
       setError(e);
       // A failed upstream request may already have saved the answer. Reload its receipt.
@@ -100,12 +102,13 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
     </div> : <>
       <div className="chat-top"><span><span className="status-dot" />{t(config.aiMode === 'demo' ? 'assistant.demo' : 'assistant.connected')}</span><ShieldCheck size={16} /></div>
       <div className="chat-log" ref={log} role="log" aria-live="polite" aria-label={t('assistant.connected')}>
-        {conversation.messages.map(message => <div key={message.id} className={`chat-message ${message.role}`}>
+        {conversation.messages.map(message => message.kind === 'change_topic' ? <p className="chat-topic-change" key={message.id}><Shuffle size={13} />{t('assistant.topicChanged')}</p> : <div key={message.id} className={`chat-message ${message.role}`}>
           <span className="message-name">{t(message.role === 'assistant' ? 'assistant.name' : 'assistant.you')}</span>
           <p dir="auto"><MarkedText text={message.content} spans={message.contentReview?.spans} /></p>
           {message.contentReview?.status === 'blocked' && <span className="message-content-note">{t('content.messageNote')}</span>}
         </div>)}
         {busy === 'send' && <p className="chat-thinking"><LoaderCircle size={14} className="spin" />{t('assistant.thinking')}</p>}
+        {busy === 'change_topic' && <p className="chat-thinking"><LoaderCircle size={14} className="spin" />{t('assistant.changingTopic')}</p>}
         {busy === 'review' && <p className="chat-thinking"><LoaderCircle size={14} className="spin" />{t('content.checkingMessages')}</p>}
       </div>
       {!reviewing && errorBlock}
@@ -115,8 +118,8 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
         <button className="send-button" aria-label={t('assistant.send')} type="submit" disabled={!!busy || !answer.trim()}>{busy === 'send' ? <LoaderCircle size={18} className="spin" /> : <Send size={18} />}</button>
       </form>
       <div className="chat-actions">
-        <button className="text-button subtle" disabled={!!busy} onClick={() => void send(t('assistant.skipMessage'))}>{t('assistant.skip')}</button>
-        <button className="outline-button small" disabled={!!busy || (!hasBio && !conversation.messages.some(m => m.role === 'user'))} onClick={() => void compose()}>
+        <button className="text-button subtle" disabled={!!busy} onClick={() => void send(true)}><Shuffle size={15} />{t('assistant.changeTopic')}</button>
+        <button className="outline-button small" disabled={!!busy || (!hasBio && !conversation.messages.some(m => m.role === 'user' && m.kind !== 'change_topic'))} onClick={() => void compose()}>
           {busy === 'compose' ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={16} />}{t(busy === 'compose' ? 'assistant.structuring' : hasBio ? 'assistant.update' : 'assistant.compose')}
         </button>
       </div>

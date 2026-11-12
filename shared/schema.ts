@@ -31,10 +31,11 @@ export const registerSchema = z.object({
   terms: z.literal(true),
   locale: localeSchema,
 }).strict();
-export const messageSchema = z.object({
+export const messageSchema = z.union([z.object({
   requestId: z.uuid(),
   content: z.string().trim().min(1).max(12000),
-}).strict();
+}).strict(), z.object({ requestId: z.uuid(), action: z.literal('change_topic') }).strict()]);
+export type InterviewInput = z.infer<typeof messageSchema>;
 export const proposalOutputSchema = z.object({
   introMarkdown: z.string().min(1).refine(value => Boolean(value.trim())),
   changeSummary: z.string().trim().min(1).max(1500),
@@ -42,7 +43,7 @@ export const proposalOutputSchema = z.object({
   suggestedTags: z.array(z.object({ code: z.string(), sourceId: z.string() }).strict()).max(12),
 }).strict();
 export type ProposalOutput = z.infer<typeof proposalOutputSchema>;
-export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; contentReview?: ContentReview | null }
+export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; kind?: 'text' | 'change_topic'; contentReview?: ContentReview | null }
 export interface Conversation { id: string; mode: 'demo' | 'openrouter'; messages: ChatMessage[] }
 export interface Proposal {
   id: string;

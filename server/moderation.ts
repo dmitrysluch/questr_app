@@ -29,7 +29,7 @@ export function validateReview(text: string, raw: unknown): ContentReview {
 export class ContentReviewer {
   readonly key: string;
   constructor(private config: Config, private fetcher: typeof fetch = fetch) {
-    this.key = `${contentPolicyVersion}:${config.aiMode}:${config.aiMode === 'demo' ? 'fixtures' : config.openrouterModel}`;
+    this.key = `${contentPolicyVersion}:${config.aiMode}:${config.aiMode === 'demo' ? 'fixtures' : `${config.openrouterModel}:${config.openrouterReasoningEffort}`}`;
   }
   async review(text: string): Promise<ContentReview> {
     if (!text.trim()) return { status: 'approved', spans: [] };
