@@ -13,7 +13,8 @@ export const tagSchema = z.discriminatedUnion('kind', [
 ]);
 export type ProfileTag = z.infer<typeof tagSchema>;
 export const tagKey = (tag: ProfileTag) => tag.kind === 'catalog' ? `catalog:${tag.code}` : `custom:${tag.label.trim().normalize('NFKC').toLocaleLowerCase('en')}`;
-export const selectedTagsSchema = z.array(tagSchema).max(30).refine(items => new Set(items.map(tagKey)).size === items.length, 'Tags must be unique');
+export const maxProfileTags = 30;
+export const selectedTagsSchema = z.array(tagSchema).max(maxProfileTags).refine(items => new Set(items.map(tagKey)).size === items.length, 'Tags must be unique');
 export const draftInputSchema = z.object({
   revision: z.number().int().nonnegative(),
   displayName: z.string().trim().min(2).max(40),

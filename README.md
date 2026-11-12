@@ -4,6 +4,14 @@ A Telegram Mini App POC for an invite-only community built around doing things t
 
 The POC covers registration, avatar selection, emoji tags, a long-form Markdown profile, and an optional **Ask me questions** interview. Profiles are currently visible only to their owner.
 
+## Interface and interests
+
+The character sheet uses a centered layout with a compact step bar. Copy is limited to labels, actions, state and information needed to make a decision. Product vocabulary follows RPGs: a member is a **questr**, their profile is a **character sheet**, and a future shared activity is an **adventure**. For example, “4 questrs signed up for this adventure.” Counts only appear when backed by real data; adventures are outside this POC.
+
+The searchable catalog contains 290 interests across 12 topics, including specific artists, genres, activities and scientific interests. Search supports aliases, accents, punctuation and small typos, with optional topic filters, keyboard navigation and custom tags. Selected tags persist by stable code; existing profiles keep their tags. Catalog definitions and aliases live in `shared/interests.ts`; UI category labels live in `src/locales/en.ts`.
+
+Emoji remain Unicode in storage and are rendered locally on a 16×16 canvas with pixel scaling, including custom tags and AI suggestions. Their appearance follows the device's emoji font. No image service or icon dependency is needed. All fields, search controls and category names are ready for localization; English is the current catalog language.
+
 ## Run locally
 
 Requirements: Node.js 22.12+ and Docker. Commands below use Compose v2. If your machine exposes Compose as `docker-compose`, use that spelling instead.

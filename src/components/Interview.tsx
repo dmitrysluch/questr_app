@@ -6,6 +6,7 @@ import { api, ApiError } from '../api.ts';
 import { errorText, t } from '../i18n.ts';
 import { Markdown } from './Markdown.tsx';
 import { Modal } from './Modal.tsx';
+import { PixelEmoji } from './PixelEmoji.tsx';
 import { MarkedText } from './ContentReview.tsx';
 import type { BioReview } from '../../shared/content-policy.ts';
 
@@ -94,8 +95,6 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
   return <div className="interview">
     {!conversation ? <div className="interview-intro">
       <div className="interview-symbol"><MessageCircle size={28} strokeWidth={1.5} /><span className="pixel-spark small-spark" /></div>
-      <h3>{t('assistant.title')}</h3><p>{t('assistant.description')}</p>
-      <div className="word-promise"><ShieldCheck size={18} /><span>{t('assistant.promise')}</span></div>
       <p className="disclosure">{t(config.aiMode === 'demo' ? 'assistant.demoDisclosure' : 'assistant.disclosure')}</p>
       {errorBlock}
       <button className="pixel-button" onClick={() => void start()} disabled={!!busy}>{busy ? <LoaderCircle className="spin" size={17} /> : <MessageCircle size={17} />}{t('assistant.start')}<ArrowRight size={16} /></button>
@@ -123,7 +122,6 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
           {busy === 'compose' ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={16} />}{t(busy === 'compose' ? 'assistant.structuring' : hasBio ? 'assistant.update' : 'assistant.compose')}
         </button>
       </div>
-      <p className="chat-footnote">{t('assistant.keepTalking')}</p>
       {proposal && !reviewing && <button className="text-button" onClick={() => setReviewing(true)}>{t('proposal.title')}<ArrowRight size={14} /></button>}
     </>}
     {reviewing && proposal && <Modal title={t('proposal.title')} wide onClose={() => { if (!busy) setReviewing(false); }}>
@@ -141,7 +139,7 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
           const tag = tags.find(t => t.code === suggestion.code)!;
           const selected = selectedCodes.includes(tag.code);
           return <button key={tag.code} className={`tag-pill tag-choice ${selected ? 'selected' : ''}`} aria-pressed={selected} disabled={!!busy}
-            onClick={() => setSelectedCodes(codes => selected ? codes.filter(c => c !== tag.code) : [...codes, tag.code])}><span>{tag.emoji}</span>{tag.label}{selected && <Check size={13} />}</button>;
+            onClick={() => setSelectedCodes(codes => selected ? codes.filter(c => c !== tag.code) : [...codes, tag.code])}><PixelEmoji emoji={tag.emoji} />{tag.label}{selected && <Check size={13} />}</button>;
         })}
       </div></div>}
       <details className="source-answers"><summary>{t('proposal.sources')}</summary>
