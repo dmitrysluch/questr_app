@@ -76,6 +76,15 @@ test('both the first question and follow-ups are generated from current bio and 
   assert.equal(await assistant.question(messages, 'Updated bio about climbing.'), 'Did you find a way past that move?');
   assert.equal(calls, 2);
 });
+test('a Russian interface gives the interviewer a Russian opening language', async () => {
+  const fetcher = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(init.body as string);
+    assert.match(body.messages[0].content, /interfaceLocale/);
+    assert.equal(JSON.parse(body.messages[1].content).interfaceLocale, 'ru');
+    return response({ question: 'Что тебе интересно сейчас?' });
+  }) as typeof fetch;
+  assert.equal(await new Interviewer(config(), fetcher).question([], '', false, [], 'ru'), 'Что тебе интересно сейчас?');
+});
 test('draft generation receives the bio, permits rewriting, and maps opaque evidence IDs back', async () => {
   const fetcher = (async (_url: string, init: RequestInit) => {
     const body = JSON.parse(init.body as string);

@@ -4,6 +4,7 @@ import { Adventures } from './events.ts';
 import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
 import { eventCalendar } from './event-calendar.ts';
+import { preferredLocale } from '../shared/locale.ts';
 
 export function eventRoutes(events: Adventures, config: Config) {
   const router = Router();
@@ -15,7 +16,7 @@ export function eventRoutes(events: Adventures, config: Config) {
   router.post('/', async (req, res) => res.status(201).json({ event: await events.create(res.locals.user.id, req.body) }));
   router.get('/:id', async (req, res) => res.json({ event: await events.detail(res.locals.user.id, id(req.params.id)) }));
   router.get('/:id/calendar.ics', async (req, res) => {
-    const calendar = eventCalendar(await events.detail(res.locals.user.id, id(req.params.id)));
+    const calendar = eventCalendar(await events.detail(res.locals.user.id, id(req.params.id)), preferredLocale(res.locals.user.locale));
     res.type('text/calendar; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="questr-adventure.ics"');
     res.send(calendar);

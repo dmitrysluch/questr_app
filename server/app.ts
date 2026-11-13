@@ -6,13 +6,14 @@ import { z, ZodError } from 'zod';
 import type { Pool, PoolClient } from 'pg';
 import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
-import { createSession, demoInvite, findUser, hash, sessionToken, setSession, verifyTelegramInitData } from './auth.ts';
+import { createSession, demoInvite, findUser, hash, sessionToken, setSession, verifyTelegramUser } from './auth.ts';
 import { transaction, transactionOnClient } from './db.ts';
 import { Interviewer } from './assistant.ts';
 import { ContentReviewer, reviewContent, storedReview } from './moderation.ts';
 import { getConversation, getDraft, getMessages, getProfile, getProposal, mapDraft, mapProposal } from './store.ts';
 import { aiConsentVersion, termsVersion } from '../shared/catalog.ts';
 import { draftInputSchema, messageSchema, registerSchema, tagKey, selectedTagsSchema, type ProfileTag } from '../shared/schema.ts';
+import { preferredLocale } from '../shared/locale.ts';
 import { locationIdSchema } from '../shared/discovery.ts';
 import { getDiscovery, saveDiscovery, searchLocations } from './discovery.ts';
 import { grantMember, requireCapability } from './permissions.ts';
@@ -63,18 +64,20 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
 
   app.post('/api/auth/demo', async (req, res) => {
     if (config.authMode !== 'demo') throw new AppError(404, 'NOT_FOUND');
+    const { browserLanguage } = z.object({ browserLanguage: z.string().max(64).optional() }).strict().parse(req.body);
     let user = await findUser(req, pool);
     if (!user) {
       // Resuming a valid local session does not create an account. Keep the
       // creation limit for anonymous browsers without charging every reload.
       throttle(`auth:${req.ip}`, 30);
       const created = await transaction(pool, async client => {
-        const { rows } = await client.query('INSERT INTO users DEFAULT VALUES RETURNING id,status,locale');
+        const { rows } = await client.query('INSERT INTO users(locale) VALUES($1) RETURNING id,status,locale', [preferredLocale(browserLanguage)]);
         return { user: rows[0], token: await createSession(rows[0].id, client) };
       });
       user = created.user;
       setSession(res, created.token, config);
     }
+    if (browserLanguage) await pool.query("UPDATE users SET locale=$2 WHERE id=$1 AND locale_source='auto' AND locale<>$2", [user!.id, preferredLocale(browserLanguage)]);
     if (user!.status === 'pending_invite') {
       await pool.query("INSERT INTO invites(token_hash,expires_at) VALUES($1,now()+interval '7 days') ON CONFLICT(token_hash) DO NOTHING", [hash(demoInvite(user!.id))]);
     }
@@ -83,17 +86,20 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   app.post('/api/auth/telegram', async (req, res) => {
     if (config.authMode !== 'telegram') throw new AppError(404, 'NOT_FOUND');
     throttle(`auth:${req.ip}`, 30);
-    const { initData } = z.object({ initData: z.string().max(20000) }).strict().parse(req.body);
-    const telegramId = verifyTelegramInitData(initData, config.botToken);
+    const { initData, browserLanguage } = z.object({ initData: z.string().max(20000), browserLanguage: z.string().max(64).optional() }).strict().parse(req.body);
+    const telegramUser = verifyTelegramUser(initData, config.botToken);
+    const telegramId = telegramUser.id;
+    const automaticLocale = preferredLocale(telegramUser.languageCode ?? browserLanguage);
     const token = await transaction(pool, async client => {
       await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [telegramId]);
       const existing = await client.query('SELECT u.id,u.status FROM telegram_accounts t JOIN users u ON u.id=t.user_id WHERE telegram_user_id=$1', [telegramId]);
       let user = existing.rows[0];
       if (user?.status === 'blocked') throw new AppError(403, 'ACCOUNT_BLOCKED');
       if (!user) {
-        user = (await client.query('INSERT INTO users DEFAULT VALUES RETURNING id')).rows[0];
+        user = (await client.query('INSERT INTO users(locale) VALUES($1) RETURNING id', [automaticLocale])).rows[0];
         await client.query('INSERT INTO telegram_accounts(user_id,telegram_user_id) VALUES($1,$2)', [user.id, telegramId]);
       }
+      await client.query("UPDATE users SET locale=$2 WHERE id=$1 AND locale_source='auto' AND locale<>$2", [user.id, automaticLocale]);
       return createSession(user.id, client);
     });
     setSession(res, token, config);
@@ -102,7 +108,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   app.post('/api/telegram/webhook', async (req, res) => {
     const provided = req.get('X-Telegram-Bot-Api-Secret-Token') ?? '';
     if (!config.webhookSecret || Buffer.byteLength(provided) !== Buffer.byteLength(config.webhookSecret) || !timingSafeEqual(Buffer.from(provided), Buffer.from(config.webhookSecret))) throw new AppError(401, 'INVALID_TELEGRAM_AUTH');
-    const update = z.object({ update_id: z.number().int(), message: z.object({ text: z.string().max(20000).optional(), message_thread_id: z.number().int().optional(), chat: z.object({ id: z.number().int(), type: z.string() }).optional(), from: z.object({ id: z.number().int() }).optional() }).optional() }).parse(req.body);
+    const update = z.object({ update_id: z.number().int(), message: z.object({ text: z.string().max(20000).optional(), message_thread_id: z.number().int().optional(), chat: z.object({ id: z.number().int(), type: z.string() }).optional(), from: z.object({ id: z.number().int(), language_code: z.string().max(64).optional() }).optional() }).optional() }).parse(req.body);
     await transaction(pool, async client => {
       const inserted = await client.query('INSERT INTO bot_updates(update_id) VALUES($1) ON CONFLICT DO NOTHING RETURNING update_id', [update.update_id]);
       if (!inserted.rowCount || !update.message?.from || (update.message.chat && (update.message.chat.type !== 'private' || update.message.chat.id !== update.message.from.id))) return;
@@ -111,9 +117,10 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
         await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [telegramId]);
         const account = await client.query('SELECT user_id FROM telegram_accounts WHERE telegram_user_id=$1', [telegramId]);
         if (!account.rowCount) {
-          const { rows } = await client.query('INSERT INTO users DEFAULT VALUES RETURNING id');
+          const { rows } = await client.query('INSERT INTO users(locale) VALUES($1) RETURNING id', [preferredLocale(update.message.from.language_code)]);
           await client.query('INSERT INTO telegram_accounts(user_id,telegram_user_id) VALUES($1,$2)', [rows[0].id, telegramId]);
         }
+        if (update.message.from.language_code) await client.query("UPDATE users SET locale=$2 WHERE id=(SELECT user_id FROM telegram_accounts WHERE telegram_user_id=$1) AND locale_source='auto'", [telegramId, preferredLocale(update.message.from.language_code)]);
         await client.query('UPDATE telegram_accounts SET bot_started_at=COALESCE(bot_started_at,now()) WHERE telegram_user_id=$1', [update.message.from.id]);
       }
       if (update.message.chat && update.message.text) {
@@ -144,6 +151,11 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const ready = conversation?.mode === config.aiMode && !!consent.rowCount;
     const review = draft ? await storedReview(pool, reviewer, draft.introMarkdown) : null;
     res.json({ user, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
+  });
+  app.put('/api/locale', async (req, res) => {
+    const { locale } = z.object({ locale: z.enum(['en', 'ru']) }).strict().parse(req.body);
+    await pool.query("UPDATE users SET locale=$2,locale_source='manual',updated_at=now() WHERE id=$1", [currentUser(res).id, locale]);
+    res.json({ locale });
   });
   app.post('/api/register', async (req, res) => {
     const user = currentUser(res);
@@ -263,7 +275,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       const bioReview = await reviewContent(client, reviewer, draft.introMarkdown);
       // Generate before switching modes. A failed provider request is safely retryable,
       // and a consented upgrade retains answers from the old demo conversation.
-      const question = await interviewer.question(existing?.messages ?? [], draft.introMarkdown, bioReview.status === 'blocked', draft.tags);
+      const question = await interviewer.question(existing?.messages ?? [], draft.introMarkdown, bioReview.status === 'blocked', draft.tags, preferredLocale(currentUser(res).locale));
       await transactionOnClient(client, async tx => {
         const id = existing?.id ?? (await tx.query('INSERT INTO ai_conversations(user_id,locale,mode) VALUES($1,$2,$3) RETURNING id', [user.id, user.locale, config.aiMode])).rows[0].id;
         await tx.query('UPDATE ai_conversations SET mode=$2,updated_at=now() WHERE id=$1', [id, config.aiMode]);
@@ -307,7 +319,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       const review = kind === 'text' ? await reviewContent(client, reviewer, content) : null;
       if (review) await client.query('UPDATE ai_messages SET content_review=$2,review_version=$3 WHERE id=$1', [userMessage.id, JSON.stringify(review), reviewer.key]);
       const messages = await getMessages(client, conversation.id);
-      const question = await interviewer.question(messages, draft.introMarkdown, review?.status === 'blocked', draft.tags);
+      const question = await interviewer.question(messages, draft.introMarkdown, review?.status === 'blocked', draft.tags, preferredLocale(currentUser(res).locale));
       await client.query("INSERT INTO ai_messages(conversation_id,role,content,reply_to) VALUES($1,'assistant',$2,$3) ON CONFLICT(reply_to) DO NOTHING", [conversation.id, question, userMessage.id]);
       await client.query('UPDATE ai_conversations SET updated_at=now() WHERE id=$1', [conversation.id]);
     });
@@ -319,7 +331,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const result = await lockAssistant(userId, async client => {
       const conversation = await requireConversation(client, userId);
       const draft = (await getDraft(client, userId))!;
-      const proposal = await interviewer.proposal(conversation.messages, draft.introMarkdown);
+      const proposal = await interviewer.proposal(conversation.messages, draft.introMarkdown, preferredLocale(currentUser(res).locale));
       if ((await reviewContent(client, reviewer, proposal.introMarkdown)).status === 'blocked') throw new AppError(422, 'ASSISTANT_DRAFT_REJECTED');
       return transactionOnClient(client, async tx => {
         await tx.query("UPDATE ai_proposals SET status='rejected',updated_at=now() WHERE user_id=$1 AND status='pending'", [userId]);

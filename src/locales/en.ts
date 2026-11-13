@@ -311,4 +311,8 @@ export const en = {
   'error.REQUEST_TOO_LARGE': 'This request is larger than the server can accept. Your unsaved text is still in the editor.',
   'error.SERVER_ERROR': 'Something went wrong. Your unsaved text is still here. Please try again.',
   'error.NETWORK_ERROR': 'Could not reach QUESTR. Check your connection and try again.',
+  'ui.language': 'Interface language',
+  'events.platformPlaceholder': 'Zoom, Google Meet, Discord…',
+  'events.costPlaceholder': 'Free / about ₪30',
+  'events.experiencePlaceholder': 'Beginners welcome',
 } as const;

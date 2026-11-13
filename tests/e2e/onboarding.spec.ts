@@ -263,6 +263,7 @@ test('interest search supports niche aliases, keyboard selection, filters, remov
   await register(page);
   await expect(page.locator('aside')).toHaveCount(0);
   const search = page.getByRole('combobox', { name: 'Search interests' });
+  const options = page.getByRole('listbox', { name: 'Matching interests' }).getByRole('option');
   await search.fill('shor');
   await search.press('ArrowDown');
   await expect(search).toHaveAttribute('aria-activedescendant', /shors_algorithm/);
@@ -275,7 +276,7 @@ test('interest search supports niche aliases, keyboard selection, filters, remov
   await search.fill('pole');
   await page.getByRole('option', { name: 'Pole dancing', exact: true }).click();
   await search.fill("Shor's algorithm");
-  await expect(page.getByRole('option')).toHaveCount(0);
+  await expect(options).toHaveCount(0);
   await search.press('Escape');
   await expect(search).toHaveAttribute('aria-expanded', 'false');
   await search.click();
@@ -286,11 +287,11 @@ test('interest search supports niche aliases, keyboard selection, filters, remov
   await search.fill('');
   await page.getByRole('button', { name: 'Music', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Music', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('option')).toHaveCount(8);
+  await expect(options).toHaveCount(8);
   await page.getByRole('button', { name: 'Show more' }).click();
-  await expect(page.getByRole('option')).toHaveCount(16);
+  await expect(options).toHaveCount(16);
   await search.fill('shor');
-  await expect(page.getByRole('option')).toHaveCount(0);
+  await expect(options).toHaveCount(0);
   await page.getByRole('button', { name: 'All', exact: true }).click();
   await search.fill('ambient');
   await expect(page.getByRole('option', { name: 'Ambient' })).toBeVisible();

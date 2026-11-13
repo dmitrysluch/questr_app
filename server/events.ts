@@ -6,7 +6,8 @@ import { transaction } from './db.ts';
 import { can, consumeCapability, requireCapability } from './permissions.ts';
 import { ContentReviewer, reviewContent } from './moderation.ts';
 import { getProfile } from './store.ts';
-import { queueBot, notifyMembers } from './event-notifications.ts';
+import { queueBot, notifyMembers, recipientLocale } from './event-notifications.ts';
+import { botText } from './bot-copy.ts';
 
 type Db = Pool | PoolClient;
 const eventProjection = `SELECT e.*,l.name AS location_name,l.kind AS location_kind,l.parent_id,p.name AS country_name,
@@ -168,7 +169,7 @@ export class Adventures {
         await db.query('UPDATE event_reminders SET queued_at=NULL,schedule_id=gen_random_uuid() WHERE event_id=$1', [eventId]);
       }
       await audit(db, eventId, userId, 'updated');
-      await notifyMembers(db, eventId, `event:${eventId}:edit:${row.revision + 1}`, `Adventure updated: ${input.title}. Open QUESTR to check the latest time and meeting details.`, userId);
+      await notifyMembers(db, eventId, `event:${eventId}:edit:${row.revision + 1}`, locale => botText(locale, 'updated', { title: input.title }), userId);
     });
     return this.detail(userId, eventId);
   }
@@ -195,7 +196,7 @@ export class Adventures {
       await db.query("INSERT INTO event_memberships(event_id,user_id,status,application_text) VALUES($1,$2,'pending',$3)", [eventId, userId, input.message]);
       await grantEventRole(db, eventId, userId, 'applicant', userId);
       await audit(db, eventId, userId, 'applied');
-      await queueBot(db, { key: `event:${eventId}:apply:${userId}`, userId: row.created_by, eventId, body: `New application for ${row.title}. Open QUESTR to read it and choose your party.` });
+      await queueBot(db, { key: `event:${eventId}:apply:${userId}`, userId: row.created_by, eventId, body: botText(await recipientLocale(db, row.created_by), 'newApplication', { title: row.title }) });
     });
     return this.detail(userId, eventId);
   }
@@ -221,8 +222,8 @@ export class Adventures {
       }
       await db.query('UPDATE event_memberships SET status=$3,updated_at=now() WHERE event_id=$1 AND user_id=$2', [eventId, targetId, status]);
       await audit(db, eventId, userId, status);
-      await queueBot(db, { key: `event:${eventId}:${status}:${targetId}`, userId: targetId, eventId, body: `${row.title}: ${status === 'accepted' ? 'you are in the party. Open QUESTR for meeting details and the party chat' : status === 'declined' ? 'your application was declined' : 'you are no longer in this party'}.` });
-      if (action === 'leave') await queueBot(db, { key: `event:${eventId}:left:${targetId}`, userId: row.created_by, eventId, body: `A questr left ${row.title}. Open QUESTR for the current party.` });
+      await queueBot(db, { key: `event:${eventId}:${status}:${targetId}`, userId: targetId, eventId, body: botText(await recipientLocale(db, targetId), status === 'accepted' ? 'accepted' : status === 'declined' ? 'declined' : 'removed', { title: row.title }) });
+      if (action === 'leave') await queueBot(db, { key: `event:${eventId}:left:${targetId}`, userId: row.created_by, eventId, body: botText(await recipientLocale(db, row.created_by), 'left', { title: row.title }) });
     });
     return action === 'leave' ? null : this.detail(userId, eventId);
   }
@@ -237,7 +238,7 @@ export class Adventures {
       await db.query('UPDATE events SET status=$2,revision=revision+1,updated_at=now() WHERE id=$1', [eventId, status]);
       await db.query("DELETE FROM bot_outbox WHERE event_id=$1 AND kind='reminder' AND state='pending'", [eventId]);
       await audit(db, eventId, userId, status);
-      await notifyMembers(db, eventId, `event:${eventId}:${status}`, `${row.title} was ${status}. The party chat is now closed; previous messages remain in your bot topic.`);
+      await notifyMembers(db, eventId, `event:${eventId}:${status}`, locale => botText(locale, status, { title: row.title }));
     });
     return this.detail(userId, eventId);
   }

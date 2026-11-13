@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { verifyTelegramInitData } from '../server/auth.ts';
+import { verifyTelegramInitData, verifyTelegramUser } from '../server/auth.ts';
 
 const token = 'test-only-bot-token';
 const now = 1794427200000;
@@ -14,6 +14,9 @@ function signed(fields: Record<string, string>) {
 const valid = () => ({ auth_date: String(now / 1000), user: JSON.stringify({ id: 555444333222, first_name: 'Private', username: 'never_public' }), query_id: 'test-query' });
 test('Telegram signed identity is verified without exposing the rest of the user object', () => {
   assert.equal(verifyTelegramInitData(signed(valid()), token, now), '555444333222');
+  const russian = signed({ ...valid(), user: JSON.stringify({ id: 555444333222, language_code: 'ru-RU' }) });
+  assert.deepEqual(verifyTelegramUser(russian, token, now), { id: '555444333222', languageCode: 'ru-RU' });
+  assert.throws(() => verifyTelegramUser(russian.replace('ru-RU', 'en-US'), token, now));
 });
 test('Telegram authentication rejects tampering, duplicate parameters, wrong token and malformed signatures', () => {
   const raw = signed(valid());

@@ -7,9 +7,28 @@ import {
   tablePlugin, codeBlockPlugin, codeMirrorPlugin, defaultSvgIcons,
 } from '@mdxeditor/editor';
 import '@mdxeditor/editor/style.css';
-import { t } from '../i18n.ts';
+import { getLocale, t } from '../i18n.ts';
 import { useContentHighlights } from './ContentReview.tsx';
 import type { ContentSpan } from '../../shared/content-policy.ts';
+
+const editorRu: Record<string, string> = {
+  'toolbar.undo': 'Отменить {{shortcut}}', 'toolbar.redo': 'Повторить {{shortcut}}',
+  'toolbar.bold': 'Жирный', 'toolbar.removeBold': 'Убрать жирный',
+  'toolbar.italic': 'Курсив', 'toolbar.removeItalic': 'Убрать курсив',
+  'toolbar.bulletedList': 'Маркированный список', 'toolbar.numberedList': 'Нумерованный список',
+  'toolbar.link': 'Добавить ссылку', 'toolbar.blockTypes.paragraph': 'Абзац',
+  'toolbar.blockTypes.quote': 'Цитата', 'toolbar.blockTypes.heading': 'Заголовок {{level}}',
+  'toolbar.blockTypeSelect.selectBlockTypeTooltip': 'Выбрать тип блока',
+  'toolbar.blockTypeSelect.placeholder': 'Тип блока',
+  'createLink.urlPlaceholder': 'Выбери или вставь ссылку',
+  'createLink.textTooltip': 'Текст, который будет показан вместо ссылки',
+  'createLink.text': 'Текст ссылки', 'createLink.titleTooltip': 'Подсказка при наведении',
+  'createLink.title': 'Заголовок ссылки', 'createLink.saveTooltip': 'Сохранить ссылку',
+  'createLink.cancelTooltip': 'Отменить изменение', 'dialogControls.save': 'Сохранить',
+  'dialogControls.cancel': 'Отмена', 'linkPreview.open': 'Открыть {{url}} в новом окне',
+  'linkPreview.edit': 'Изменить ссылку', 'linkPreview.copyToClipboard': 'Копировать',
+  'linkPreview.copied': 'Скопировано', 'linkPreview.remove': 'Убрать ссылку',
+};
 
 export default function BioEditor({ value, onChange, flagged = [] }: { value: string; onChange: (value: string) => void; flagged?: ContentSpan[] }) {
   const container = useRef<HTMLDivElement>(null);
@@ -22,7 +41,10 @@ export default function BioEditor({ value, onChange, flagged = [] }: { value: st
   }, [value]);
   return <div className="bio-editor" data-testid="bio-editor" ref={container}>
     <MDXEditor ref={ref} markdown={value} suppressHtmlProcessing trim={false}
-      translation={(key, fallback, values) => key === 'toolbar.richText' ? t('editor.visual') : key === 'toolbar.source' ? t('editor.markdown') : fallback.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''))}
+      translation={(key, fallback, values) => {
+        const message = key === 'toolbar.richText' ? t('editor.visual') : key === 'toolbar.source' ? t('editor.markdown') : getLocale() === 'ru' ? editorRu[key] ?? fallback : fallback;
+        return message.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
+      }}
       iconComponentFor={name => name === 'rich_text' ? <span className="editor-mode-label">{t('editor.visual')}</span> : name === 'markdown' ? <span className="editor-mode-label">{t('editor.markdown')}</span> : defaultSvgIcons[name]}
       contentEditableClassName="prose editor-content" placeholder={t('bio.editorPlaceholder')}
       onError={() => setError(true)}

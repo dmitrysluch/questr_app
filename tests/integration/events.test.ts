@@ -121,9 +121,11 @@ integration('calendar exports only authorized meeting points and Telegram remind
   await guest.agent.put(`/api/events/${event.id}/reminder`).send({ minutesBefore: 60 }).expect(403);
   await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200);
   assert.equal((await guest.agent.get(`/api/events/${event.id}`)).body.event.meetingMapUrl, 'https://maps.app.goo.gl/abc123');
+  await guest.agent.put('/api/locale').send({ locale: 'ru' }).expect(200);
   const partyCalendar = (await guest.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text;
   assert.ok(partyCalendar.includes('SECRET'));
   assert.ok(partyCalendar.includes('maps.app.goo.gl/abc123'));
+  assert.ok(partyCalendar.includes('Вылазка начнётся через час'));
   assert.ok(!(await stranger.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text.includes('SECRET'));
   await guest.agent.put(`/api/events/${event.id}/reminder`).send({ minutesBefore: 60 }).expect(200);
   assert.equal((await guest.agent.get(`/api/events/${event.id}`)).body.event.reminderMinutes, 60);
@@ -131,6 +133,7 @@ integration('calendar exports only authorized meeting points and Telegram remind
   const bot = new EventBot(pool, config, (async () => Response.json({ ok: true, result: { message_id: 1 } })) as typeof fetch);
   await bot.reminders();
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM bot_outbox WHERE kind='reminder' AND user_id=$1 AND event_id=$2", [guest.id, event.id])).rows[0].n, 1);
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE kind='reminder' AND user_id=$1 AND event_id=$2", [guest.id, event.id])).rows[0].body, /Напоминание/);
   await guest.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
   while (await bot.outbox()) { /* Drain queued notifications and the revoked reminder. */ }
   assert.equal((await pool.query("SELECT state FROM bot_outbox WHERE kind='reminder' AND user_id=$1 AND event_id=$2", [guest.id, event.id])).rows[0].state, 'discarded');

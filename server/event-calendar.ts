@@ -1,4 +1,5 @@
 import type { AdventureDetail } from '../shared/events.ts';
+import type { Locale } from '../shared/locale.ts';
 
 function escaped(value: string) {
   return value.replaceAll('\\', '\\\\').replaceAll('\r\n', '\n').replaceAll('\r', '\n')
@@ -15,18 +16,19 @@ function fold(line: string) {
   return lines.join('\r\n');
 }
 const utc = (value: string) => new Date(value).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-export function eventCalendar(event: AdventureDetail): string {
-  const location = event.meetingDetails && event.location.kind === 'city' ? event.meetingDetails : event.location.name;
+export function eventCalendar(event: AdventureDetail, locale: Locale = 'en'): string {
+  const russian = locale === 'ru';
+  const location = event.meetingDetails && event.location.kind === 'city' ? event.meetingDetails : event.location.kind === 'online' && russian ? 'Онлайн' : event.location.name;
   const description = event.descriptionMarkdown
-    + (event.meetingDetails && event.location.kind === 'online' ? `\n\nCall link: ${event.meetingDetails}` : '')
-    + (event.meetingMapUrl ? `\n\nMap pin: ${event.meetingMapUrl}` : '');
+    + (event.meetingDetails && event.location.kind === 'online' ? `\n\n${russian ? 'Ссылка на звонок' : 'Call link'}: ${event.meetingDetails}` : '')
+    + (event.meetingMapUrl ? `\n\n${russian ? 'Точка на карте' : 'Map pin'}: ${event.meetingMapUrl}` : '');
   const lines = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//QUESTR//Adventures//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'BEGIN:VEVENT', `UID:${event.id}@questr`, `DTSTAMP:${utc(new Date().toISOString())}`,
     `DTSTART:${utc(event.startsAt)}`, `DTEND:${utc(event.endsAt)}`,
     `SUMMARY:${escaped(event.title)}`, `DESCRIPTION:${escaped(description)}`, `LOCATION:${escaped(location)}`,
     ...(event.status === 'cancelled' ? ['STATUS:CANCELLED'] : []),
-    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Adventure starts in one hour', 'TRIGGER:-PT1H', 'END:VALARM',
+    'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${russian ? 'Вылазка начнётся через час' : 'Adventure starts in one hour'}`, 'TRIGGER:-PT1H', 'END:VALARM',
     'END:VEVENT', 'END:VCALENDAR',
   ];
   return `${lines.map(fold).join('\r\n')}\r\n`;

@@ -6,6 +6,7 @@ import { ContentReviewer } from './moderation.ts';
 import { AppError } from './errors.ts';
 import { can } from './permissions.ts';
 import { queueBot } from './event-notifications.ts';
+import { botText } from './bot-copy.ts';
 import { ZodError } from 'zod';
 
 class TelegramError extends Error {
@@ -43,20 +44,22 @@ export class EventBot {
       const row = (await db.query("SELECT * FROM bot_inbox WHERE state='pending' AND available_at<=now() ORDER BY update_id LIMIT 1 FOR UPDATE SKIP LOCKED")).rows[0];
       if (!row) return false;
       const reply = (body: string, eventId?: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, eventId, body, kind: 'reply', inTopic: !!eventId });
+      let locale = 'en';
       try {
-        const user = (await db.query("SELECT status FROM users WHERE id=$1", [row.user_id])).rows[0];
-        if (user?.status !== 'active') { await reply('Open QUESTR and finish your character before joining an adventure.'); }
+        const user = (await db.query("SELECT status,locale FROM users WHERE id=$1", [row.user_id])).rows[0];
+        locale = user?.locale ?? 'en';
+        if (user?.status !== 'active') { await reply(botText(locale, 'finishCharacter')); }
         else if (/^\/start(?:@questr_game)? quest_[a-f0-9]{32}$/.test(row.text)) {
           const raw = row.text.split('quest_')[1];
           const eventId = `${raw.slice(0,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}-${raw.slice(16,20)}-${raw.slice(20)}`;
           const event = await this.adventures.detail(row.user_id, eventId);
-          if (event.canChat) await reply(`${event.title}\n\nMessages in this topic go to the accepted party under your QUESTR name. ${this.config.aiMode === 'openrouter' ? 'Your messages are sent through OpenRouter to check for explicit sexual content before delivery. ' : 'This local demo uses a limited content check. '}Open QUESTR for meeting details.`, eventId);
-          else if (event.myStatus === 'pending') await reply(`${event.title}\n\nYour application is waiting for the host.`, eventId);
-          else if (event.canApply) await reply(`${event.title}\n\nWrite one short text message about this adventure to apply (3–2000 characters, no links or attachments). ${this.config.aiMode === 'openrouter' ? 'Your application is sent through OpenRouter to check for explicit sexual content before the host can read it.' : 'This local demo uses a limited content check without an AI provider.'}`, eventId);
-          else await reply('This adventure is not accepting applications.');
+          if (event.canChat) await reply(botText(locale, this.config.aiMode === 'openrouter' ? 'topicChatLive' : 'topicChatDemo', { title: event.title }), eventId);
+          else if (event.myStatus === 'pending') await reply(botText(locale, 'topicPending', { title: event.title }), eventId);
+          else if (event.canApply) await reply(botText(locale, this.config.aiMode === 'openrouter' ? 'topicApplyLive' : 'topicApplyDemo', { title: event.title }), eventId);
+          else await reply(botText(locale, 'notAccepting'));
         } else if (row.thread_id && !row.text.startsWith('/')) {
           const mapping = (await db.query('SELECT event_id FROM event_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
-          if (!mapping) await reply('Open an adventure in QUESTR and use its bot button to choose a topic.');
+          if (!mapping) await reply(botText(locale, 'chooseTopic'));
           else {
             const event = await this.adventures.detail(row.user_id, mapping.event_id);
             if (event.canChat) {
@@ -73,20 +76,20 @@ export class EventBot {
               });
             } else if (event.canApply) {
               await this.adventures.apply(row.user_id, event.id, { message: row.text });
-              await reply('Application sent. The host will review your character and message.', event.id);
-            } else await reply(event.myStatus === 'pending' ? 'Your application is already waiting for the host.' : 'This party chat is closed to you.', event.id);
+              await reply(botText(locale, 'applicationSent'), event.id);
+            } else await reply(botText(locale, event.myStatus === 'pending' ? 'alreadyPending' : 'chatClosed'), event.id);
           }
-        } else await reply('Open an adventure in QUESTR, then use “Apply in bot” or “Open party chat”. Each adventure has its own private topic here.');
+        } else await reply(botText(locale, 'botHelp'));
         await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
       } catch (error) {
         if (error instanceof ZodError || (error instanceof AppError && error.status < 500)) {
-          const message = error instanceof ZodError ? 'Please write an application of 3–2000 characters.' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'Please keep explicit sexual content out of QUESTR messages. Try a message about the adventure instead.' : error.code === 'APPLICATION_LINK_NOT_ALLOWED' ? 'Please write your first message without links. You can ask the host about the adventure instead.' : error.code === 'MESSAGE_TOO_LONG' ? 'Please keep each message under 3000 characters.' : 'This action is unavailable. Open QUESTR to check the adventure and your application.';
+          const message = botText(locale, error instanceof ZodError ? 'applicationLength' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'explicitContent' : error.code === 'APPLICATION_LINK_NOT_ALLOWED' ? 'noLinks' : error.code === 'MESSAGE_TOO_LONG' ? 'messageLength' : 'unavailable');
           await reply(message);
           await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
         } else {
           const terminal = row.attempts >= 2;
           await db.query("UPDATE bot_inbox SET state=$2,attempts=attempts+1,available_at=now()+interval '30 seconds' WHERE update_id=$1", [row.update_id, terminal ? 'failed' : 'pending']);
-          if (terminal) await reply('Your message could not be processed. Please try again in a moment.');
+          if (terminal) await reply(botText(locale, 'processingFailed'));
         }
       }
       return true;
@@ -94,14 +97,14 @@ export class EventBot {
   }
   async reminders(): Promise<boolean> {
     return transaction(this.pool, async db => {
-      const row = (await db.query(`SELECT r.*,e.title,e.starts_at,e.time_zone,e.status FROM event_reminders r JOIN events e ON e.id=r.event_id
+      const row = (await db.query(`SELECT r.*,e.title,e.starts_at,e.time_zone,e.status,u.locale FROM event_reminders r JOIN events e ON e.id=r.event_id JOIN users u ON u.id=r.user_id
         WHERE r.queued_at IS NULL AND e.starts_at-make_interval(mins=>r.minutes_before)<=now()
         ORDER BY e.starts_at LIMIT 1 FOR UPDATE OF r SKIP LOCKED`)).rows[0];
       if (!row) return false;
       if (row.status === 'published' && row.starts_at.getTime() > Date.now() && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id })) {
-        const localStart = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short', timeZone: row.time_zone }).format(row.starts_at);
+        const localStart = new Intl.DateTimeFormat(row.locale, { dateStyle: 'medium', timeStyle: 'short', timeZone: row.time_zone }).format(row.starts_at);
         await queueBot(db, { key: `reminder:${row.schedule_id}`, userId: row.user_id, eventId: row.event_id,
-          kind: 'reminder', body: `Reminder: ${row.title} starts ${localStart} (${row.time_zone}). Open QUESTR for the latest meeting details.` });
+          kind: 'reminder', body: botText(row.locale, 'reminder', { title: row.title, time: localStart, zone: row.time_zone }) });
       }
       await db.query('UPDATE event_reminders SET queued_at=now() WHERE event_id=$1 AND user_id=$2', [row.event_id, row.user_id]);
       return true;
@@ -111,7 +114,7 @@ export class EventBot {
     return transaction(this.pool, async db => {
       const row = (await db.query("SELECT * FROM bot_outbox WHERE state='pending' AND available_at<=now() ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED")).rows[0];
       if (!row) return false;
-      const account = (await db.query("SELECT t.telegram_user_id FROM telegram_accounts t JOIN users u ON u.id=t.user_id WHERE t.user_id=$1 AND t.bot_started_at IS NOT NULL AND u.status<>'blocked'", [row.user_id])).rows[0];
+      const account = (await db.query("SELECT t.telegram_user_id,u.locale FROM telegram_accounts t JOIN users u ON u.id=t.user_id WHERE t.user_id=$1 AND t.bot_started_at IS NOT NULL AND u.status<>'blocked'", [row.user_id])).rows[0];
       let allowed = !!account;
       if (row.event_id) {
         await db.query('SELECT id FROM events WHERE id=$1 FOR SHARE', [row.event_id]);
@@ -127,7 +130,7 @@ export class EventBot {
       try {
         const thread = row.in_topic && row.event_id ? await this.topic(db, row.user_id, row.event_id, account.telegram_user_id) : undefined;
         const url = this.config.publicAppUrl;
-        const keyboard = url && url.startsWith('https://') ? { inline_keyboard: [[{ text: 'Open QUESTR', web_app: { url: `${url.split('#')[0]}${row.event_id ? `#adventures/${row.event_id}` : ''}` } }]] } : undefined;
+        const keyboard = url && url.startsWith('https://') ? { inline_keyboard: [[{ text: botText(account.locale, 'openButton'), web_app: { url: `${url.split('#')[0]}${row.event_id ? `#adventures/${row.event_id}` : ''}` } }]] } : undefined;
         const sent = await this.call('sendMessage', { chat_id: account.telegram_user_id, message_thread_id: thread, text: row.body, link_preview_options: { is_disabled: true }, reply_markup: keyboard });
         await db.query("UPDATE bot_outbox SET state='sent',attempts=attempts+1,telegram_message_id=$2 WHERE id=$1", [row.id, sent.message_id]);
       } catch (error) {

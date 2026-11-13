@@ -2,23 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import { Globe2, Languages, Check } from 'lucide-react';
 import { languages, normalizeSearch, type DiscoveryPreferences, type Location } from '../../shared/discovery.ts';
 import { api, ApiError } from '../api.ts';
-import { errorText, t } from '../i18n.ts';
+import { errorText, getLocale, languageName, locationName, t } from '../i18n.ts';
 import { SelectionPicker, type Choice } from './SelectionPicker.tsx';
 
-const languageChoices = languages.map(language => ({ id: language.code, label: language.label, detail: language.native }));
 export function LanguagePicker({ value, onChange, label }: { value: string[]; onChange: (codes: string[]) => void; label: string }) {
   const [query, setQuery] = useState('');
+  const languageChoices = languages.map(language => ({ id: language.code, label: languageName(language.code), detail: language.native, english: language.label }))
+    .sort((a, b) => a.label.localeCompare(b.label, getLocale()));
   const search = normalizeSearch(query);
-  const items = languageChoices.filter(item => normalizeSearch(`${item.label}${item.detail}${item.id}`).includes(search));
+  const items = languageChoices.filter(item => normalizeSearch(`${item.label}${item.detail}${item.english}${item.id}`).includes(search));
   return <SelectionPicker label={label} placeholder={t('languages.search')} value={value} onChange={onChange} selected={languageChoices} items={items} query={query} onQuery={setQuery} />;
 }
 export function SpokenLanguages({ codes }: { codes: string[] }) {
   if (!codes.length) return null;
-  return <p className="spoken-languages"><Languages size={15} aria-hidden="true" /><span><span className="sr-only">{t('languages.spoken')}: </span>{codes.map(code => languages.find(language => language.code === code)?.label ?? code).join(' · ')}</span></p>;
+  return <p className="spoken-languages"><Languages size={15} aria-hidden="true" /><span><span className="sr-only">{t('languages.spoken')}: </span>{codes.map(languageName).join(' · ')}</span></p>;
 }
 function locationChoice(location: Location): Choice {
-  return { id: location.id, label: location.kind === 'country' ? t('locations.allCountry', { name: location.name }) : location.name,
-    detail: location.kind === 'city' ? location.countryName : location.kind === 'online' ? t('locations.global') : t('locations.country') };
+  return { id: location.id, label: location.kind === 'country' ? t('locations.allCountry', { name: locationName(location.id, location.name) }) : locationName(location.id, location.name),
+    detail: location.kind === 'city' ? locationName(location.parentId ?? '', location.countryName ?? '') : location.kind === 'online' ? t('locations.global') : t('locations.country') };
 }
 export function LocationPicker({ value, onChange, single = false }: { value: string[]; onChange: (ids: string[]) => void; single?: boolean }) {
   const [query, setQuery] = useState('');

@@ -3,13 +3,14 @@ import { Plus, Search, X } from 'lucide-react';
 import { tags, tagCategories, type TagCategory } from '../../shared/catalog.ts';
 import { searchTags } from '../../shared/tag-search.ts';
 import { maxProfileTags, tagKey, tagSchema, type ProfileTag } from '../../shared/schema.ts';
-import { t } from '../i18n.ts';
+import { getLocale, t, tagName } from '../i18n.ts';
 import { Modal } from './Modal.tsx';
 import { PixelEmoji } from './PixelEmoji.tsx';
 
 export function tagDisplay(tag: ProfileTag) {
   if (tag.kind === 'custom') return { label: tag.label, emoji: tag.emoji };
-  return tags.find(item => item.code === tag.code) ?? { label: tag.code, emoji: '✨' };
+  const item = tags.find(item => item.code === tag.code);
+  return item ? { ...item, label: tagName(item.code, item.label) } : { label: tag.code, emoji: '✨' };
 }
 export function TagPills({ items }: { items: ProfileTag[] }) {
   return <div className="tag-list">{items.map(tag => {
@@ -32,7 +33,7 @@ export function TagPicker({ value, onChange }: { value: ProfileTag[]; onChange: 
   const resultList = useRef<HTMLDivElement>(null);
   const listId = useId();
   const selected = new Set(value.flatMap(tag => tag.kind === 'catalog' ? [tag.code] : []));
-  const matches = searchTags(query, category, selected);
+  const matches = searchTags(query, category, selected, tag => tagName(tag.code, tag.label));
   const results = matches.slice(0, visibleCount);
   const limitReached = value.length >= maxProfileTags;
   const activeOption = open && active >= 0 && active < results.length ? `${listId}-${results[active].code}` : undefined;
@@ -83,9 +84,9 @@ export function TagPicker({ value, onChange }: { value: ProfileTag[]; onChange: 
         </div>
         <div ref={resultList} id={listId} role="listbox" aria-label={t('tags.results')} className="tag-results">
           {results.map((tag, index) => <button type="button" role="option" tabIndex={-1} id={`${listId}-${tag.code}`} key={tag.code} aria-selected={active === index}
-            aria-label={tag.label} aria-disabled={limitReached} className={`tag-result ${active === index ? 'active' : ''}`}
+            aria-label={tagName(tag.code, tag.label)} aria-disabled={limitReached} className={`tag-result ${active === index ? 'active' : ''}`}
             onMouseDown={event => event.preventDefault()} onClick={() => add(tag.code)}>
-            <PixelEmoji emoji={tag.emoji} /><span>{tag.label}</span><small>{t(`tags.category.${tag.category}`)}</small><Plus size={15} aria-hidden="true" />
+            <PixelEmoji emoji={tag.emoji} /><span>{tagName(tag.code, tag.label)}</span><small>{t(`tags.category.${tag.category}`)}</small><Plus size={15} aria-hidden="true" />
           </button>)}
         </div>
         {!results.length && <p className="tag-empty">{t('tags.noResults')}</p>}
@@ -98,7 +99,7 @@ export function TagPicker({ value, onChange }: { value: ProfileTag[]; onChange: 
     {adding && <Modal title={t('bio.customTitle')} onClose={closeCreator}>
       <form onSubmit={event => {
         event.preventDefault();
-        const parsed = tagSchema.safeParse({ kind: 'custom', label, emoji, locale: 'en' });
+        const parsed = tagSchema.safeParse({ kind: 'custom', label, emoji, locale: getLocale() });
         if (!parsed.success || limitReached) { setInvalid(true); return; }
         if (!value.some(tag => tagKey(tag) === tagKey(parsed.data))) onChange([...value, parsed.data]);
         setQuery(''); setActive(-1); closeCreator();

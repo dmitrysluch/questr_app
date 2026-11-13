@@ -6,7 +6,7 @@ import { AppError } from './errors.ts';
 
 export const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 export const demoInvite = (userId: string) => `DEMO-${hash(`questr-local:${userId}`).slice(0, 16).toUpperCase()}`;
-export function verifyTelegramInitData(raw: string, token: string, now = Date.now()): string {
+export function verifyTelegramUser(raw: string, token: string, now = Date.now()): { id: string; languageCode?: string } {
   const data = new URLSearchParams(raw);
   const keys = [...data.keys()];
   if (new Set(keys).size !== keys.length) throw new AppError(401, 'INVALID_TELEGRAM_AUTH');
@@ -19,10 +19,13 @@ export function verifyTelegramInitData(raw: string, token: string, now = Date.no
   if (!timingSafeEqual(expected, Buffer.from(provided, 'hex'))) throw new AppError(401, 'INVALID_TELEGRAM_AUTH');
   const date = Number(data.get('auth_date'));
   if (!Number.isSafeInteger(date) || date <= 0 || now / 1000 - date > 300 || date - now / 1000 > 30) throw new AppError(401, 'EXPIRED_TELEGRAM_AUTH');
-  let user: { id?: unknown };
+  let user: { id?: unknown; language_code?: unknown };
   try { user = JSON.parse(data.get('user') ?? 'null'); } catch { throw new AppError(401, 'INVALID_TELEGRAM_AUTH'); }
   if (!user || typeof user.id !== 'number' || !Number.isSafeInteger(user.id) || user.id <= 0) throw new AppError(401, 'INVALID_TELEGRAM_AUTH');
-  return String(user.id);
+  return { id: String(user.id), languageCode: typeof user.language_code === 'string' ? user.language_code : undefined };
+}
+export function verifyTelegramInitData(raw: string, token: string, now = Date.now()): string {
+  return verifyTelegramUser(raw, token, now).id;
 }
 export function sessionToken(req: Request) {
   return req.headers.cookie?.split(';').map(s => s.trim()).find(s => s.startsWith('questr_session='))?.slice('questr_session='.length);

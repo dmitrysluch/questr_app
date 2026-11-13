@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { avatars, tags } from './catalog.ts';
 import type { BioReview, ContentReview } from './content-policy.ts';
 import { spokenLanguagesSchema, type DiscoveryPreferences } from './discovery.ts';
+import { supportedLocales } from './locale.ts';
 
-export const localeSchema = z.literal('en');
+export const localeSchema = z.enum(supportedLocales);
 const emojiSchema = z.string().min(1).max(32).refine(value => {
   const graphemes = [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(value)];
   return graphemes.length === 1 && /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u.test(value);

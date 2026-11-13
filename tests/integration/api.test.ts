@@ -30,6 +30,17 @@ after(async () => {
   await admin.end();
 });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
+integration('browser language starts the interface, and an explicit choice survives another login', async () => {
+  const agent = request.agent(app);
+  await agent.post('/api/auth/demo').send({ browserLanguage: 'ru-RU' }).expect(200);
+  const initial = (await agent.get('/api/me').expect(200)).body;
+  assert.equal(initial.user.locale, 'ru');
+  await agent.put('/api/locale').send({ locale: 'en' }).expect(200);
+  await agent.post('/api/auth/demo').send({ browserLanguage: 'ru-RU' }).expect(200);
+  assert.equal((await agent.get('/api/me').expect(200)).body.user.locale, 'en');
+  assert.equal((await pool.query('SELECT locale_source FROM users WHERE id=$1', [initial.user.id])).rows[0].locale_source, 'manual');
+  await agent.put('/api/locale').send({ locale: 'de' }).expect(400);
+});
 async function browser(target: Express = app) {
   const agent = request.agent(target);
   const auth = await agent.post('/api/auth/demo').send({}).expect(200);
@@ -144,13 +155,14 @@ integration('signed Telegram login and retried bot starts share one private iden
   for (let i = 0; i < 2; i++) {
     await request(telegramApp).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-webhook-secret').send(update).expect(200);
   }
-  const data = new URLSearchParams({ auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: telegramId, first_name: 'Private Telegram name' }) });
+  const data = new URLSearchParams({ auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: telegramId, first_name: 'Private Telegram name', language_code: 'ru' }) });
   const check = [...data.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join('\n');
   const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
   data.set('hash', createHmac('sha256', secret).update(check).digest('hex'));
   const agent = request.agent(telegramApp);
-  await agent.post('/api/auth/telegram').send({ initData: data.toString() }).expect(200);
+  await agent.post('/api/auth/telegram').send({ initData: data.toString(), browserLanguage: 'en-US' }).expect(200);
   const state = (await agent.get('/api/me').expect(200)).body;
+  assert.equal(state.user.locale, 'ru');
   const account = (await pool.query('SELECT * FROM telegram_accounts WHERE telegram_user_id=$1', [telegramId])).rows;
   assert.equal(account.length, 1);
   assert.equal(account[0].user_id, state.user.id);
@@ -158,6 +170,9 @@ integration('signed Telegram login and retried bot starts share one private iden
   assert.equal((await pool.query('SELECT * FROM bot_updates WHERE update_id=123')).rowCount, 1);
   assert.ok(!JSON.stringify(state).includes(String(telegramId)));
   assert.ok(!JSON.stringify(state).includes('Private Telegram name'));
+  await agent.put('/api/locale').send({ locale: 'en' }).expect(200);
+  await agent.post('/api/auth/telegram').send({ initData: data.toString() }).expect(200);
+  assert.equal((await agent.get('/api/me').expect(200)).body.user.locale, 'en');
   data.set('user', JSON.stringify({ id: telegramId + 1 }));
   await request(telegramApp).post('/api/auth/telegram').send({ initData: data.toString() }).expect(401);
 });

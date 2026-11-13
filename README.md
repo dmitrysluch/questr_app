@@ -131,7 +131,7 @@ The POC retains its local records until its database is removed or records are e
 
 React + TypeScript + Vite, [MDXEditor](https://mdxeditor.dev/editor/docs/getting-started) for visual/source editing, React Markdown for read-only profiles, and original SVG pixel avatars. There are no external font or image dependencies. The Telegram SDK is loaded from Telegram's official host.
 
-UI copy lives in `src/locales/en.ts` and is accessed through `src/i18n.ts`. The editor exposes its own translation callback. English is currently the only supported locale. To add another language, add a message catalog, tag/character labels, an allowed locale, and translated interview/section prompts; user-authored text stays in its original language. Profile text uses automatic text direction and layouts use logical properties where appropriate.
+UI copy lives in `src/locales/en.ts` and `src/locales/ru.ts`, accessed through `src/i18n.ts`. The 290 catalog interests have separate Russian labels; custom tags and user-authored text remain in their original language. The interface starts in the language reported by verified Telegram Mini App data, falling back to the browser language when Telegram omits it; unsupported languages fall back to English. A manual EN/RU choice in the header is saved on the account and takes precedence on later visits. Spoken profile languages and adventure languages do not change the interface language. The editor exposes its own translation callback, and connected interviews open in the interface language before following the person's replies.
 
 ## Verification
 

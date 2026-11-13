@@ -1,0 +1,35 @@
+import { test, expect } from '@playwright/test';
+
+test('Russian interface, catalog search, manual switch and reload', async ({ page }, info) => {
+  await page.goto('/');
+  await page.getByRole('combobox', { name: 'Interface language' }).selectOption('ru');
+  await expect(page.getByRole('heading', { name: 'Создай персонажа' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru');
+  await page.getByRole('textbox', { name: 'Имя', exact: true }).fill('Саша');
+  await page.getByLabel('Мне уже есть 18 лет.').check();
+  await page.getByLabel('Я принимаю правила сообщества.').check();
+  await page.getByRole('button', { name: 'Создать персонажа' }).click();
+  await page.getByRole('button', { name: 'Выбрать Moss' }).click();
+  await page.getByRole('button', { name: 'Продолжить' }).click();
+  const interests = page.getByRole('combobox', { name: 'Поиск интересов' });
+  await interests.fill('алгоритм Шора');
+  await page.getByRole('option', { name: 'Алгоритм Шора' }).click();
+  await expect(page.getByRole('button', { name: 'Убрать Алгоритм Шора' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Создание персонажа' }).getByRole('button', { name: 'Языки и фильтры' }).click();
+  await page.getByRole('combobox', { name: 'Где', exact: true }).fill('Израиль');
+  await page.getByRole('option', { name: /^Вся страна: Израиль/ }).click();
+  await page.getByRole('combobox', { name: 'Языки вылазок' }).fill('русский');
+  await page.getByRole('option', { name: /^Русский/ }).click();
+  await page.getByRole('button', { name: 'Сохранить фильтры' }).click();
+  await expect(page.getByRole('button', { name: 'Сохранить фильтры' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Израиль/ })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `.artifacts/${info.project.name}-russian-onboarding.png`, fullPage: true });
+  await page.getByRole('combobox', { name: 'Язык интерфейса' }).selectOption('en');
+  await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Bio' }).click();
+  await expect(page.getByRole('button', { name: 'Remove Shor’s algorithm' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('combobox', { name: 'Interface language' })).toHaveValue('en');
+  await expect(page.getByRole('button', { name: 'Remove Shor’s algorithm' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en');
+});

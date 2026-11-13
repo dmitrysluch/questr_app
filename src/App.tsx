@@ -2,8 +2,9 @@ import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent } from
 import { ArrowLeft, ArrowRight, Check, CheckCheck, LoaderCircle, LockKeyhole, MessageCircle, PenLine, Shuffle } from 'lucide-react';
 import type { AppConfig, AppState, Draft, Profile } from '../shared/schema.ts';
 import { avatars } from '../shared/catalog.ts';
+import { preferredLocale, type Locale } from '../shared/locale.ts';
 import { api, ApiError } from './api.ts';
-import { errorText, t, type TranslationKey } from './i18n.ts';
+import { errorText, getLocale, setLocale, t, type TranslationKey } from './i18n.ts';
 import { useDraft } from './useDraft.ts';
 import { Character } from './components/Character.tsx';
 import { TagPicker } from './components/Tags.tsx';
@@ -30,6 +31,7 @@ export function App() {
   const [route, setRoute] = useState(location.hash);
   useEffect(() => { const change = () => setRoute(location.hash); window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [locale, setInterfaceLocale] = useState<Locale>(getLocale());
   const [state, setState] = useState<AppState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -49,6 +51,8 @@ export function App() {
   const { draft, edit, replace, flush, saveState, saveError } = useDraft();
   const loadState = useCallback(async () => {
     const next = await api<AppState>('/me');
+    const savedLocale = preferredLocale(next.user.locale);
+    setLocale(savedLocale); setInterfaceLocale(savedLocale);
     setState(next); replace(next.draft);
     setBioReview(next.bioReview);
     setShowProfile(next.user.status === 'active');
@@ -62,7 +66,8 @@ export function App() {
         const next = await api<AppConfig>('/config');
         if (!active) return;
         setConfig(next);
-        if (next.authMode === 'demo') await api('/auth/demo', { method: 'POST', body: {} });
+        const browserLanguage = navigator.languages?.[0] ?? navigator.language;
+        if (next.authMode === 'demo') await api('/auth/demo', { method: 'POST', body: { browserLanguage } });
         else {
           let telegram = window.Telegram?.WebApp;
           // The official SDK is loaded asynchronously; allow a short initial load.
@@ -73,7 +78,7 @@ export function App() {
           if (!telegram?.initData) { setTelegramNeeded(true); return; }
           telegram.ready(); telegram.expand();
           telegram.setHeaderColor?.('#f5f0e7'); telegram.setBackgroundColor?.('#f5f0e7');
-          await api('/auth/telegram', { method: 'POST', body: { initData: telegram.initData } });
+          await api('/auth/telegram', { method: 'POST', body: { initData: telegram.initData, browserLanguage } });
         }
         if (active) await loadState();
       } catch (e) { if (active) setError(e); }
@@ -88,9 +93,17 @@ export function App() {
   async function register(event: FormEvent) {
     event.preventDefault();
     await run(async () => {
-      const result = await api<{ draft: Draft }>('/register', { method: 'POST', body: { displayName: name, invite, adult, terms, locale: 'en' } });
+      const result = await api<{ draft: Draft }>('/register', { method: 'POST', body: { displayName: name, invite, adult, terms, locale } });
       replace(result.draft);
       setState(old => old ? { ...old, user: { ...old.user, status: 'onboarding' }, draft: result.draft } : old);
+    });
+  }
+  async function changeLocale(next: Locale) {
+    if (next === locale) return;
+    await run(async () => {
+      await api('/locale', { method: 'PUT', body: { locale: next } });
+      setLocale(next); setInterfaceLocale(next);
+      setState(old => old ? { ...old, user: { ...old.user, locale: next } } : old);
     });
   }
   async function go(step: Draft['currentStep']) {
@@ -144,7 +157,7 @@ export function App() {
 
   return <div className="app-shell">
     <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR"><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>
-      <div className="header-right">{config?.authMode === 'demo' && <span className="preview-badge">{t('app.demo')}</span>}<button className="text-button" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
+      <div className="header-right">{config?.authMode === 'demo' && <span className="preview-badge">{t('app.demo')}</span>}<select className="locale-switch" aria-label={t('ui.language')} value={locale} disabled={!state || busy} onChange={event => void changeLocale(event.target.value as Locale)}><option value="en">EN</option><option value="ru">RU</option></select><button className="text-button" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
     </header>
     <div className="workspace">
       {draft && !showProfile && !adventuresOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
@@ -204,7 +217,7 @@ export function App() {
               <button role="tab" aria-selected={draft.mode === 'manual'} aria-controls="writing-panel" className={draft.mode === 'manual' ? 'active' : ''} onClick={() => edit({ mode: 'manual' })}><PenLine size={16} />{t('bio.write')}</button>
               <button role="tab" aria-selected={draft.mode === 'interview'} aria-controls="writing-panel" className={draft.mode === 'interview' ? 'active' : ''} onClick={() => edit({ mode: 'interview' })}><MessageCircle size={16} />{t('bio.ask')}<span className="tab-star">✦</span></button>
             </div><div id="writing-panel" role="tabpanel">
-              {draft.mode === 'manual' ? <><Suspense fallback={<div className="editor-loading"><LoaderCircle size={20} className="spin" /></div>}><BioEditor value={draft.introMarkdown} flagged={currentReview?.spans} onChange={introMarkdown => edit({ introMarkdown })} /></Suspense><div className="editor-footer"><span>{t('bio.words', { count: wordCount })}</span></div></> : config && <Interview config={config} conversation={state.conversation} proposal={state.proposal} onBioReview={setBioReview}
+              {draft.mode === 'manual' ? <><Suspense fallback={<div className="editor-loading"><LoaderCircle size={20} className="spin" /></div>}><BioEditor key={locale} value={draft.introMarkdown} flagged={currentReview?.spans} onChange={introMarkdown => edit({ introMarkdown })} /></Suspense><div className="editor-footer"><span>{t('bio.words', { count: wordCount })}</span></div></> : config && <Interview config={config} conversation={state.conversation} proposal={state.proposal} onBioReview={setBioReview}
                 hasBio={Boolean(draft.introMarkdown.trim())} onConversation={conversation => setState(old => old ? { ...old, conversation } : old)} onProposal={proposal => setState(old => old ? { ...old, proposal } : old)} flush={flush}
                 onApply={nextDraft => { replace(nextDraft); edit({ mode: 'manual' }); }} />}
             </div></div>

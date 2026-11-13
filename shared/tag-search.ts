@@ -17,18 +17,19 @@ function nearbyWord(a: string, b: string) {
   return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
 }
 
-export function searchTags(query: string, category?: TagCategory, excluded: ReadonlySet<string> = new Set()): CatalogTag[] {
+export function searchTags(query: string, category?: TagCategory, excluded: ReadonlySet<string> = new Set(), translatedLabel?: (tag: CatalogTag) => string): CatalogTag[] {
   const normalized = normalizeTagSearch(query);
   const words = normalized.split(' ').filter(Boolean);
   const scored = index.flatMap(({ tag, label, aliases }) => {
     if ((category && tag.category !== category) || excluded.has(tag.code)) return [];
-    const fields = [label, ...aliases];
+    const localLabel = translatedLabel ? normalizeTagSearch(translatedLabel(tag)) : label;
+    const fields = [label, localLabel, ...aliases];
     let score = 0;
     if (normalized) {
-      if (label === normalized) score = 100;
+      if (label === normalized || localLabel === normalized) score = 100;
       else if (aliases.includes(normalized)) score = 90;
-      else if (label.startsWith(normalized)) score = 80;
-      else if (label.includes(normalized)) score = 70;
+      else if (label.startsWith(normalized) || localLabel.startsWith(normalized)) score = 80;
+      else if (label.includes(normalized) || localLabel.includes(normalized)) score = 70;
       else if (aliases.some(alias => alias.startsWith(normalized))) score = 60;
       else if (fields.some(field => field.includes(normalized))) score = 50;
       else {
