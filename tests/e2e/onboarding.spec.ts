@@ -41,6 +41,26 @@ async function highlightedText(page: Page) {
   return page.evaluate(() => [...(CSS.highlights.get('questr-explicit') ?? [])].map(range => range.toString()).join('\n'));
 }
 
+test('Ask me topics are optional, capped at three and appear only after saving the character', async ({ page }) => {
+  await register(page);
+  const field = page.getByRole('textbox', { name: 'Conversation topic' });
+  const add = page.getByRole('button', { name: 'Add topic' });
+  for (const topic of ['Ask me how I found the jam', 'Ask me about my climbing puzzle', 'Ask me about my train game']) {
+    await field.fill(topic);
+    await add.click();
+  }
+  await expect(field).toHaveCount(0);
+  await noOverflow(page);
+  await preview(page);
+  await expect(page.locator('.profile-ask-me li')).toHaveCount(3);
+  await noOverflow(page);
+  expect((await (await page.request.get('/api/me')).json()).profile).toBeNull();
+  await page.getByRole('button', { name: 'Save character' }).click();
+  await expect.poll(async () => (await (await page.request.get('/api/me')).json()).profile?.askMeTopics).toEqual([
+    'Ask me how I found the jam', 'Ask me about my climbing puzzle', 'Ask me about my train game',
+  ]);
+});
+
 test('new characters must choose and save both adventure filters before previewing', async ({ page }) => {
   await register(page, false);
   await preview(page);
@@ -170,7 +190,7 @@ test('interview drafts retain the existing bio and support comparison, discard, 
   await expect(dialog.locator('.proposal-preview')).toContainText(first);
   await page.reload();
   await expect(dialog.locator('.proposal-preview')).toContainText('tiny train games');
-  await dialog.getByRole('button', { name: 'Apply draft & tags' }).click();
+  await dialog.getByRole('button', { name: 'Apply selected changes' }).click();
   await expect(page.getByRole('tab', { name: 'Write' })).toHaveAttribute('aria-selected', 'true');
   await preview(page);
   await expect(page.locator('.profile-body')).toContainText(first);

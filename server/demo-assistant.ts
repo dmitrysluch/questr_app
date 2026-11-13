@@ -31,6 +31,6 @@ export function demoProposal(messages: ChatMessage[], bio: string, locale: Local
   return {
     introMarkdown: [bio, ...answers.map(m => m.content)].filter(Boolean).join('\n\n'),
     changeSummary: locale === 'ru' ? bio ? 'Существующее био сохранено, новые ответы добавлены. Офлайн-демо не переписывает текст.' : 'Ответы собраны в черновик. Офлайн-демо не переписывает текст.' : bio ? 'Kept your existing bio and added your new answers. This offline demo does not rewrite prose.' : 'Collected your answers into a draft. This offline demo does not rewrite prose.',
-    sourceIds: [...(bio.trim() ? ['bio'] : []), ...answers.map(m => m.id)], suggestedTags: [],
+    sourceIds: [...(bio.trim() ? ['bio'] : []), ...answers.map(m => m.id)], suggestedTags: [], suggestedAskMeTopics: [],
   };
 }

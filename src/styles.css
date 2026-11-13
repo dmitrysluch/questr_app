@@ -121,6 +121,15 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .tag-choice { background: #fbf7ee; }
 .tag-choice:hover { border-color: #baa88d; background: #eee6d8; }
 .tag-choice.selected { background: #e7e9d9; border-color: #b3b99c; color: #596148; }
+.ask-me-editor { margin-top: 30px; }
+.ask-me-list { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 8px; }
+.ask-me-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid #d9cdbc; background: #fffcf5; font-size: 12px; line-height: 1.5; }
+.ask-me-list li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ask-me-list li > button { border: 0; background: transparent; color: #887662; padding: 3px; cursor: pointer; }
+.ask-me-list .content-warning { flex-basis: 100%; margin: 0; }
+.ask-me-form { display: flex; gap: 8px; }
+.ask-me-form input { flex: 1; min-width: 0; }
+.ask-me-form button { flex-shrink: 0; }
 .story-heading { margin: 30px 0 12px; }
 .story-heading h2 { font-size: 17px; margin: 0; }
 .story-heading .hint { margin-bottom: 17px; }
@@ -180,6 +189,10 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .profile-identity h2 { font-family: inherit; font-size: 36px; line-height: 1.2; font-weight: 400; margin: 7px 0 13px; overflow-wrap: anywhere; }
 .profile-identity > div:last-child { min-width: 0; }
 .profile-body { margin: 0 33px; padding: 25px 0 34px; border-top: 1px solid #e7ddcd; }
+.profile-ask-me { margin: 0 33px 30px; padding-top: 22px; border-top: 1px solid #e7ddcd; }
+.profile-ask-me h3 { font-size: 14px; margin: 0 0 14px; }
+.profile-ask-me ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.profile-ask-me li { padding: 9px 12px; border-inline-start: 3px solid #a2ad87; background: #f3f1e7; color: #625744; font-size: 12px; overflow-wrap: anywhere; }
 .empty-bio { padding-block: 20px; text-align: center; color: #a39178; }
 .empty-bio p { font-size: 12px; margin: 15px auto 0; max-width: 280px; }
 .privacy-note, .review-privacy { display: flex; align-items: center; gap: 6px; color: #9c8a71; font-size: 10px; }
@@ -229,6 +242,12 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .proposal-tags { margin-top: 23px; }
 .proposal-tags h3 { font-size: 14px; margin: 0; }
 .proposal-tags .hint { margin-bottom: 10px; }
+.proposal-ask-me { margin-top: 23px; }
+.proposal-ask-me h3 { font-size: 14px; margin: 0; }
+.proposal-ask-me .hint { margin-bottom: 10px; }
+.proposal-ask-me-choice { display: flex; align-items: flex-start; gap: 9px; margin-top: 7px; padding: 9px 11px; border: 1px solid #dfd4c2; font-size: 12px; cursor: pointer; }
+.proposal-ask-me-choice input { margin-top: 2px; }
+.proposal-ask-me-choice span { min-width: 0; overflow-wrap: anywhere; }
 .source-answers { font-size: 11px; color: #968063; margin-top: 22px; }
 .source-answers summary { cursor: pointer; }
 .source-answers blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin-inline: 0; padding-left: 15px; border-left: 2px solid #cfb794; color: #77644d; }
@@ -317,6 +336,7 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
   .tag-categories { padding: 10px; }
   .tag-categories button { min-height: 38px; }
   .tag-pill { padding: 5px 8px; font-size: 11px; }
+  .ask-me-form input { font-size: 16px; }
   .tag-results { max-height: 240px; }
   .writing-tabs { gap: 18px; padding: 0 12px; }
   .writing-tabs > button { font-size: 12px; }
@@ -336,6 +356,7 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
   .profile-identity h2 { font-size: 26px; margin-top: 0; }
   .profile-identity .tag-list { gap: 6px; }
   .profile-body { margin-inline: 20px; padding-block: 22px 26px; }
+  .profile-ask-me { margin-inline: 20px; }
   .modal { padding: 21px; width: calc(100vw - 26px); max-height: calc(100dvh - 30px); }
   .modal-heading h2 { font-size: 24px; }
   .modal-actions { gap: 16px; }

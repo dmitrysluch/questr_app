@@ -102,14 +102,26 @@ integration('expired and revoked invitations are rejected', async () => {
 integration('draft versions prevent lost updates; publication round-trips long Markdown and custom tags', async () => {
   const { agent, draft } = await registered();
   const text = '## A real story\n\nMy **own words** — café, שלום, привет.\n\n'.repeat(1600);
-  const updated = { ...draft, avatarId: 'moss', introMarkdown: text, tags: [{ kind: 'catalog', code: 'edm' }, { kind: 'custom', label: 'Tiny games', emoji: '🧑‍💻', locale: 'en' }] };
+  const updated = { ...draft, avatarId: 'moss', introMarkdown: text, askMeTopics: ['Ask me how I ended up at the jam', 'Ask me about the train game I am making'], tags: [{ kind: 'catalog', code: 'edm' }, { kind: 'custom', label: 'Tiny games', emoji: '🧑‍💻', locale: 'en' }] };
   const saved = (await agent.put('/api/draft').send(updated).expect(200)).body.draft;
   await agent.put('/api/draft').send({ ...updated, introMarkdown: 'stale' }).expect(409);
   const profile = (await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200)).body.profile;
-  assert.equal(profile.introMarkdown, text); assert.deepEqual(profile.tags, updated.tags);
+  assert.equal(profile.introMarkdown, text); assert.deepEqual(profile.tags, updated.tags); assert.deepEqual(profile.askMeTopics, updated.askMeTopics);
   const state = (await agent.get('/api/me').expect(200)).body;
   assert.equal(state.user.status, 'active'); assert.equal(state.draft.introMarkdown, text);
   assert.ok(!JSON.stringify(state).includes('telegram_user_id'));
+});
+integration('explicit Ask me topics are highlighted and cannot be published', async () => {
+  const { agent, draft } = await registered();
+  const topic = 'I want to have sex with you.';
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss', askMeTopics: [topic] }).expect(200)).body.draft;
+  const review = (await agent.post('/api/draft/validate').send({ revision: saved.revision }).expect(200)).body.bioReview;
+  assert.equal(review.topicReviews[0].status, 'blocked');
+  assert.deepEqual(review.topicReviews[0].spans, [{ start: 0, end: topic.length }]);
+  const result = (await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(422)).body;
+  assert.equal(result.error, 'CONTENT_REQUIRES_CHANGES');
+  assert.equal(result.details.bioReview.askMeTopics[0], topic);
+  assert.equal((await agent.get('/api/me')).body.profile, null);
 });
 integration('AI needs explicit consent; retries do not duplicate answers and offline proposals require approval', async () => {
   const { agent, draft } = await registered();
@@ -197,7 +209,7 @@ integration('OpenRouter uses saved bio at start, retains demo history, and appli
     } else {
       assert.equal(input.currentBio.markdown, existing);
       const evidence = input.transcript.find((m: any) => m.role === 'user');
-      value = { introMarkdown: 'I make tiny games and keep a notebook of train-game ideas. Coffee is non-negotiable.', changeSummary: 'Wove the notebook detail into your existing bio.', sourceIds: ['bio', evidence.id], suggestedTags: [] };
+      value = { introMarkdown: 'I make tiny games and keep a notebook of train-game ideas. Coffee is non-negotiable.', changeSummary: 'Wove the notebook detail into your existing bio.', sourceIds: ['bio', evidence.id], suggestedTags: [], suggestedAskMeTopics: [{ text: 'Ask me about the train game ideas in my notebook', sourceId: evidence.id }] };
     }
     return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(value) } }] }));
   }) as typeof fetch;
@@ -217,8 +229,12 @@ integration('OpenRouter uses saved bio at start, retains demo history, and appli
   const resumed = (await get()).body.proposal;
   assert.equal(resumed.changeSummary, proposal.changeSummary);
   assert.deepEqual(resumed.sourceIds, proposal.sourceIds);
-  saved = (await post(`/api/assistant/proposals/${proposal.id}/apply`, { revision: saved.revision, tagCodes: [] }).expect(200)).body.draft;
+  assert.deepEqual((await get()).body.draft.askMeTopics, []);
+  await post(`/api/assistant/proposals/${proposal.id}/apply`, { revision: saved.revision, tagCodes: [], askMeTopicIndexes: [1] }).expect(400);
+  saved = (await post(`/api/assistant/proposals/${proposal.id}/apply`, { revision: saved.revision, tagCodes: [], askMeTopicIndexes: [0] }).expect(200)).body.draft;
   assert.equal(saved.introMarkdown, proposal.introMarkdown);
+  assert.deepEqual(saved.askMeTopics, ['Ask me about the train game ideas in my notebook']);
+  assert.equal((await get()).body.profile, null);
   assert.equal(saved.introMarkdown.match(/tiny games/g).length, 1);
 });
 
@@ -317,7 +333,7 @@ integration('explicit model-generated proposals are rejected before storage or a
   const fetcher = (async (_url: string, init: RequestInit) => {
     const body = JSON.parse(init.body as string);
     const result = body.response_format.json_schema.name === 'questr_question' ? { question: 'What did you enjoy about your last coffee break?' } : {
-      introMarkdown: 'I want to have sex with you.', sourceIds: ['bio'], suggestedTags: [], changeSummary: 'Updated your bio.',
+      introMarkdown: 'I want to have sex with you.', sourceIds: ['bio'], suggestedTags: [], suggestedAskMeTopics: [], changeSummary: 'Updated your bio.',
     };
     return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(result) } }] }));
   }) as typeof fetch;

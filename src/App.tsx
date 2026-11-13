@@ -12,6 +12,7 @@ import { ProfileCard } from './components/ProfileCard.tsx';
 import { Adventures } from './components/Adventures.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Interview } from './components/Interview.tsx';
+import { AskMeTopics } from './components/AskMeTopics.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview } from '../shared/content-policy.ts';
@@ -124,7 +125,7 @@ export function App() {
           const saved = await flush();
           const result = await api<{ bioReview: BioReview }>('/draft/validate', { method: 'POST', body: { revision: saved?.revision } });
           setBioReview(result.bioReview);
-          if (result.bioReview.status === 'blocked') {
+          if (result.bioReview.status === 'blocked' || result.bioReview.topicReviews?.some(review => review.status === 'blocked')) {
             edit({ currentStep: 'bio', mode: 'manual' }); await flush(); setShowProfile(false); return;
           }
         } finally { setCheckingBio(false); }
@@ -153,6 +154,7 @@ export function App() {
   const selectedAvatar = avatars.find(a => a.id === draft?.avatarId);
   const wordCount = draft?.introMarkdown.trim().split(/\s+/).filter(Boolean).length ?? 0;
   const currentReview = bioReview?.introMarkdown === draft?.introMarkdown ? bioReview : null;
+  const currentTopicReviews = currentReview && JSON.stringify(currentReview.askMeTopics) === JSON.stringify(draft?.askMeTopics) ? currentReview.topicReviews : undefined;
   const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character');
 
   return <div className="app-shell">
@@ -211,13 +213,14 @@ export function App() {
             <label className="checkbox-label romance-draft"><input type="checkbox" checked={draft.openToRomance} onChange={e => edit({ openToRomance: e.target.checked })} />{t('profile.romance')}</label>
             <div className="section-heading"><h2>{t('bio.tagsTitle')}</h2><span>{t('common.optional')}</span></div>
             <TagPicker value={draft.tags} onChange={tags => edit({ tags })} />
+            <AskMeTopics value={draft.askMeTopics} onChange={askMeTopics => edit({ askMeTopics })} reviews={currentTopicReviews} />
             <div className="story-heading"><h2>{t('bio.storyTitle')}</h2></div>
             {draft && <ContentWarning text={draft.introMarkdown} review={currentReview} />}
             <div className="editor-card"><div className="writing-tabs" role="tablist" aria-label={t('bio.storyTitle')}>
               <button role="tab" aria-selected={draft.mode === 'manual'} aria-controls="writing-panel" className={draft.mode === 'manual' ? 'active' : ''} onClick={() => edit({ mode: 'manual' })}><PenLine size={16} />{t('bio.write')}</button>
               <button role="tab" aria-selected={draft.mode === 'interview'} aria-controls="writing-panel" className={draft.mode === 'interview' ? 'active' : ''} onClick={() => edit({ mode: 'interview' })}><MessageCircle size={16} />{t('bio.ask')}<span className="tab-star">✦</span></button>
             </div><div id="writing-panel" role="tabpanel">
-              {draft.mode === 'manual' ? <><Suspense fallback={<div className="editor-loading"><LoaderCircle size={20} className="spin" /></div>}><BioEditor key={locale} value={draft.introMarkdown} flagged={currentReview?.spans} onChange={introMarkdown => edit({ introMarkdown })} /></Suspense><div className="editor-footer"><span>{t('bio.words', { count: wordCount })}</span></div></> : config && <Interview config={config} conversation={state.conversation} proposal={state.proposal} onBioReview={setBioReview}
+              {draft.mode === 'manual' ? <><Suspense fallback={<div className="editor-loading"><LoaderCircle size={20} className="spin" /></div>}><BioEditor key={locale} value={draft.introMarkdown} flagged={currentReview?.spans} onChange={introMarkdown => edit({ introMarkdown })} /></Suspense><div className="editor-footer"><span>{t('bio.words', { count: wordCount })}</span></div></> : config && <Interview config={config} conversation={state.conversation} proposal={state.proposal} askMeTopics={draft.askMeTopics} onBioReview={setBioReview}
                 hasBio={Boolean(draft.introMarkdown.trim())} onConversation={conversation => setState(old => old ? { ...old, conversation } : old)} onProposal={proposal => setState(old => old ? { ...old, proposal } : old)} flush={flush}
                 onApply={nextDraft => { replace(nextDraft); edit({ mode: 'manual' }); }} />}
             </div></div>
@@ -236,6 +239,7 @@ export function App() {
         </> : <section>
           <PageHeading title="review.title" />
           <ContentWarning text={draft.introMarkdown} review={currentReview} />
+          {draft.askMeTopics.map((topic, index) => <ContentWarning key={`${topic}:${index}`} text={topic} review={currentTopicReviews?.[index]} />)}
           <ProfileCard profile={{ ...draft, avatarId: draft.avatarId!, completedAt: '' }} flagged={currentReview?.spans} />
           <div className="page-actions"><button className="text-button" disabled={busy} onClick={() => void go('bio')}><ArrowLeft size={16} />{t('review.edit')}</button><button className="pixel-button" disabled={busy} onClick={() => void publish()}>{busy ? <LoaderCircle size={17} className="spin" /> : <Check size={17} />}{t(checkingBio ? 'content.checking' : 'review.finish')}</button></div>
           <p className="review-privacy"><LockKeyhole size={13} />{t('review.private')}</p>

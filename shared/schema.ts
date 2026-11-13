@@ -17,12 +17,16 @@ export type ProfileTag = z.infer<typeof tagSchema>;
 export const tagKey = (tag: ProfileTag) => tag.kind === 'catalog' ? `catalog:${tag.code}` : `custom:${tag.label.trim().normalize('NFKC').toLocaleLowerCase('en')}`;
 export const maxProfileTags = 30;
 export const selectedTagsSchema = z.array(tagSchema).max(maxProfileTags).refine(items => new Set(items.map(tagKey)).size === items.length, 'Tags must be unique');
+export const askMeTopicSchema = z.string().trim().min(5).max(160);
+export const askMeTopicsSchema = z.array(askMeTopicSchema).max(3).refine(items =>
+  new Set(items.map(item => item.normalize('NFKC').toLocaleLowerCase())).size === items.length, 'Topics must be unique');
 export const draftInputSchema = z.object({
   revision: z.number().int().nonnegative(),
   displayName: z.string().trim().min(2).max(40),
   avatarId: z.string().refine(id => avatars.some(a => a.id === id)).nullable(),
   introMarkdown: z.string(),
   tags: selectedTagsSchema,
+  askMeTopics: askMeTopicsSchema.default([]),
   spokenLanguages: spokenLanguagesSchema.default([]),
   openToRomance: z.boolean().default(false),
   mode: z.enum(['manual', 'interview']),
@@ -46,6 +50,7 @@ export const proposalOutputSchema = z.object({
   changeSummary: z.string().trim().min(1).max(1500),
   sourceIds: z.array(z.string()).min(1),
   suggestedTags: z.array(z.object({ code: z.string(), sourceId: z.string() }).strict()).max(12),
+  suggestedAskMeTopics: z.array(z.object({ text: askMeTopicSchema, sourceId: z.string() }).strict()).max(3),
 }).strict();
 export type ProposalOutput = z.infer<typeof proposalOutputSchema>;
 export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; kind?: 'text' | 'change_topic'; contentReview?: ContentReview | null }
@@ -57,12 +62,13 @@ export interface Proposal {
   baseMarkdown: string;
   changeSummary: string;
   suggestedTags: { code: string; sourceId: string }[];
+  suggestedAskMeTopics: { text: string; sourceId: string }[];
   sourceIds: string[];
   status: 'pending' | 'accepted' | 'rejected';
 }
 export interface Profile {
   displayName: string; avatarId: string; introMarkdown: string;
-  tags: ProfileTag[]; spokenLanguages: string[]; openToRomance: boolean; revision: number; completedAt: string;
+  tags: ProfileTag[]; askMeTopics: string[]; spokenLanguages: string[]; openToRomance: boolean; revision: number; completedAt: string;
 }
 export interface AppState {
   user: { id: string; status: 'pending_invite' | 'onboarding' | 'active' | 'blocked'; locale: string };

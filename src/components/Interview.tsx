@@ -15,18 +15,20 @@ interface Props {
   conversation: Conversation | null;
   proposal: Proposal | null;
   hasBio: boolean;
+  askMeTopics: string[];
   onBioReview: (value: BioReview) => void;
   onConversation: (value: Conversation) => void;
   onProposal: (value: Proposal | null) => void;
   flush: () => Promise<Draft | null>;
   onApply: (draft: Draft) => void;
 }
-export function Interview({ config, conversation, proposal, hasBio, onBioReview, onConversation, onProposal, flush, onApply }: Props) {
+export function Interview({ config, conversation, proposal, hasBio, askMeTopics, onBioReview, onConversation, onProposal, flush, onApply }: Props) {
   const [answer, setAnswer] = useState('');
   const [busy, setBusy] = useState<'start' | 'send' | 'change_topic' | 'compose' | 'apply' | 'review' | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reviewing, setReviewing] = useState(Boolean(proposal));
   const [selectedCodes, setSelectedCodes] = useState<string[]>(proposal?.suggestedTags.map(t => t.code) ?? []);
+  const [selectedTopicIndexes, setSelectedTopicIndexes] = useState<number[]>([]);
   const [reviewView, setReviewView] = useState<'proposed' | 'current'>('proposed');
   const pendingRequest = useRef<{ signature: string; input: InterviewInput } | null>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -72,7 +74,7 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
     try {
       await flush();
       const result = await api<{ proposal: Proposal }>('/assistant/proposals', { method: 'POST', body: {} });
-      onProposal(result.proposal); setSelectedCodes(result.proposal.suggestedTags.map(t => t.code)); setReviewView('proposed'); setReviewing(true);
+      onProposal(result.proposal); setSelectedCodes(result.proposal.suggestedTags.map(t => t.code)); setSelectedTopicIndexes([]); setReviewView('proposed'); setReviewing(true);
     } catch (e) { setError(e); } finally { setBusy(null); }
   }
   async function apply() {
@@ -80,7 +82,7 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
     setBusy('apply'); setError(null);
     try {
       const current = await flush();
-      const result = await api<{ draft: Draft }>(`/assistant/proposals/${proposal.id}/apply`, { method: 'POST', body: { revision: current?.revision, tagCodes: selectedCodes } });
+      const result = await api<{ draft: Draft }>(`/assistant/proposals/${proposal.id}/apply`, { method: 'POST', body: { revision: current?.revision, tagCodes: selectedCodes, askMeTopicIndexes: selectedTopicIndexes } });
       onProposal(null); setReviewing(false); onApply(result.draft);
     } catch (e) { setError(e); } finally { setBusy(null); }
   }
@@ -142,6 +144,13 @@ export function Interview({ config, conversation, proposal, hasBio, onBioReview,
             onClick={() => setSelectedCodes(codes => selected ? codes.filter(c => c !== tag.code) : [...codes, tag.code])}><PixelEmoji emoji={tag.emoji} />{tag.label}{selected && <Check size={13} />}</button>;
         })}
       </div></div>}
+      {!!proposal.suggestedAskMeTopics.length && <div className="proposal-ask-me"><h3>{t('proposal.askMeTopics')}</h3><p className="hint">{t('proposal.askMeHint')}</p>
+        {proposal.suggestedAskMeTopics.map((topic, index) => {
+          const selected = selectedTopicIndexes.includes(index);
+          const alreadyAdded = askMeTopics.some(value => value.normalize('NFKC').toLocaleLowerCase() === topic.text.normalize('NFKC').toLocaleLowerCase());
+          return <label className="proposal-ask-me-choice" key={`${topic.text}:${index}`}><input type="checkbox" checked={selected} disabled={!!busy || alreadyAdded || (!selected && askMeTopics.length + selectedTopicIndexes.length >= 3)} onChange={event => setSelectedTopicIndexes(current => event.target.checked ? [...current, index] : current.filter(value => value !== index))} /><span dir="auto">{topic.text}</span></label>;
+        })}
+      </div>}
       <details className="source-answers"><summary>{t('proposal.sources')}</summary>
         {proposal.sourceIds.filter(id => id !== 'bio').map(id => <blockquote key={id}>{conversation?.messages.find(m => m.id === id)?.content}</blockquote>)}
         {proposal.sourceIds.includes('bio') && <p>{t('proposal.bioSource')}</p>}

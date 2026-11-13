@@ -5,7 +5,7 @@ If explicit wording appears, do not elaborate on it, solicit details, repeat it,
 export const contentRedirectNotice = 'Please keep explicitly sexual messages out of your profile. We can focus on another part of your story.';
 export interface ContentSpan { start: number; end: number }
 export interface ContentReview { status: 'approved' | 'blocked'; spans: ContentSpan[] }
-export interface BioReview extends ContentReview { introMarkdown: string }
+export interface BioReview extends ContentReview { introMarkdown: string; askMeTopics?: string[]; topicReviews?: ContentReview[] }
 export function mergeSpans(spans: ContentSpan[]): ContentSpan[] {
   const merged: ContentSpan[] = [];
   for (const span of [...spans].sort((a, b) => a.start - b.start)) {

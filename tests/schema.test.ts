@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { draftInputSchema, selectedTagsSchema, tagSchema } from '../shared/schema.ts';
+import { askMeTopicsSchema, draftInputSchema, selectedTagsSchema, tagSchema } from '../shared/schema.ts';
 
 test('long Markdown and multilingual text have no short-bio length constraint', () => {
   const markdown = '# My story\n\n**Привет. שלום. Hello.**\n\n'.repeat(10000);
@@ -10,6 +10,13 @@ test('long Markdown and multilingual text have no short-bio length constraint', 
 test('drafts can resume on the top-level languages and filters step', () => {
   const draft = { displayName: 'Coffee friend', avatarId: 'moss', introMarkdown: '', tags: [], revision: 0, mode: 'manual', currentStep: 'discovery' };
   assert.equal(draftInputSchema.parse(draft).currentStep, 'discovery');
+});
+test('Ask me topics are optional, limited to three, and unique', () => {
+  assert.deepEqual(askMeTopicsSchema.parse([]), []);
+  assert.ok(askMeTopicsSchema.safeParse(['Ask me about the jam', 'Ask me about bouldering', 'Ask me about my train game']).success);
+  assert.ok(!askMeTopicsSchema.safeParse(['Ask me about the jam', 'ask me about the jam']).success);
+  assert.ok(!askMeTopicsSchema.safeParse(['one', 'two', 'three', 'four']).success);
+  assert.ok(!askMeTopicsSchema.safeParse(['   ']).success);
 });
 test('custom emoji tags support grapheme sequences and reject invalid mixed tags', () => {
   const tag = { kind: 'custom', label: 'Indie games', emoji: '🧑‍💻', locale: 'en' };

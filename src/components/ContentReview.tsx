@@ -12,7 +12,7 @@ export function MarkedText({ text, spans = [] }: { text: string; spans?: Content
   });
   return <>{pieces}{text.slice(end)}</>;
 }
-export function ContentWarning({ text, review }: { text: string; review: ContentReview | null }) {
+export function ContentWarning({ text, review }: { text: string; review?: ContentReview | null }) {
   if (review?.status !== 'blocked') return null;
   return <div className="content-warning" role="alert">
     <strong>{t('content.title')}</strong><p>{t('content.description')}</p>

@@ -12,7 +12,7 @@ import { Interviewer } from './assistant.ts';
 import { ContentReviewer, reviewContent, storedReview } from './moderation.ts';
 import { getConversation, getDraft, getMessages, getProfile, getProposal, mapDraft, mapProposal } from './store.ts';
 import { aiConsentVersion, termsVersion } from '../shared/catalog.ts';
-import { draftInputSchema, messageSchema, registerSchema, tagKey, selectedTagsSchema, type ProfileTag } from '../shared/schema.ts';
+import { askMeTopicsSchema, draftInputSchema, messageSchema, registerSchema, tagKey, selectedTagsSchema, type ProfileTag } from '../shared/schema.ts';
 import { preferredLocale } from '../shared/locale.ts';
 import { locationIdSchema } from '../shared/discovery.ts';
 import { getDiscovery, saveDiscovery, searchLocations } from './discovery.ts';
@@ -150,7 +150,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const consent = await pool.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='ai_interview' AND document_version=$2", [user.id, `${aiConsentVersion}:${config.aiMode}`]);
     const ready = conversation?.mode === config.aiMode && !!consent.rowCount;
     const review = draft ? await storedReview(pool, reviewer, draft.introMarkdown) : null;
-    res.json({ user, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
+    const topicReviews = draft ? await Promise.all(draft.askMeTopics.map(topic => storedReview(pool, reviewer, topic))) : [];
+    res.json({ user, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown, askMeTopics: draft.askMeTopics, topicReviews: topicReviews.every(Boolean) ? topicReviews : undefined } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
   });
   app.put('/api/locale', async (req, res) => {
     const { locale } = z.object({ locale: z.enum(['en', 'ru']) }).strict().parse(req.body);
@@ -186,8 +187,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     await requireCapability(pool, currentUser(res).id, 'profile.edit', { type: 'profile', id: currentUser(res).id });
     const input = draftInputSchema.parse(req.body);
     const { rows } = await pool.query(`UPDATE profile_drafts SET display_name=$2,avatar_preset_id=$3,intro_markdown=$4,tags=$5,
-      mode=$6,current_step=$7,spoken_languages=$9,open_to_romance=$10,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
-    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages, input.openToRomance]);
+      mode=$6,current_step=$7,spoken_languages=$9,open_to_romance=$10,ask_me_topics=$11,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
+    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages, input.openToRomance, JSON.stringify(input.askMeTopics)]);
     if (!rows[0]) throw new AppError(409, 'DRAFT_CONFLICT');
     res.json({ draft: mapDraft(rows[0]) });
   });
@@ -201,7 +202,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       if (!discovery.locationIds.length || !discovery.languageCodes.length) throw new AppError(422, 'DISCOVERY_REQUIRED');
     }
     const checked = await validateDraft(userId, revision);
-    if (checked.status === 'blocked') throw new AppError(422, 'CONTENT_REQUIRES_CHANGES', { bioReview: checked });
+    if (checked.status === 'blocked' || checked.topicReviews.some(review => review.status === 'blocked')) throw new AppError(422, 'CONTENT_REQUIRES_CHANGES', { bioReview: checked });
     await transaction(pool, async client => {
       await requireCapability(client, userId, 'profile.edit', { type: 'profile', id: userId });
       const { rows } = await client.query('SELECT * FROM profile_drafts WHERE user_id=$1 FOR UPDATE', [userId]);
@@ -212,9 +213,9 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
         const discovery = await getDiscovery(client, userId);
         if (!discovery.locationIds.length || !discovery.languageCodes.length) throw new AppError(422, 'DISCOVERY_REQUIRED');
       }
-      await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown,open_to_romance) VALUES($1,$2,$3,$4,$5)
+      await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown,open_to_romance,ask_me_topics) VALUES($1,$2,$3,$4,$5,$6)
         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,avatar_preset_id=EXCLUDED.avatar_preset_id,
-        intro_markdown=EXCLUDED.intro_markdown,open_to_romance=EXCLUDED.open_to_romance,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown, draft.openToRomance]);
+        intro_markdown=EXCLUDED.intro_markdown,open_to_romance=EXCLUDED.open_to_romance,ask_me_topics=EXCLUDED.ask_me_topics,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown, draft.openToRomance, JSON.stringify(draft.askMeTopics)]);
       await client.query('DELETE FROM profile_tags WHERE user_id=$1', [userId]);
       await client.query('DELETE FROM profile_languages WHERE user_id=$1', [userId]);
       await client.query('INSERT INTO profile_languages(user_id,language_code,position) SELECT $1,code,ordinality-1 FROM unnest($2::text[]) WITH ORDINALITY AS x(code,ordinality)', [userId, draft.spokenLanguages]);
@@ -253,11 +254,11 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     throttle(`review:${userId}`, 15);
     const draft = await getDraft(pool, userId);
     if (!draft || draft.revision !== revision) throw new AppError(409, 'DRAFT_CONFLICT');
-    const review = await reviewContent(pool, reviewer, draft.introMarkdown);
+    const [review, ...topicReviews] = await Promise.all([draft.introMarkdown, ...draft.askMeTopics].map(text => reviewContent(pool, reviewer, text)));
     // Never attach a completed review to text edited while the model was running.
     const latest = await getDraft(pool, userId);
-    if (!latest || latest.introMarkdown !== draft.introMarkdown) throw new AppError(409, 'REVIEW_STALE');
-    return { ...review, introMarkdown: draft.introMarkdown };
+    if (!latest || latest.revision !== draft.revision) throw new AppError(409, 'REVIEW_STALE');
+    return { ...review, introMarkdown: draft.introMarkdown, askMeTopics: draft.askMeTopics, topicReviews };
   }
   app.post('/api/draft/validate', async (req, res) => {
     const { revision } = z.object({ revision: z.number().int().nonnegative() }).strict().parse(req.body);
@@ -331,12 +332,13 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const result = await lockAssistant(userId, async client => {
       const conversation = await requireConversation(client, userId);
       const draft = (await getDraft(client, userId))!;
-      const proposal = await interviewer.proposal(conversation.messages, draft.introMarkdown, preferredLocale(currentUser(res).locale));
-      if ((await reviewContent(client, reviewer, proposal.introMarkdown)).status === 'blocked') throw new AppError(422, 'ASSISTANT_DRAFT_REJECTED');
+      const proposal = await interviewer.proposal(conversation.messages, draft.introMarkdown, preferredLocale(currentUser(res).locale), draft.askMeTopics);
+      const generatedReviews = await Promise.all([proposal.introMarkdown, ...proposal.suggestedAskMeTopics.map(topic => topic.text)].map(text => reviewContent(client, reviewer, text)));
+      if (generatedReviews.some(review => review.status === 'blocked')) throw new AppError(422, 'ASSISTANT_DRAFT_REJECTED');
       return transactionOnClient(client, async tx => {
         await tx.query("UPDATE ai_proposals SET status='rejected',updated_at=now() WHERE user_id=$1 AND status='pending'", [userId]);
-        const { rows } = await tx.query(`INSERT INTO ai_proposals(user_id,conversation_id,based_on_draft_revision,intro_markdown,suggested_tags,source_ids,base_markdown,change_summary)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [userId, conversation.id, draft.revision, proposal.introMarkdown, JSON.stringify(proposal.suggestedTags), JSON.stringify(proposal.sourceIds), draft.introMarkdown, proposal.changeSummary]);
+        const { rows } = await tx.query(`INSERT INTO ai_proposals(user_id,conversation_id,based_on_draft_revision,intro_markdown,suggested_tags,source_ids,base_markdown,change_summary,suggested_ask_me_topics)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [userId, conversation.id, draft.revision, proposal.introMarkdown, JSON.stringify(proposal.suggestedTags), JSON.stringify(proposal.sourceIds), draft.introMarkdown, proposal.changeSummary, JSON.stringify(proposal.suggestedAskMeTopics)]);
         return mapProposal(rows[0]);
       });
     });
@@ -344,7 +346,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   });
   app.post('/api/assistant/proposals/:id/apply', async (req, res) => {
     const id = z.uuid().parse(req.params.id);
-    const input = z.object({ revision: z.number().int().nonnegative(), tagCodes: z.array(z.string()).max(12) }).strict().parse(req.body);
+    const input = z.object({ revision: z.number().int().nonnegative(), tagCodes: z.array(z.string()).max(12), askMeTopicIndexes: z.array(z.number().int().nonnegative()).max(3).default([]) }).strict().parse(req.body);
     const userId = currentUser(res).id;
     await requireCapability(pool, userId, 'profile.edit', { type: 'profile', id: userId });
     await transaction(pool, async client => {
@@ -354,9 +356,11 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       if (row.revision !== proposal.based_on_draft_revision || row.revision !== input.revision) throw new AppError(409, 'PROPOSAL_STALE');
       const suggestedCodes = new Set(proposal.suggested_tags.map((t: { code: string }) => t.code));
       if (input.tagCodes.some(code => !suggestedCodes.has(code))) throw new AppError(400, 'INVALID_INPUT');
+      if (new Set(input.askMeTopicIndexes).size !== input.askMeTopicIndexes.length || input.askMeTopicIndexes.some(index => index >= proposal.suggested_ask_me_topics.length)) throw new AppError(400, 'INVALID_INPUT');
       const combined: ProfileTag[] = [...row.tags, ...input.tagCodes.map(code => ({ kind: 'catalog' as const, code }))];
       const nextTags = selectedTagsSchema.parse([...new Map(combined.map(t => [tagKey(t), t])).values()]);
-      await client.query('UPDATE profile_drafts SET intro_markdown=$2,tags=$3,revision=revision+1,updated_at=now() WHERE user_id=$1', [userId, proposal.intro_markdown, JSON.stringify(nextTags)]);
+      const nextTopics = askMeTopicsSchema.parse([...row.ask_me_topics, ...input.askMeTopicIndexes.map(index => proposal.suggested_ask_me_topics[index].text)]);
+      await client.query('UPDATE profile_drafts SET intro_markdown=$2,tags=$3,ask_me_topics=$4,revision=revision+1,updated_at=now() WHERE user_id=$1', [userId, proposal.intro_markdown, JSON.stringify(nextTags), JSON.stringify(nextTopics)]);
       await client.query("UPDATE ai_proposals SET status='accepted',updated_at=now() WHERE id=$1", [id]);
     });
     res.json({ draft: await getDraft(pool, userId) });
