@@ -35,6 +35,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [checkingBio, setCheckingBio] = useState(false);
   const [bioReview, setBioReview] = useState<BioReview | null>(null);
+  const [discoveryDirty, setDiscoveryDirty] = useState(false);
   const [telegramNeeded, setTelegramNeeded] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
@@ -94,6 +95,11 @@ export function App() {
   async function go(step: Draft['currentStep']) {
     if (!draft || busy) return;
     if (step !== 'avatar' && !draft.avatarId) { setError(new ApiError('AVATAR_REQUIRED')); return; }
+    if (step === 'review' && !state?.profile && (discoveryDirty || !state?.discovery.locationIds.length || !state?.discovery.languageCodes.length)) {
+      setError(new ApiError('DISCOVERY_REQUIRED'));
+      document.getElementById('onboarding-discovery')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     await run(async () => {
       if (step === 'review') {
         setCheckingBio(true);
@@ -184,6 +190,7 @@ export function App() {
           <PageHeading title="bio.title" />
           <div className="bio-layout"><div className="bio-main">
             <div className="profile-languages"><LanguagePicker label={t('languages.spoken')} value={draft.spokenLanguages} onChange={spokenLanguages => edit({ spokenLanguages })} /></div>
+            {!state.profile && <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} required onDirtyChange={setDiscoveryDirty} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />}
             <label className="checkbox-label romance-draft"><input type="checkbox" checked={draft.openToRomance} onChange={e => edit({ openToRomance: e.target.checked })} />{t('profile.romance')}</label>
             <div className="section-heading"><h2>{t('bio.tagsTitle')}</h2><span>{t('common.optional')}</span></div>
             <TagPicker value={draft.tags} onChange={tags => edit({ tags })} />
@@ -198,7 +205,7 @@ export function App() {
                 onApply={nextDraft => { replace(nextDraft); edit({ mode: 'manual' }); }} />}
             </div></div>
             <details className="bio-disclosure"><summary>{t('content.howUsed')}</summary><p>{t(config?.aiMode === 'openrouter' ? 'content.disclosure' : 'content.demoDisclosure')}</p></details>
-            <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
+            {!!state.profile && <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />}
           </div></div>
           <div className="page-actions"><button className="text-button" onClick={() => void go('avatar')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right"><SaveStatus state={saveState} /><button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t(checkingBio ? 'content.checking' : 'bio.preview')}<ArrowRight size={17} /></button></div></div>
         </section> : <section>

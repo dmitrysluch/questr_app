@@ -36,11 +36,25 @@ async function browser(target: Express = app) {
   const { body } = await agent.get('/api/me').expect(200);
   return { agent, state: body, cookie: auth.headers['set-cookie'][0].split(';')[0] };
 }
-async function registered(target: Express = app) {
+async function registered(target: Express = app, withDiscovery = true) {
   const { agent, state, cookie } = await browser(target);
   const result = await agent.post('/api/register').send({ displayName: 'Moss', invite: state.demoInvite, adult: true, terms: true, locale: 'en' }).expect(200);
+  if (withDiscovery) await agent.put('/api/discovery').send({ revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] }).expect(200);
   return { agent, state, cookie, draft: result.body.draft };
 }
+integration('first publication requires saved adventure locations and languages', async () => {
+  const { agent, draft } = await registered(app, false);
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
+  const publish = () => agent.post('/api/profile/publish').send({ revision: saved.revision });
+  assert.equal((await publish().expect(422)).body.error, 'DISCOVERY_REQUIRED');
+  await agent.put('/api/discovery').send({ revision: 0, locationIds: ['country:IL'], languageCodes: [] }).expect(200);
+  assert.equal((await publish().expect(422)).body.error, 'DISCOVERY_REQUIRED');
+  await agent.put('/api/discovery').send({ revision: 1, locationIds: [], languageCodes: ['en'] }).expect(200);
+  assert.equal((await publish().expect(422)).body.error, 'DISCOVERY_REQUIRED');
+  await agent.put('/api/discovery').send({ revision: 2, locationIds: ['country:IL'], languageCodes: ['en'] }).expect(200);
+  await publish().expect(200);
+  assert.equal((await agent.get('/api/me')).body.user.status, 'active');
+});
 integration('unregistered access, foreign origins and non-JSON mutations are rejected', async () => {
   await request(app).get('/api/me').expect(401);
   await request(app).post('/api/auth/demo').set('Origin', 'https://foreign.example').send({}).expect(403);
@@ -328,7 +342,7 @@ integration('topic-change retries retain one control event, preserve the bio and
 });
 
 integration('spoken languages round-trip publicly; discovery stays private, separate and versioned', async () => {
-  const { agent, draft, state } = await registered();
+  const { agent, draft, state } = await registered(app, false);
   const updated = { ...draft, avatarId: 'moss', spokenLanguages: ['ru', 'en'], introMarkdown: 'Coffee and climbing.' };
   const saved = (await agent.put('/api/draft').send(updated).expect(200)).body.draft;
   assert.deepEqual(saved.spokenLanguages, ['ru', 'en']);
@@ -347,7 +361,7 @@ integration('spoken languages round-trip publicly; discovery stays private, sepa
   assert.equal(current.user.locale, 'en');
   assert.equal(current.draft.revision, saved.revision); // Filters don't invalidate bio proposals.
   assert.deepEqual(current.discovery, discovery);
-  const stranger = await registered();
+  const stranger = await registered(app, false);
   assert.deepEqual((await stranger.agent.get('/api/me')).body.discovery.locationIds, []);
   assert.equal((await pool.query("SELECT count(*)::int AS count FROM role_assignments WHERE user_id=$1 AND role_code='member'", [state.user.id])).rows[0].count, 1);
 });
@@ -374,6 +388,7 @@ integration('event discovery combines country descendants or exact cities/Online
   const { agent, draft, state } = await registered();
   const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
   await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
+  let prefs = await saveDiscovery(pool, state.user.id, { revision: 1, locationIds: [], languageCodes: [] });
   const events: Record<string, string> = {};
   for (const [key, location, language] of [['haifa', 'city:294801', 'ru'], ['telAviv', 'city:293397', 'en'], ['jerusalem', 'city:281184', 'en'], ['amman', 'city:250441', 'en'], ['online', 'online', 'ru'], ['hebrew', 'city:294801', 'he']]) {
     events[key] = (await pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at,ends_at,status) VALUES($1,'Test quest',$2,$3,now()+interval '1 day',now()+interval '1 day 2 hours','published') RETURNING id", [state.user.id, location, language])).rows[0].id;
@@ -384,7 +399,7 @@ integration('event discovery combines country descendants or exact cities/Online
     return result;
   };
   assert.ok(Object.values(await matches()).every(value => !value));
-  let prefs = await saveDiscovery(pool, state.user.id, { revision: 0, locationIds: ['country:IL'], languageCodes: ['ru', 'en'] });
+  prefs = await saveDiscovery(pool, state.user.id, { ...prefs, locationIds: ['country:IL'], languageCodes: ['ru', 'en'] });
   assert.deepEqual(await matches(), { haifa: true, telAviv: true, jerusalem: true, amman: false, online: false, hebrew: false });
   prefs = await saveDiscovery(pool, state.user.id, { ...prefs, locationIds: ['city:294801', 'city:293397', 'online'] });
   assert.deepEqual(await matches(), { haifa: true, telAviv: true, jerusalem: false, amman: false, online: true, hebrew: false });

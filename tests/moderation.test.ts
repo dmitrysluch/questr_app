@@ -27,6 +27,8 @@ test('long content is reviewed in overlapping chunks; one blocked chunk blocks t
   const reviewer = new ContentReviewer(config(), (async (_url: string, init: RequestInit) => {
     const body = JSON.parse(init.body as string); const input = JSON.parse(body.messages[1].content);
     assert.equal(body.response_format.json_schema.name, 'questr_content_review');
+    assert.equal(body.model, 'openai/gpt-6-luna');
+    assert.deepEqual(body.reasoning, { effort: 'low', exclude: true });
     assert.ok(input.content.length <= 16000); calls++;
     return response({ explicit: input.content.includes(quote), excerpts: input.content.includes(quote) ? [quote] : [] });
   }) as typeof fetch);

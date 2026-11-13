@@ -2,7 +2,7 @@
 
 A Telegram Mini App POC for an invite-only community built around doing things together. English first, coffee colors, pixel characters, and readable typography.
 
-The POC covers registration, avatar selection, emoji tags, spoken languages, an opt-in romance signal, a long-form Markdown profile, and an optional **Ask me questions** interview. Saved profiles are shared in the context of adventures; drafts and interview answers stay private. Adventure filters support countries, cities, Online and optional event languages.
+The POC covers registration, avatar selection, emoji tags, spoken languages, an opt-in romance signal, a long-form Markdown profile, and an optional **Ask me questions** interview. Saved profiles are shared in the context of adventures; drafts and interview answers stay private. New characters must choose and save at least one discovery location and adventure language before publication. Existing characters can still choose all adventure languages by clearing that filter. Discovery locations can be countries, cities or Online.
 
 The [geography and access design](docs/discovery-and-access.md) describes the implemented location catalog, filter matching, scoped roles, expiring grants and transactional usage budgets. The [adventures v1 guide](docs/adventures.md) covers creation, discovery, applications, accepted parties, private meeting details, start/end times, calendar export, reminders and the Telegram relay. Reputation automation is not implemented yet.
 
@@ -49,9 +49,13 @@ AI_MODE=openrouter
 OPENROUTER_API_KEY=your-server-side-openrouter-key
 OPENROUTER_MODEL=openai/gpt-6.1-terra
 OPENROUTER_REASONING_EFFORT=high
+OPENROUTER_QUESTION_MODEL=openai/gpt-6-luna
+OPENROUTER_QUESTION_REASONING_EFFORT=medium
+OPENROUTER_REVIEW_MODEL=openai/gpt-6-luna
+OPENROUTER_REVIEW_REASONING_EFFORT=low
 ```
 
-All model requests go to OpenRouter's Chat Completions endpoint, including models whose IDs start with `openai/`. There are no direct OpenAI API calls. The model is configurable; choose one supporting structured outputs and reasoning. Requests use JSON Schema, `reasoning: { effort: "high", exclude: true }` by default, and `provider.require_parameters=true`, with `data_collection=deny` for provider routing. The output budget includes room for reasoning; reasoning text is not displayed or persisted. This is not a blanket promise about all retention policies. See [OpenRouter reasoning settings](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens), [structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs), and [provider data policies](https://openrouter.ai/docs/guides/routing/provider-selection#requiring-providers-to-comply-with-data-policies).
+All model requests go to OpenRouter's Chat Completions endpoint, including models whose IDs start with `openai/`. There are no direct OpenAI API calls. Terra writes bio drafts; Luna handles frequent interview questions and content reviews. Each task has its own model and reasoning setting so it can be evaluated or changed independently. Models must support structured JSON Schema outputs and the configured reasoning effort. Requests set `provider.require_parameters=true` and `data_collection=deny`. Reasoning text is not displayed or persisted. This is not a blanket promise about all retention policies. See [OpenRouter reasoning settings](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens), [structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs), and [provider data policies](https://openrouter.ai/docs/guides/routing/provider-selection#requiring-providers-to-comply-with-data-policies).
 
 The interface explains that OpenRouter forwards the interview to the configured model provider before the user starts. Only the current bio, conversation and interest catalog enter the model context; Telegram details, account IDs and database message IDs do not. An explicit start is required when switching providers. Existing demo answers are retained and become available to the connected interviewer after that consent.
 

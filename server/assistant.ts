@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { randomInt } from 'node:crypto';
 import { interviewInstructions, openingAngles } from './interview-prompt.ts';
-import type { Config } from './config.ts';
+import type { Config, ReasoningEffort } from './config.ts';
 import { AppError } from './errors.ts';
 import { tags } from '../shared/catalog.ts';
 import { proposalOutputSchema, type ChatMessage, type ProfileTag } from '../shared/schema.ts';
@@ -33,15 +33,16 @@ const proposalJsonSchema = {
   },
 };
 
-export async function structuredResponse(config: Config, instructions: string, input: unknown, name: string, schema: object, fetcher: typeof fetch = fetch): Promise<unknown> {
+export async function structuredResponse(config: Config, instructions: string, input: unknown, name: string, schema: object, fetcher: typeof fetch = fetch,
+  model: { id: string; effort: ReasoningEffort } = { id: config.openrouterModel, effort: config.openrouterReasoningEffort }): Promise<unknown> {
   try {
     const response = await fetcher('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST', signal: AbortSignal.timeout(60000),
       headers: { Authorization: `Bearer ${config.openrouterApiKey}`, 'Content-Type': 'application/json', 'X-OpenRouter-Title': 'QUESTR' },
       body: JSON.stringify({
-        model: config.openrouterModel,
+        model: model.id,
         messages: [{ role: 'system', content: instructions }, { role: 'user', content: JSON.stringify(input) }],
-        reasoning: { effort: config.openrouterReasoningEffort, exclude: true },
+        reasoning: { effort: model.effort, exclude: true },
         max_tokens: name === 'questr_question' ? 8192 : Math.min(32000, Math.max(12000, Math.ceil(JSON.stringify(input).length / 2) + 6000)),
         provider: { require_parameters: true, data_collection: 'deny' },
         response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } },
@@ -87,7 +88,7 @@ export class Interviewer {
       currentBio: bio, transcript: messages.map(({ role, content, kind }) => kind === 'change_topic' ? { role, action: 'change_topic' } : { role, content }), redirectExplicitContent, topicChangeRequested,
       selectedInterests: interests.map(t => t.kind === 'custom' ? t.label : tags.find(tag => tag.code === t.code)!.label),
       openingAngle,
-    }, 'questr_question', questionJsonSchema, this.fetcher);
+    }, 'questr_question', questionJsonSchema, this.fetcher, { id: this.config.openrouterQuestionModel, effort: this.config.openrouterQuestionReasoningEffort });
     const parsed = z.object({ question: z.string().trim().min(5).max(1200) }).strict().safeParse(result);
     if (!parsed.success) throw new AppError(503, 'ASSISTANT_UNAVAILABLE');
     return finish(parsed.data.question);

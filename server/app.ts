@@ -182,7 +182,12 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   app.post('/api/profile/publish', async (req, res) => {
     const { revision } = z.object({ revision: z.number().int().nonnegative() }).strict().parse(req.body);
     const userId = currentUser(res).id;
+    const firstPublication = currentUser(res).status !== 'active';
     await requireCapability(pool, userId, 'profile.edit', { type: 'profile', id: userId });
+    if (firstPublication) {
+      const discovery = await getDiscovery(pool, userId);
+      if (!discovery.locationIds.length || !discovery.languageCodes.length) throw new AppError(422, 'DISCOVERY_REQUIRED');
+    }
     const checked = await validateDraft(userId, revision);
     if (checked.status === 'blocked') throw new AppError(422, 'CONTENT_REQUIRES_CHANGES', { bioReview: checked });
     await transaction(pool, async client => {
@@ -191,6 +196,10 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       if (!rows[0] || rows[0].revision !== revision) throw new AppError(409, 'DRAFT_CONFLICT');
       const draft = draftInputSchema.parse(mapDraft(rows[0]));
       if (!draft.avatarId) throw new AppError(400, 'AVATAR_REQUIRED');
+      if (firstPublication) {
+        const discovery = await getDiscovery(client, userId);
+        if (!discovery.locationIds.length || !discovery.languageCodes.length) throw new AppError(422, 'DISCOVERY_REQUIRED');
+      }
       await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown,open_to_romance) VALUES($1,$2,$3,$4,$5)
         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,avatar_preset_id=EXCLUDED.avatar_preset_id,
         intro_markdown=EXCLUDED.intro_markdown,open_to_romance=EXCLUDED.open_to_romance,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown, draft.openToRomance]);

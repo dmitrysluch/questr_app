@@ -1,7 +1,7 @@
 import { tags } from '../../shared/catalog.ts';
 import { test, expect, type Page } from '@playwright/test';
 
-async function register(page: Page) {
+async function register(page: Page, withDiscovery = true) {
   await expect.poll(async () => (await page.request.get('/api/health')).status()).toBe(200);
   await page.goto('/');
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Alex');
@@ -11,6 +11,14 @@ async function register(page: Page) {
   await page.getByRole('button', { name: 'Choose Moss', exact: true }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('tab', { name: 'Write' })).toBeVisible();
+  if (withDiscovery) {
+    await page.getByRole('combobox', { name: 'Where', exact: true }).fill('Israel');
+    await page.getByRole('option', { name: /^All Israel/ }).click();
+    await page.getByRole('combobox', { name: 'Adventure languages' }).fill('English');
+    await page.getByRole('option', { name: /^English/ }).click();
+    await page.getByRole('button', { name: 'Save filters' }).click();
+    await expect(page.getByRole('button', { name: 'Save filters' })).toBeDisabled();
+  }
 }
 async function markdown(page: Page, content: string) {
   await page.getByLabel('Markdown', { exact: true }).click();
@@ -27,6 +35,20 @@ async function noOverflow(page: Page) {
 async function highlightedText(page: Page) {
   return page.evaluate(() => [...(CSS.highlights.get('questr-explicit') ?? [])].map(range => range.toString()).join('\n'));
 }
+
+test('new characters must choose and save both adventure filters before previewing', async ({ page }) => {
+  await register(page, false);
+  await page.getByRole('button', { name: 'Preview character' }).click();
+  await expect(page.getByRole('alert')).toContainText('Choose and save at least one adventure location and language');
+  await page.getByRole('combobox', { name: 'Where', exact: true }).fill('Israel');
+  await page.getByRole('option', { name: /^All Israel/ }).click();
+  await expect(page.getByRole('button', { name: 'Save filters' })).toBeDisabled();
+  await page.getByRole('combobox', { name: 'Adventure languages' }).fill('English');
+  await page.getByRole('option', { name: /^English/ }).click();
+  await page.getByRole('button', { name: 'Save filters' }).click();
+  await page.getByRole('button', { name: 'Preview character' }).click();
+  await expect(page.getByRole('heading', { name: 'Preview character', exact: true })).toBeVisible();
+});
 
 test('explicit bio passages are highlighted in both editor modes, kept privately, and must be corrected', async ({ page }, info) => {
   await register(page);
@@ -167,7 +189,7 @@ test('Markdown preview does not execute HTML or unsafe links; raw draft survives
 test('a concurrent draft update preserves local text and reports the conflict', async ({ page }) => {
   await register(page);
   await markdown(page, 'A first saved line.');
-  await expect(page.getByRole('status')).toHaveText('Saved');
+  await expect(page.locator('.save-status')).toHaveText('Saved');
   const state = await (await page.request.get('/api/me')).json();
   await page.request.put('/api/draft', { data: { ...state.draft, introMarkdown: 'Saved from another session.' } });
   await page.locator('.cm-content[contenteditable=true]').fill('My unsaved local words are important.');
@@ -308,12 +330,9 @@ test('spoken languages and private country/city/online adventure filters persist
   await page.getByRole('option', { name: /^Russian/ }).click();
   await spoken.fill('English');
   await spoken.press('Enter');
-  await expect(page.getByRole('button', { name: 'Remove English', exact: true })).toBeVisible();
+  await expect(page.locator('.profile-languages').getByRole('button', { name: 'Remove English', exact: true })).toBeVisible();
   await spoken.press('Escape');
-  await page.getByText('Adventure filters', { exact: true }).click();
   const where = page.getByRole('combobox', { name: 'Where', exact: true });
-  await where.fill('Israel');
-  await page.getByRole('option', { name: /^All Israel/ }).click();
   await page.getByRole('button', { name: 'Use languages I speak' }).click();
   await page.getByRole('button', { name: 'Save filters' }).click();
   await expect(page.getByRole('button', { name: 'Save filters' })).toBeDisabled();
@@ -330,8 +349,7 @@ test('spoken languages and private country/city/online adventure filters persist
   await noOverflow(page);
   await page.screenshot({ path: `.artifacts/${info.project.name}-discovery-filters.png`, fullPage: true });
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Remove Russian', exact: true })).toBeVisible();
-  await page.getByText('Adventure filters', { exact: true }).click();
+  await expect(page.locator('.profile-languages').getByRole('button', { name: 'Remove Russian', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove Haifa' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove Tel Aviv' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove Online' })).toBeVisible();

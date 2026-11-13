@@ -54,14 +54,17 @@ export function LocationPicker({ value, onChange, single = false }: { value: str
     query={query} onQuery={setQuery} loading={loading} limit={single ? 1 : 50} items={items.filter(item => !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
     {!!error && <p className="field-error" role="alert">{errorText(error)} <button type="button" className="text-button" onClick={() => setRetry(old => old + 1)}>{t('common.retry')}</button></p>}</>;
 }
-export function DiscoverySettings({ initial, spokenLanguages, onSaved }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void }) {
+export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, onDirtyChange }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   const dirty = JSON.stringify(value) !== JSON.stringify(initial);
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  const complete = value.locationIds.length > 0 && value.languageCodes.length > 0;
   const edit = (change: Partial<DiscoveryPreferences>) => { setValue(old => ({ ...old, ...change })); setSaved(false); };
   async function save() {
+    if (required && !complete) return;
     setBusy(true); setError(null);
     try {
       const result = await api<{ discovery: DiscoveryPreferences }>('/discovery', { method: 'PUT', body: value });
@@ -75,19 +78,20 @@ export function DiscoverySettings({ initial, spokenLanguages, onSaved }: { initi
       setValue(result.discovery); onSaved(result.discovery); setError(null); setSaved(false);
     } catch (error) { setError(error); } finally { setBusy(false); }
   }
-  return <details className="discovery-settings"><summary><Globe2 size={17} aria-hidden="true" />{t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</summary>
-    <div className="discovery-body"><p className="field-hint">{t('discovery.private')}</p>
+  const body = <div className="discovery-body"><p className="field-hint">{t(required ? 'discovery.onboardingHint' : 'discovery.private')}</p>
       <fieldset disabled={busy}>
         <LocationPicker value={value.locationIds} onChange={locationIds => edit({ locationIds })} />
         <p className="field-hint">{t('locations.hint')}</p>
         <LanguagePicker label={t('discovery.languages')} value={value.languageCodes} onChange={languageCodes => edit({ languageCodes })} />
         {!!spokenLanguages.length && <button type="button" className="text-button use-spoken" onClick={() => edit({ languageCodes: spokenLanguages })}>{t('discovery.useSpoken')}</button>}
       </fieldset>
-      {!value.locationIds.length && <p className="field-hint">{t('discovery.empty')}</p>}
-      {value.locationIds.length > 0 && !value.languageCodes.length && <p className="field-hint">{t('discovery.allLanguages')}</p>}
+      {required && !complete && <p className="field-hint">{t('discovery.requiredHint')}</p>}
+      {!required && !value.locationIds.length && <p className="field-hint">{t('discovery.empty')}</p>}
+      {!required && value.locationIds.length > 0 && !value.languageCodes.length && <p className="field-hint">{t('discovery.allLanguages')}</p>}
       {!!error && <p className="field-error" role="alert">{errorText(error)}{error instanceof ApiError && error.code === 'PREFERENCES_CONFLICT' && <button type="button" className="text-button" disabled={busy} onClick={() => void reload()}>{t('discovery.reload')}</button>}</p>}
-      <div className="discovery-actions"><span role="status">{saved && <><Check size={14} />{t('common.saved')}</>}</span><button type="button" className="pixel-button small" disabled={busy || !dirty} onClick={() => void save()}>{t(busy ? 'common.saving' : 'discovery.save')}</button></div>
+      <div className="discovery-actions"><span role="status">{(saved || required && !dirty && complete) && <><Check size={14} />{t('common.saved')}</>}</span><button type="button" className="pixel-button small" disabled={busy || !dirty || required && !complete} onClick={() => void save()}>{t(busy ? 'common.saving' : 'discovery.save')}</button></div>
       <small className="location-credit">{t('locations.coverage')} <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a></small>
-    </div>
-  </details>;
+    </div>;
+  return required ? <section className="discovery-settings discovery-onboarding" id="onboarding-discovery"><h2><Globe2 size={18} aria-hidden="true" />{t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</h2>{body}</section>
+    : <details className="discovery-settings"><summary><Globe2 size={17} aria-hidden="true" />{t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</summary>{body}</details>;
 }

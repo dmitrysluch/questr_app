@@ -22,6 +22,7 @@ async function person(name = 'Moss') {
   const state = (await agent.get('/api/me').expect(200)).body;
   const { body } = await agent.post('/api/register').send({ displayName: name, invite: state.demoInvite, adult: true, terms: true, locale: 'en' }).expect(200);
   const draft = (await agent.put('/api/draft').send({ ...body.draft, avatarId: 'moss', introMarkdown: 'I like coffee, music and long walks.', spokenLanguages: ['en', 'ru'] }).expect(200)).body.draft;
+  await agent.put('/api/discovery').send({ revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] }).expect(200);
   await agent.post('/api/profile/publish').send({ revision: draft.revision }).expect(200);
   return { agent, id: state.user.id as string };
 }
@@ -47,13 +48,13 @@ integration('discovery applies location ancestry and language together without e
   await pool.query("UPDATE capability_budgets SET max_uses=10 WHERE user_id=$1", [host.id]);
   const ids: string[] = [];
   for (const [locationId, languageCode] of [['city:294801','en'],['city:293397','ru'],['city:250441','en'],['online','en'],['city:294801','he']]) ids.push((await create(host, { locationId, languageCode, meetingDetails: locationId === 'online' ? 'https://meet.example/secret' : 'Secret door 42' })).id);
-  await guest.agent.put('/api/discovery').send({ revision: 0, locationIds: ['country:IL'], languageCodes: ['en','ru'] }).expect(200);
+  await guest.agent.put('/api/discovery').send({ revision: 1, locationIds: ['country:IL'], languageCodes: ['en','ru'] }).expect(200);
   const first = (await guest.agent.get('/api/events')).body;
   assert.deepEqual(new Set(first.events.filter((e: any) => ids.includes(e.id)).map((e: any) => e.id)), new Set(ids.slice(0,2)));
   assert.ok(!JSON.stringify(first).includes('Secret door')); assert.ok(!JSON.stringify(first).includes('meetingDetails'));
-  await guest.agent.put('/api/discovery').send({ revision: 1, locationIds: ['city:294801','online'], languageCodes: ['en'] }).expect(200);
+  await guest.agent.put('/api/discovery').send({ revision: 2, locationIds: ['city:294801','online'], languageCodes: ['en'] }).expect(200);
   assert.deepEqual(new Set((await guest.agent.get('/api/events')).body.events.filter((e: any) => ids.includes(e.id)).map((e: any) => e.id)), new Set([ids[0],ids[3]]));
-  await guest.agent.put('/api/discovery').send({ revision: 2, locationIds: ['country:IL'], languageCodes: [] }).expect(200);
+  await guest.agent.put('/api/discovery').send({ revision: 3, locationIds: ['country:IL'], languageCodes: [] }).expect(200);
   assert.deepEqual(new Set((await guest.agent.get('/api/events')).body.events.filter((e: any) => ids.includes(e.id)).map((e: any) => e.id)), new Set([ids[0],ids[1],ids[4]]));
   assert.equal((await guest.agent.get(`/api/events/${ids[0]}`)).body.event.meetingDetails, null);
   await guest.agent.get(`/api/events/${ids[0]}/profiles/${host.id}`).expect(200);

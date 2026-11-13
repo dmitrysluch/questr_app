@@ -62,7 +62,10 @@ test('provider errors, malformed JSON and truncated completions cannot become dr
 test('both the first question and follow-ups are generated from current bio and full history', async () => {
   let calls = 0;
   const fetcher = (async (_url: string, init: RequestInit) => {
-    const input = JSON.parse(JSON.parse(init.body as string).messages[1].content);
+    const body = JSON.parse(init.body as string);
+    assert.equal(body.model, 'openai/gpt-6-luna');
+    assert.deepEqual(body.reasoning, { effort: 'medium', exclude: true });
+    const input = JSON.parse(body.messages[1].content);
     assert.equal(input.currentBio, calls ? 'Updated bio about climbing.' : 'I build tiny games about trains.');
     assert.deepEqual(input.transcript, calls ? messages.map(({ role, content }) => ({ role, content })) : []);
     calls++;
@@ -75,7 +78,10 @@ test('both the first question and follow-ups are generated from current bio and 
 });
 test('draft generation receives the bio, permits rewriting, and maps opaque evidence IDs back', async () => {
   const fetcher = (async (_url: string, init: RequestInit) => {
-    const input = JSON.parse(JSON.parse(init.body as string).messages[1].content);
+    const body = JSON.parse(init.body as string);
+    assert.equal(body.model, 'test/model');
+    assert.deepEqual(body.reasoning, { effort: 'high', exclude: true });
+    const input = JSON.parse(body.messages[1].content);
     assert.deepEqual(input.currentBio, { id: 'bio', markdown: 'I make tiny games.' });
     assert.equal(input.transcript[1].id, 'answer_2');
     assert.ok(!JSON.stringify(input).includes('q1'));

@@ -5,8 +5,8 @@ async function character(page: Page, name: string) {
   const state = await (await page.request.get('/api/me')).json();
   const { draft } = await (await page.request.post('/api/register', { data: { displayName: name, invite: state.demoInvite, adult: true, terms: true, locale: 'en' } })).json();
   const saved = await (await page.request.put('/api/draft', { data: { ...draft, avatarId: 'moss', spokenLanguages: ['en'], introMarkdown: `I am ${name}. Coffee and records are my thing.` } })).json();
+  expect((await page.request.put('/api/discovery', { data: { revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] } })).status()).toBe(200);
   expect((await page.request.post('/api/profile/publish', { data: { revision: saved.draft.revision } })).status()).toBe(200);
-  await page.request.put('/api/discovery', { data: { revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] } });
   return state.user.id as string;
 }
 async function noOverflow(page: Page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }

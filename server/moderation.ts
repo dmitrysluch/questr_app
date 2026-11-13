@@ -29,7 +29,7 @@ export function validateReview(text: string, raw: unknown): ContentReview {
 export class ContentReviewer {
   readonly key: string;
   constructor(private config: Config, private fetcher: typeof fetch = fetch) {
-    this.key = `${contentPolicyVersion}:${config.aiMode}:${config.aiMode === 'demo' ? 'fixtures' : `${config.openrouterModel}:${config.openrouterReasoningEffort}`}`;
+    this.key = `${contentPolicyVersion}:${config.aiMode}:${config.aiMode === 'demo' ? 'fixtures' : `${config.openrouterReviewModel}:${config.openrouterReviewReasoningEffort}`}`;
   }
   async review(text: string): Promise<ContentReview> {
     if (!text.trim()) return { status: 'approved', spans: [] };
@@ -44,7 +44,8 @@ export class ContentReviewer {
     for (let start = 0; start < text.length; start += 15500) {
       const chunk = text.slice(start, start + 16000);
       try {
-        const result = validateReview(chunk, await structuredResponse(this.config, reviewInstructions, { content: chunk }, 'questr_content_review', jsonSchema, this.fetcher));
+        const result = validateReview(chunk, await structuredResponse(this.config, reviewInstructions, { content: chunk }, 'questr_content_review', jsonSchema, this.fetcher,
+          { id: this.config.openrouterReviewModel, effort: this.config.openrouterReviewReasoningEffort }));
         spans.push(...result.spans.map(s => ({ start: start + s.start, end: start + s.end })));
       } catch { throw new AppError(503, 'CONTENT_REVIEW_UNAVAILABLE'); }
       if (start + 16000 >= text.length) break;
