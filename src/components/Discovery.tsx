@@ -54,7 +54,7 @@ export function LocationPicker({ value, onChange, single = false }: { value: str
     query={query} onQuery={setQuery} loading={loading} limit={single ? 1 : 50} items={items.filter(item => !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
     {!!error && <p className="field-error" role="alert">{errorText(error)} <button type="button" className="text-button" onClick={() => setRetry(old => old + 1)}>{t('common.retry')}</button></p>}</>;
 }
-export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, onDirtyChange }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
+export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, inline = false, onDirtyChange }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; inline?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -92,6 +92,6 @@ export function DiscoverySettings({ initial, spokenLanguages, onSaved, required 
       <div className="discovery-actions"><span role="status">{(saved || required && !dirty && complete) && <><Check size={14} />{t('common.saved')}</>}</span><button type="button" className="pixel-button small" disabled={busy || !dirty || required && !complete} onClick={() => void save()}>{t(busy ? 'common.saving' : 'discovery.save')}</button></div>
       <small className="location-credit">{t('locations.coverage')} <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a></small>
     </div>;
-  return required ? <section className="discovery-settings discovery-onboarding" id="onboarding-discovery"><h2><Globe2 size={18} aria-hidden="true" />{t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</h2>{body}</section>
+  return required || inline ? <section className="discovery-settings discovery-onboarding" id={required ? 'onboarding-discovery' : undefined}><h2><Globe2 size={18} aria-hidden="true" />{t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</h2>{body}</section>
     : <details className="discovery-settings"><summary><Globe2 size={17} aria-hidden="true" />{t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</summary>{body}</details>;
 }

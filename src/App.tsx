@@ -22,12 +22,13 @@ declare global {
 const steps: { id: Draft['currentStep']; label: TranslationKey }[] = [
   { id: 'avatar', label: 'steps.avatar' },
   { id: 'bio', label: 'steps.bio' },
+  { id: 'discovery', label: 'steps.discovery' },
   { id: 'review', label: 'steps.review' },
 ];
 
 export function App() {
-  const [adventuresOpen, setAdventuresOpen] = useState(location.hash.startsWith('#adventures'));
-  useEffect(() => { const change = () => setAdventuresOpen(location.hash.startsWith('#adventures')); window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
+  const [route, setRoute] = useState(location.hash);
+  useEffect(() => { const change = () => setRoute(location.hash); window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [state, setState] = useState<AppState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,9 +96,12 @@ export function App() {
   async function go(step: Draft['currentStep']) {
     if (!draft || busy) return;
     if (step !== 'avatar' && !draft.avatarId) { setError(new ApiError('AVATAR_REQUIRED')); return; }
-    if (step === 'review' && !state?.profile && (discoveryDirty || !state?.discovery.locationIds.length || !state?.discovery.languageCodes.length)) {
-      setError(new ApiError('DISCOVERY_REQUIRED'));
-      document.getElementById('onboarding-discovery')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const leavingUnsavedFilters = discoveryDirty && step !== 'bio' && step !== 'discovery';
+    const missingRequiredFilters = step === 'review' && !state?.profile && (!state?.discovery.locationIds.length || !state?.discovery.languageCodes.length);
+    if (leavingUnsavedFilters || missingRequiredFilters) {
+      edit({ currentStep: 'discovery' });
+      setError(new ApiError(discoveryDirty ? 'DISCOVERY_UNSAVED' : 'DISCOVERY_REQUIRED'));
+      requestAnimationFrame(() => document.getElementById('onboarding-discovery')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       return;
     }
     await run(async () => {
@@ -136,6 +140,7 @@ export function App() {
   const selectedAvatar = avatars.find(a => a.id === draft?.avatarId);
   const wordCount = draft?.introMarkdown.trim().split(/\s+/).filter(Boolean).length ?? 0;
   const currentReview = bioReview?.introMarkdown === draft?.introMarkdown ? bioReview : null;
+  const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character');
 
   return <div className="app-shell">
     <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR"><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>
@@ -145,7 +150,7 @@ export function App() {
       {draft && !showProfile && !adventuresOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
         {steps.map((step, index) => <button key={step.id} className={`step ${currentStep === step.id ? 'active' : ''} ${index < stepIndex ? 'done' : ''}`}
           disabled={busy || (step.id !== 'avatar' && !draft.avatarId)} aria-current={currentStep === step.id ? 'step' : undefined} onClick={() => void go(step.id)}>
-          <span className="step-number">{index < stepIndex ? <Check size={13} /> : index + 1}</span><span>{t(step.label)}</span>
+          <span className="step-number">{index < stepIndex ? <Check size={13} /> : index + 1}</span><span className="step-label">{t(step.label)}</span>
         </button>)}
       </nav>}
       {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen ? 'active' : ''} aria-current={!adventuresOpen ? 'page' : undefined} onClick={() => { location.hash = 'character'; }}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'adventures'; }); }}>{t('nav.adventures')}</button></nav>}
@@ -186,11 +191,10 @@ export function App() {
             </div></div>
           </div>
           <div className="page-actions"><SaveStatus state={saveState} /><button className="pixel-button" disabled={!draft.avatarId || busy} onClick={() => void go('bio')}>{t('avatar.next')}<ArrowRight size={17} /></button></div>
-        </section> : currentStep === 'bio' ? <section>
+        </section> : currentStep === 'bio' || currentStep === 'discovery' ? <>
+        <section hidden={currentStep !== 'bio'}>
           <PageHeading title="bio.title" />
           <div className="bio-layout"><div className="bio-main">
-            <div className="profile-languages"><LanguagePicker label={t('languages.spoken')} value={draft.spokenLanguages} onChange={spokenLanguages => edit({ spokenLanguages })} /></div>
-            {!state.profile && <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} required onDirtyChange={setDiscoveryDirty} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />}
             <label className="checkbox-label romance-draft"><input type="checkbox" checked={draft.openToRomance} onChange={e => edit({ openToRomance: e.target.checked })} />{t('profile.romance')}</label>
             <div className="section-heading"><h2>{t('bio.tagsTitle')}</h2><span>{t('common.optional')}</span></div>
             <TagPicker value={draft.tags} onChange={tags => edit({ tags })} />
@@ -205,10 +209,18 @@ export function App() {
                 onApply={nextDraft => { replace(nextDraft); edit({ mode: 'manual' }); }} />}
             </div></div>
             <details className="bio-disclosure"><summary>{t('content.howUsed')}</summary><p>{t(config?.aiMode === 'openrouter' ? 'content.disclosure' : 'content.demoDisclosure')}</p></details>
-            {!!state.profile && <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />}
           </div></div>
-          <div className="page-actions"><button className="text-button" onClick={() => void go('avatar')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right"><SaveStatus state={saveState} /><button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t(checkingBio ? 'content.checking' : 'bio.preview')}<ArrowRight size={17} /></button></div></div>
-        </section> : <section>
+          <div className="page-actions"><button className="text-button" onClick={() => void go('avatar')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right">{currentStep === 'bio' && <SaveStatus state={saveState} />}<button className="pixel-button" disabled={busy} onClick={() => void go('discovery')}>{t('steps.discovery')}<ArrowRight size={17} /></button></div></div>
+        </section>
+        <section hidden={currentStep !== 'discovery'}>
+          <PageHeading title="steps.discovery" />
+          <div className="bio-settings-panel">
+            <div className="profile-languages"><LanguagePicker label={t('languages.spoken')} value={draft.spokenLanguages} onChange={spokenLanguages => edit({ spokenLanguages })} /></div>
+            <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} inline required={!state.profile} onDirtyChange={setDiscoveryDirty} onSaved={discovery => { setDiscoveryDirty(false); setState(old => old ? { ...old, discovery } : old); }} />
+          </div>
+          <div className="page-actions"><button className="text-button" onClick={() => void go('bio')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right">{currentStep === 'discovery' && <SaveStatus state={saveState} />}<button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t(checkingBio ? 'content.checking' : 'bio.preview')}<ArrowRight size={17} /></button></div></div>
+        </section>
+        </> : <section>
           <PageHeading title="review.title" />
           <ContentWarning text={draft.introMarkdown} review={currentReview} />
           <ProfileCard profile={{ ...draft, avatarId: draft.avatarId!, completedAt: '' }} flagged={currentReview?.spans} />

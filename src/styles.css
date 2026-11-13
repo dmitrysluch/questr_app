@@ -107,6 +107,9 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .save-status.saving { color: #9a8063; }
 .save-status.error { color: #a64f34; }
 .bio-layout { display: block; }
+.bio-settings-panel { max-width: 680px; }
+.bio-settings-panel .profile-languages { margin-bottom: 24px; }
+[hidden] { display: none !important; }
 .bio-main { min-width: 0; }
 .section-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .section-heading h2 { font-size: 17px; margin: 0; }
@@ -241,7 +244,7 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 
 /* Compact navigation keeps the character sheet in the center of the page. */
 .step-bar { display: flex; max-width: 840px; margin: 24px auto 0; gap: 8px; }
-.step { width: auto; flex: 1; gap: 10px; padding: 10px 14px; border-radius: 0; font-size: 12px; color: var(--muted); }
+.step { width: auto; min-width: 0; flex: 1; gap: 10px; padding: 10px 14px; border-radius: 0; font-size: 12px; color: var(--muted); }
 .step.active { color: var(--ink); }
 .step-number { width: 24px; height: 24px; flex-basis: 24px; font-size: 11px; }
 .bio-disclosure { margin-top: 16px; color: var(--muted); font-size: 11px; line-height: 1.7; }
@@ -392,6 +395,10 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .adventure-card { padding: 23px; text-align: left; width: 100%; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .adventure-card:hover { border-color: #ad8d69; box-shadow: 4px 4px 0 #d7c6af; }
 .adventure-card h2 { margin: 0; overflow-wrap: anywhere; font-size: 22px; line-height: 1.35; }
+.event-summary { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.adventure-card .event-summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+.event-experience { margin: 18px 0 0; font-size: 13px; color: var(--muted); }
+.event-experience strong { color: var(--ink); }
 .event-status { font-size: 11px; color: var(--sage); font-weight: 650; }
 .event-facts { display: grid; gap: 10px; color: #726557; font-size: 12px; line-height: 1.5; }
 .event-facts > span { display: flex; align-items: flex-start; gap: 9px; overflow-wrap: anywhere; }
@@ -400,6 +407,7 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .card-host .character, .event-host .character { width: 32px; height: 40px; }
 .event-detail { padding: 30px; }
 .event-detail h1 { margin: 14px 0 22px; overflow-wrap: anywhere; }
+.event-detail > .event-summary { margin: -6px 0 18px; }
 .event-host { margin: 18px 0; }
 .event-detail > .markdown { margin: 12px 0 28px; }
 .event-detail > .event-actions { margin-top: 25px; }
@@ -439,6 +447,11 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
   .meeting-details { padding: 16px; }
   .workspace-tabs { margin-top: 18px; }
   .party-person { min-width: 110px; padding: 10px; }
+}
+@media (max-width: 480px) {
+  .step-bar { gap: 3px; }
+  .step { justify-content: center; text-align: center; padding: 8px 3px; min-height: 44px; font-size: 10px; line-height: 1.2; }
+  .step-number { display: none; }
 }
 .unavailable-character { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); }
 .event-reminder { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 20px; color: var(--muted); }

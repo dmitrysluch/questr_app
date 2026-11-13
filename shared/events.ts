@@ -7,7 +7,12 @@ export const timeZoneSchema = z.string().max(100).refine(zone => {
 }, 'Invalid time zone');
 export const eventFieldsSchema = z.object({
   title: z.string().trim().min(3).max(160),
+  activitySummary: z.string().trim().min(10).max(240),
   descriptionMarkdown: z.string().trim().min(10).max(12000),
+  district: z.string().trim().max(120),
+  costEstimate: z.string().trim().min(2).max(120),
+  experienceNotes: z.string().trim().min(2).max(240),
+  onlinePlatform: z.string().trim().max(120),
   locationId: locationIdSchema,
   languageCode: languageCodeSchema,
   startsAt: z.iso.datetime({ offset: true }),
@@ -21,10 +26,14 @@ export type EventFields = z.infer<typeof eventFieldsSchema>;
 export const createEventSchema = eventFieldsSchema.extend({ requestId: z.uuid() });
 export const editEventSchema = eventFieldsSchema.extend({ revision: z.number().int().nonnegative() });
 export const applicationSchema = z.object({ message: z.string().trim().min(3).max(2000) }).strict();
+export function hasPublicLink(text: string): boolean {
+  return /(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+[a-z]{2,}\/)/i.test(text);
+}
 export type MemberStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'removed';
 export interface EventPerson { id: string; displayName: string; avatarId: string; role: 'host' | 'participant'; status: MemberStatus; unavailable?: boolean; applicationText?: string }
 export interface Adventure {
-  id: string; title: string; descriptionMarkdown: string; location: Location; languageCode: string;
+  id: string; title: string; activitySummary: string; descriptionMarkdown: string; district: string; costEstimate: string;
+  experienceNotes: string; onlinePlatform: string; recruitmentOpen: boolean; location: Location; languageCode: string;
   startsAt: string; endsAt: string; timeZone: string; capacity: number; participantCount: number; revision: number;
   status: 'draft' | 'published' | 'cancelled' | 'completed';
   host: Pick<EventPerson, 'id' | 'displayName' | 'avatarId'>;

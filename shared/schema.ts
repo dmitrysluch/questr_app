@@ -25,7 +25,7 @@ export const draftInputSchema = z.object({
   spokenLanguages: spokenLanguagesSchema.default([]),
   openToRomance: z.boolean().default(false),
   mode: z.enum(['manual', 'interview']),
-  currentStep: z.enum(['avatar', 'bio', 'review']),
+  currentStep: z.enum(['avatar', 'bio', 'discovery', 'review']),
 }).strict();
 export type Draft = z.infer<typeof draftInputSchema>;
 export const registerSchema = z.object({

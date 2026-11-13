@@ -52,7 +52,7 @@ export class EventBot {
           const event = await this.adventures.detail(row.user_id, eventId);
           if (event.canChat) await reply(`${event.title}\n\nMessages in this topic go to the accepted party under your QUESTR name. ${this.config.aiMode === 'openrouter' ? 'Your messages are sent through OpenRouter to check for explicit sexual content before delivery. ' : 'This local demo uses a limited content check. '}Open QUESTR for meeting details.`, eventId);
           else if (event.myStatus === 'pending') await reply(`${event.title}\n\nYour application is waiting for the host.`, eventId);
-          else if (event.canApply) await reply(`${event.title}\n\nWrite a short message to the host in this topic to apply (3–2000 characters). ${this.config.aiMode === 'openrouter' ? 'Your application is sent through OpenRouter to check for explicit sexual content before the host can read it.' : 'This local demo uses a limited content check without an AI provider.'}`, eventId);
+          else if (event.canApply) await reply(`${event.title}\n\nWrite one short text message about this adventure to apply (3–2000 characters, no links or attachments). ${this.config.aiMode === 'openrouter' ? 'Your application is sent through OpenRouter to check for explicit sexual content before the host can read it.' : 'This local demo uses a limited content check without an AI provider.'}`, eventId);
           else await reply('This adventure is not accepting applications.');
         } else if (row.thread_id && !row.text.startsWith('/')) {
           const mapping = (await db.query('SELECT event_id FROM event_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
@@ -80,7 +80,7 @@ export class EventBot {
         await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
       } catch (error) {
         if (error instanceof ZodError || (error instanceof AppError && error.status < 500)) {
-          const message = error instanceof ZodError ? 'Please write an application of 3–2000 characters.' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'Please keep explicit sexual content out of QUESTR messages. Try a message about the adventure instead.' : error.code === 'MESSAGE_TOO_LONG' ? 'Please keep each message under 3000 characters.' : 'This action is unavailable. Open QUESTR to check the adventure and your application.';
+          const message = error instanceof ZodError ? 'Please write an application of 3–2000 characters.' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'Please keep explicit sexual content out of QUESTR messages. Try a message about the adventure instead.' : error.code === 'APPLICATION_LINK_NOT_ALLOWED' ? 'Please write your first message without links. You can ask the host about the adventure instead.' : error.code === 'MESSAGE_TOO_LONG' ? 'Please keep each message under 3000 characters.' : 'This action is unavailable. Open QUESTR to check the adventure and your application.';
           await reply(message);
           await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
         } else {

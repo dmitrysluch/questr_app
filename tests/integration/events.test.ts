@@ -26,7 +26,7 @@ async function person(name = 'Moss') {
   await agent.post('/api/profile/publish').send({ revision: draft.revision }).expect(200);
   return { agent, id: state.user.id as string };
 }
-function fields(extra = {}) { return { title: 'Coffee and records', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', startsAt: new Date(Date.now() + 86400000).toISOString(), endsAt: new Date(Date.now() + 86400000 + 7200000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
+function fields(extra = {}) { return { title: 'Coffee and records', activitySummary: 'Bring a record and listen over coffee.', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', district: 'Downtown', costEstimate: 'About ₪25', experienceNotes: 'No experience needed', onlinePlatform: 'Zoom', startsAt: new Date(Date.now() + 86400000).toISOString(), endsAt: new Date(Date.now() + 86400000 + 7200000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
 const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (await who.agent.post('/api/events').send(fields(extra)).expect(201)).body.event;
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
@@ -36,9 +36,11 @@ integration('creation is atomic, idempotent, budgeted and validates geography, t
   const results = await Promise.all([host.agent.post('/api/events').send(body), host.agent.post('/api/events').send(body)]);
   assert.deepEqual(results.map(r => r.status), [201, 201]); assert.equal(results[0].body.event.id, results[1].body.event.id);
   assert.equal(results[0].body.event.participantCount, 1); assert.equal(results[0].body.event.canChat, true);
+  assert.equal(results[0].body.event.activitySummary, body.activitySummary);
+  assert.equal(results[0].body.event.costEstimate, body.costEstimate);
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM capability_usage WHERE user_id=$1", [host.id])).rows[0].n, 1);
   await host.agent.post('/api/events').send({ ...body, title: 'Different title' }).expect(409);
-  for (const change of [{ locationId: 'country:IL' }, { locationId: 'online', meetingDetails: 'javascript:alert(1)' }, { startsAt: '2020-01-01T00:00:00Z' }, { endsAt: '2020-01-01T00:00:00Z' }, { meetingMapUrl: 'https://evil.example/maps/secret' }, { timeZone: 'Moon/Crater' }]) await host.agent.post('/api/events').send(fields(change)).expect(400);
+  for (const change of [{ locationId: 'country:IL' }, { locationId: 'online', meetingDetails: 'javascript:alert(1)' }, { district: '' }, { locationId: 'online', onlinePlatform: '', meetingDetails: 'https://meet.example/secret' }, { descriptionMarkdown: 'Meet at https://meet.example/secret at seven.' }, { startsAt: '2020-01-01T00:00:00Z' }, { endsAt: '2020-01-01T00:00:00Z' }, { meetingMapUrl: 'https://evil.example/maps/secret' }, { timeZone: 'Moon/Crater' }]) await host.agent.post('/api/events').send(fields(change)).expect(400);
   await host.agent.post('/api/events').send(fields({ descriptionMarkdown: 'I want to have sex with you.' })).expect(422);
   await create(host, { locationId: 'online', meetingDetails: 'https://meet.example/private' });
   await host.agent.post('/api/events').send(fields()).expect(429);
@@ -59,6 +61,27 @@ integration('discovery applies location ancestry and language together without e
   assert.equal((await guest.agent.get(`/api/events/${ids[0]}`)).body.event.meetingDetails, null);
   await guest.agent.get(`/api/events/${ids[0]}/profiles/${host.id}`).expect(200);
   await guest.agent.get(`/api/events/${ids[0]}/profiles/${randomUUID()}`).expect(404);
+});
+integration('closing recruitment stops new applications but lets the host decide pending ones', async () => {
+  const host = await person(), pending = await person(), next = await person();
+  const event = await create(host, { capacity: 3 });
+  await apply(pending, event.id);
+  await next.agent.put(`/api/events/${event.id}/recruitment`).send({ open: false, revision: 0 }).expect(403);
+  const closed = (await host.agent.put(`/api/events/${event.id}/recruitment`).send({ open: false, revision: 0 }).expect(200)).body.event;
+  assert.equal(closed.recruitmentOpen, false);
+  assert.equal((await next.agent.get(`/api/events/${event.id}`).expect(200)).body.event.canApply, false);
+  await next.agent.post(`/api/events/${event.id}/applications`).send({ message: 'I would like to join the record night.' }).expect(409);
+  await decide(host, event.id, pending.id, 'accept').expect(200);
+  await host.agent.put(`/api/events/${event.id}/recruitment`).send({ open: true, revision: 0 }).expect(409);
+  const opened = (await host.agent.put(`/api/events/${event.id}/recruitment`).send({ open: true, revision: 1 }).expect(200)).body.event;
+  assert.equal(opened.recruitmentOpen, true);
+  await apply(next, event.id);
+});
+integration('first contact rejects links before the host can receive them', async () => {
+  const host = await person(), guest = await person();
+  const event = await create(host);
+  await guest.agent.post(`/api/events/${event.id}/applications`).send({ message: 'Join me at meet.google.com/secret' }).expect(400);
+  assert.equal((await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event.applications.length, 0);
 });
 integration('last-seat acceptance is serialized; exit revokes private details, chat and contextual profiles', async () => {
   const host = await person(), a = await person('Alex'), b = await person('Blair'), stranger = await person();

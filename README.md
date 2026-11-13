@@ -4,6 +4,8 @@ A Telegram Mini App POC for an invite-only community built around doing things t
 
 The POC covers registration, avatar selection, emoji tags, spoken languages, an opt-in romance signal, a long-form Markdown profile, and an optional **Ask me questions** interview. Saved profiles are shared in the context of adventures; drafts and interview answers stay private. New characters must choose and save at least one discovery location and adventure language before publication. Existing characters can still choose all adventure languages by clearing that filter. Discovery locations can be countries, cities or Online.
 
+Active characters land on the upcoming-adventures list. Character creation has separate top-level Bio and Languages & filters steps. Adventure cards show the joint activity, district or online platform, approximate cost, experience requirements and available places; hosts can close and reopen applications.
+
 The [geography and access design](docs/discovery-and-access.md) describes the implemented location catalog, filter matching, scoped roles, expiring grants and transactional usage budgets. The [adventures v1 guide](docs/adventures.md) covers creation, discovery, applications, accepted parties, private meeting details, start/end times, calendar export, reminders and the Telegram relay. Reputation automation is not implemented yet.
 
 ## Interface and interests

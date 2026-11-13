@@ -12,13 +12,18 @@ async function register(page: Page, withDiscovery = true) {
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('tab', { name: 'Write' })).toBeVisible();
   if (withDiscovery) {
+    await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Languages & filters' }).click();
     await page.getByRole('combobox', { name: 'Where', exact: true }).fill('Israel');
     await page.getByRole('option', { name: /^All Israel/ }).click();
     await page.getByRole('combobox', { name: 'Adventure languages' }).fill('English');
     await page.getByRole('option', { name: /^English/ }).click();
     await page.getByRole('button', { name: 'Save filters' }).click();
     await expect(page.getByRole('button', { name: 'Save filters' })).toBeDisabled();
+    await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Bio' }).click();
   }
+}
+async function preview(page: Page) {
+  await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Preview' }).click();
 }
 async function markdown(page: Page, content: string) {
   await page.getByLabel('Markdown', { exact: true }).click();
@@ -38,15 +43,18 @@ async function highlightedText(page: Page) {
 
 test('new characters must choose and save both adventure filters before previewing', async ({ page }) => {
   await register(page, false);
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await expect(page.getByRole('alert')).toContainText('Choose and save at least one adventure location and language');
   await page.getByRole('combobox', { name: 'Where', exact: true }).fill('Israel');
   await page.getByRole('option', { name: /^All Israel/ }).click();
+  await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Bio' }).click();
+  await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Languages & filters' }).click();
+  await expect(page.getByRole('button', { name: 'Remove All Israel' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save filters' })).toBeDisabled();
   await page.getByRole('combobox', { name: 'Adventure languages' }).fill('English');
   await page.getByRole('option', { name: /^English/ }).click();
   await page.getByRole('button', { name: 'Save filters' }).click();
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await expect(page.getByRole('heading', { name: 'Preview character', exact: true })).toBeVisible();
 });
 
@@ -54,7 +62,7 @@ test('explicit bio passages are highlighted in both editor modes, kept privately
   await register(page);
   const text = 'I enjoy **coffee**.\n\nI want to have **sex** with you.\n\nI am gay and open to dating.';
   await markdown(page, text);
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await expect(page.getByRole('alert')).toContainText('Rephrase the marked text.');
   await expect.poll(() => highlightedText(page)).toContain('I want to have **sex** with you.');
   expect((await (await page.request.get('/api/me')).json()).profile).toBeNull();
@@ -69,8 +77,9 @@ test('explicit bio passages are highlighted in both editor modes, kept privately
   await markdown(page, 'I enjoy **coffee**. I am gay and open to dating.');
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect.poll(() => highlightedText(page)).toBe('');
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await page.getByRole('button', { name: 'Save character' }).click();
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character', exact: true }).click();
   await expect(page.locator('.profile-body')).toContainText('I am gay and open to dating.');
 });
 
@@ -108,9 +117,10 @@ test('registration, avatar, custom tags, Markdown, profile editing and reload', 
   await expect(page.locator('[contenteditable=true]').first().locator('strong')).toHaveText('tiny indie games');
   await noOverflow(page);
   await page.screenshot({ path: `.artifacts/${info.project.name}-editor.png`, fullPage: true });
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await expect(page.locator('.profile-body strong')).toHaveText('tiny indie games');
   await page.getByRole('button', { name: 'Save character' }).click();
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Character saved' })).toBeVisible();
   await page.reload();
   await expect(page.locator('.profile-body')).toContainText('Bouldering on Tuesdays');
@@ -124,8 +134,9 @@ test('registration, avatar, custom tags, Markdown, profile editing and reload', 
   await page.getByRole('button', { name: 'Save name' }).click();
   await page.getByRole('button', { name: 'Choose Ember', exact: true }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await page.getByRole('button', { name: 'Save character' }).click();
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character', exact: true }).click();
   await expect(page.locator('.profile-identity h2')).toHaveText('Alex Coffee');
   expect(errors).toEqual([]);
 });
@@ -161,11 +172,12 @@ test('interview drafts retain the existing bio and support comparison, discard, 
   await expect(dialog.locator('.proposal-preview')).toContainText('tiny train games');
   await dialog.getByRole('button', { name: 'Apply draft & tags' }).click();
   await expect(page.getByRole('tab', { name: 'Write' })).toHaveAttribute('aria-selected', 'true');
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await expect(page.locator('.profile-body')).toContainText(first);
   await expect(page.locator('.profile-body')).toContainText(second);
   await expect(page.locator('.profile-body')).toContainText('Coffee is non-negotiable.');
   await page.getByRole('button', { name: 'Save character' }).click();
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character', exact: true }).click();
   await page.reload();
   await expect(page.locator('.profile-body')).toContainText(first);
   await noOverflow(page);
@@ -175,7 +187,7 @@ test('Markdown preview does not execute HTML or unsafe links; raw draft survives
   await register(page);
   const raw = '## My story\n\nSafe original words.\n\n<script>window.questrInjected=true</script>\n\n[unsafe](javascript:alert(1))\n\n**Bold stays bold**';
   await markdown(page, raw);
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await expect(page.locator('.profile-body strong')).toHaveText('Bold stays bold');
   await expect(page.getByRole('button', { name: 'Save character' })).toBeEnabled();
   expect(await page.evaluate(() => (window as any).questrInjected)).toBeUndefined();
@@ -215,7 +227,7 @@ test('the visual formatting toolbar saves real Markdown', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('Words with weight.');
   await page.getByLabel('Bold', { exact: true }).click();
   await expect(editor.locator('strong')).toHaveText('Words with weight.');
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await expect(page.locator('.profile-body strong')).toHaveText('Words with weight.');
   await expect(page.getByRole('button', { name: 'Save character' })).toBeEnabled();
   const state = await (await page.request.get('/api/me')).json();
@@ -285,9 +297,10 @@ test('interest search supports niche aliases, keyboard selection, filters, remov
   await noOverflow(page);
   await page.screenshot({ path: `.artifacts/${info.project.name}-interest-search.png`, fullPage: true });
   await search.press('Escape');
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await page.getByRole('button', { name: 'Save character' }).click();
   await page.reload();
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character', exact: true }).click();
   const profile = (await (await page.request.get('/api/me')).json()).profile;
   expect(profile.tags.map((tag: any) => tag.code).sort()).toEqual(['charlotte_gainsbourg', 'molecular_cocktails', 'shors_algorithm']);
   await expect(page.locator('.profile-identity')).toContainText('Charlotte Gainsbourg');
@@ -316,7 +329,7 @@ test('interest limit blocks additions until a selected tag is removed', async ({
   await coffee.click();
   await expect(page.getByRole('button', { name: 'Remove Coffee', exact: true })).toBeVisible();
   await search.press('Escape');
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await expect(page.getByRole('heading', { name: 'Preview character', exact: true })).toBeVisible();
   const updated = (await (await page.request.get('/api/me')).json()).draft;
   expect(updated.tags).toHaveLength(30);
@@ -325,6 +338,7 @@ test('interest limit blocks additions until a selected tag is removed', async ({
 
 test('spoken languages and private country/city/online adventure filters persist independently', async ({ page }, info) => {
   await register(page);
+  await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Languages & filters' }).click();
   const spoken = page.getByRole('combobox', { name: 'Languages I speak', exact: true });
   await spoken.fill('рус');
   await page.getByRole('option', { name: /^Russian/ }).click();
@@ -349,6 +363,7 @@ test('spoken languages and private country/city/online adventure filters persist
   await noOverflow(page);
   await page.screenshot({ path: `.artifacts/${info.project.name}-discovery-filters.png`, fullPage: true });
   await page.reload();
+  await expect(page.getByRole('heading', { name: 'Languages & filters' })).toBeVisible();
   await expect(page.locator('.profile-languages').getByRole('button', { name: 'Remove Russian', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove Haifa' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove Tel Aviv' })).toBeVisible();
@@ -357,8 +372,9 @@ test('spoken languages and private country/city/online adventure filters persist
   expect(state.user.locale).toBe('en');
   expect(state.draft.spokenLanguages).toEqual(['ru', 'en']);
   expect(state.discovery.locationIds).toEqual(['city:293397', 'city:294801', 'online']);
-  await page.getByRole('button', { name: 'Preview character' }).click();
+  await preview(page);
   await page.getByRole('button', { name: 'Save character' }).click();
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character', exact: true }).click();
   await expect(page.locator('.profile-card .spoken-languages')).toContainText('Russian · English');
   await expect(page.locator('.profile-card')).not.toContainText('Haifa');
   await expect(page.locator('.profile-card')).not.toContainText('Online');

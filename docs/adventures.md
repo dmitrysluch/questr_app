@@ -8,6 +8,9 @@ member directory. The Mini App manages adventures; Telegram handles messages.
 
 Open `http://localhost:5180/#adventures` after saving a character. In Discover,
 choose locations and optionally languages under Adventure filters, or create an adventure.
+The default screen for active characters is the upcoming-adventures list. Character
+editing remains available from the Character tab. Onboarding puts spoken languages
+and private adventure filters in a separate top-level step from interests and bio.
 An empty language selection includes every language in the chosen locations.
 My adventures includes hosted adventures, applications and accessible history,
 regardless of discovery filters. To try an application, open a separate browser
@@ -49,6 +52,12 @@ start time resets unsent reminders; cancellation clears queued reminders.
 - Creation publishes directly. The existing `events.create` budget allows 2 per
   rolling 7 days. Failed transactions spend nothing. A UUID plus payload hash
   makes retried creation return the same adventure without spending again.
+- Public event cards show a short joint-activity summary, district or online
+  platform, approximate cost, experience requirements and remaining places.
+  Full descriptions may use Markdown, but public event fields reject links;
+  exact meeting addresses and call URLs belong in private meeting details.
+- Organizers can close or reopen applications without cancelling the event.
+  Pending applications can still be decided after closure; new ones cannot be sent.
 - Applications are pending until the host accepts or declines. A pending request
   reserves no seat. There is one application per person/event; declined, removed
   or withdrawn applicants cannot repeatedly contact the host through that event.

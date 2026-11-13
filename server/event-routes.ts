@@ -37,6 +37,10 @@ export function eventRoutes(events: Adventures, config: Config) {
     const { minutesBefore } = z.object({ minutesBefore: z.union([z.literal(15), z.literal(60), z.literal(1440), z.null()]) }).strict().parse(req.body);
     res.json({ event: await events.setReminder(res.locals.user.id, id(req.params.id), minutesBefore) });
   });
+  router.put('/:id/recruitment', async (req, res) => {
+    const { open, revision } = z.object({ open: z.boolean(), revision: z.number().int().nonnegative() }).strict().parse(req.body);
+    res.json({ event: await events.setRecruitment(res.locals.user.id, id(req.params.id), revision, open) });
+  });
   router.post('/:id/status', async (req, res) => {
     const { status, revision } = z.object({ status: z.enum(['cancelled', 'completed']), revision: z.number().int().nonnegative() }).strict().parse(req.body);
     res.json({ event: await events.transition(res.locals.user.id, id(req.params.id), revision, status) });

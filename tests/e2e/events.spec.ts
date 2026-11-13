@@ -13,16 +13,21 @@ async function noOverflow(page: Page) { expect(await page.evaluate(() => documen
 test('create an adventure, apply from another character, accept, edit and withdraw', async ({ page, browser }, info) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await character(page, 'Record keeper');
-  await page.goto('/#adventures');
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Adventures', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Create adventure', exact: true }).click();
   const editor = page.getByRole('dialog');
   await editor.getByLabel('Adventure title', { exact: true }).fill('Coffee, records & a slow afternoon');
+  await editor.getByLabel('What will we do together? (short)').fill('Listen to records together over coffee.');
   await editor.getByLabel('What are we doing?', { exact: true }).fill('Bring **one record** you love. We will listen over coffee.');
   await editor.getByLabel('Starts', { exact: true }).fill('2030-06-15T19:30');
   await editor.getByLabel('Ends', { exact: true }).fill('2030-06-15T21:30');
   await editor.getByLabel('Time zone', { exact: true }).selectOption('Asia/Jerusalem');
   await editor.getByRole('combobox', { name: 'Where', exact: true }).fill('Haifa');
   await editor.getByRole('option', { name: 'Haifa Israel', exact: true }).click();
+  await editor.getByLabel('District or area').fill('Downtown');
+  await editor.getByLabel('Approximate cost').fill('About ₪25');
+  await editor.getByLabel('Experience needed').fill('No experience needed');
   await editor.getByLabel('Party size', { exact: true }).fill('3');
   await editor.getByLabel('Exact meeting point — accepted party only', { exact: true }).fill('Private door 42, ring the bell');
   await page.screenshot({ path: `.artifacts/${info.project.name}-adventure-editor.png`, fullPage: true });

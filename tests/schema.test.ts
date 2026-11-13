@@ -7,6 +7,10 @@ test('long Markdown and multilingual text have no short-bio length constraint', 
   const parsed = draftInputSchema.parse({ displayName: 'Coffee friend', avatarId: 'moss', introMarkdown: markdown, tags: [], revision: 0, mode: 'manual', currentStep: 'bio' });
   assert.equal(parsed.introMarkdown, markdown);
 });
+test('drafts can resume on the top-level languages and filters step', () => {
+  const draft = { displayName: 'Coffee friend', avatarId: 'moss', introMarkdown: '', tags: [], revision: 0, mode: 'manual', currentStep: 'discovery' };
+  assert.equal(draftInputSchema.parse(draft).currentStep, 'discovery');
+});
 test('custom emoji tags support grapheme sequences and reject invalid mixed tags', () => {
   const tag = { kind: 'custom', label: 'Indie games', emoji: '🧑‍💻', locale: 'en' };
   assert.ok(tagSchema.safeParse(tag).success);
