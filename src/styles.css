@@ -376,3 +376,66 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .location-credit { display: block; font-size: 10px; color: var(--muted); margin-top: 18px; }
 .unsaved-dot { width: 6px; height: 6px; background: var(--accent); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* Adventures use the same paper surfaces and pixel controls as the character. */
+.workspace-tabs { display: flex; gap: 24px; max-width: 840px; margin: 24px auto 0; border-bottom: 1px solid var(--line); }
+.workspace-tabs button, .event-tabs button { background: transparent; border: 0; padding: 12px 2px; color: var(--muted); font-size: 14px; }
+.workspace-tabs button.active, .event-tabs button.active { color: var(--ink); box-shadow: 0 2px 0 var(--accent); font-weight: 650; }
+.adventure-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.adventure-heading h1 { font-size: 30px; }
+.event-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.event-tabs { display: flex; gap: 25px; margin-bottom: 24px; }
+.adventures .discovery-settings { margin: 0 0 25px; }
+.adventure-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.adventure-card { padding: 23px; text-align: left; width: 100%; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.adventure-card:hover { border-color: #ad8d69; box-shadow: 4px 4px 0 #d7c6af; }
+.adventure-card h2 { margin: 0; overflow-wrap: anywhere; font-size: 22px; line-height: 1.35; }
+.event-status { font-size: 11px; color: var(--sage); font-weight: 650; }
+.event-facts { display: grid; gap: 10px; color: #726557; font-size: 12px; line-height: 1.5; }
+.event-facts > span { display: flex; align-items: flex-start; gap: 9px; overflow-wrap: anywhere; }
+.event-facts svg { flex: 0 0 16px; margin-top: 1px; }
+.card-host { display: flex; align-items: center; gap: 9px; margin-top: auto; padding-top: 8px; font-size: 12px; }
+.card-host .character, .event-host .character { width: 32px; height: 40px; }
+.event-detail { padding: 30px; }
+.event-detail h1 { margin: 14px 0 22px; overflow-wrap: anywhere; }
+.event-host { margin: 18px 0; }
+.event-detail > .markdown { margin: 12px 0 28px; }
+.event-detail > .event-actions { margin-top: 25px; }
+.meeting-details { padding: 20px; margin: 25px 0; background: #eae9dd; border-left: 3px solid var(--sage); overflow-wrap: anywhere; }
+.meeting-details h2 { display: flex; align-items: center; gap: 9px; font-size: 15px; margin-bottom: 10px; }
+.meeting-details p { white-space: pre-wrap; margin-bottom: 9px; }
+.meeting-details small { display: block; color: #6c715e; font-size: 11px; margin-top: 10px; }
+.membership-status { font-size: 13px; color: var(--sage); margin: 20px 0 0; }
+.party-section, .applications { margin-top: 32px; }
+.party-grid { display: flex; flex-wrap: wrap; gap: 16px; }
+.party-person { min-width: 120px; max-width: 100%; padding: 12px 16px; border: 1px solid var(--line); background: var(--paper); }
+.person-button { display: flex; align-items: center; gap: 12px; text-align: left; background: none; border: 0; padding: 0; font-size: 14px; overflow-wrap: anywhere; }
+.person-button .character { width: 42px; height: 52px; flex-shrink: 0; }
+.application { padding: 22px; margin-bottom: 18px; }
+.application p { margin: 14px 0 20px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.applications h2 span { color: var(--muted); font-size: 14px; margin-left: 7px; }
+.events-empty { grid-column: 1 / -1; padding: 55px 20px; text-align: center; border: 1px dashed #c9bcaa; color: var(--muted); }
+.events-empty h2 { margin: 18px 0 9px; color: var(--ink); font-size: 18px; }
+.events-empty p { font-size: 13px; margin-bottom: 0; }
+.event-form fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.event-form label { margin: 18px 0 8px; }
+.event-form fieldset > label:first-child { margin-top: 0; }
+.event-form select { width: 100%; max-width: 100%; min-width: 0; border: 1px solid #d5cbbb; background: #fffdf8; border-radius: 3px; color: var(--ink); padding: 13px 9px; }
+.event-form select:focus { outline: 2px solid #b7845b; outline-offset: 2px; }
+.event-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.event-form-grid > div { min-width: 0; }
+.event-form .selection-picker { margin-top: 18px; }
+.flagged-excerpt { background: #edd9d5; color: #955b52; margin: 12px 0; padding: 10px 14px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .adventure-heading { flex-wrap: wrap; gap: 14px; }
+  .adventure-heading h1 { font-size: 28px; }
+  .adventure-list, .event-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .event-form-grid { gap: 0; }
+  .event-detail { padding: 22px 18px; }
+  .event-detail h1 { font-size: 27px; }
+  .event-actions { gap: 14px; }
+  .meeting-details { padding: 16px; }
+  .workspace-tabs { margin-top: 18px; }
+  .party-person { min-width: 110px; padding: 10px; }
+}
+.unavailable-character { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); }

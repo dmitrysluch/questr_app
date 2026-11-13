@@ -1,8 +1,8 @@
 # Languages, geography and access
 
-The current POC has profiles and AI-assisted bios. This change adds editable
-spoken languages and private adventure filters, plus an event/access foundation.
-Event creation, applications, the feed, DMs and group chat are still future work.
+The POC has profiles, AI-assisted bios, spoken languages, private adventure filters
+and scoped access. [Adventures v1](adventures.md) builds creation, applications,
+discovery and a Telegram party relay on this foundation. Global DMs remain future work.
 
 ## Languages and geography
 
@@ -14,7 +14,7 @@ Event creation, applications, the feed, DMs and group chat are still future work
   they never appear in a profile response or the AI interview input.
 - `locations` is a forest: country → city, plus the independent `online` root.
   Countries are filters; an event has one city or Online and one language.
-  Exact addresses and meeting links will need a separate restricted table later.
+  Exact addresses and meeting links use the separate restricted `event_private_details` table.
 - The catalog is bundled locally: 250 countries/territories and 6,462 cities.
   Coverage: cities with >=100,000 people, capitals, plus Israeli cities in the
   GeoNames cities15000 extract. Aliases support searches such as Хайфа / חיפה.
@@ -33,8 +33,8 @@ Matching is `(any selected location) AND (any selected event language)`:
 The frontend lets people explicitly copy spoken languages into their adventure
 filters, but subsequent edits stay independent. Selecting a country doesn't
 assert residence, citizenship or willingness to cross a border. No GPS is stored.
-`eventMatchesDiscovery` tests only these preferences and published status; a future
-feed must ALSO apply authorization, club visibility and relevant date/status filters.
+`eventMatchesDiscovery` tests these preferences and published status. The v1 feed
+also applies authorization and future start times. Club visibility is future work.
 
 ## Roles and capabilities
 
@@ -62,16 +62,17 @@ Current templates:
 - `member`: read/edit own profile; view/create events after profile completion.
   Existing invited accounts are backfilled. Registration grants this once.
 - `organizer`: edit an assigned event, accept applicants, use/moderate its chat.
-- `participant`: view an assigned event and use its chat.
+- `applicant`: view the assigned event, including its public history. No chat access.
+- `participant`: view an assigned event and use its chat while accepted and open.
 - `event_moderator`: moderate one event's chat.
 - `inviter`: create invitations, subject to its separate budget.
 - `admin`: use administrative operations. It is NOT a bypass into private chats.
 
-Event roles require an event scope in PostgreSQL. Future acceptance/removal must
-create/revoke the corresponding assignment in the same transaction as membership
-changes. The host grant must be created in the event creation transaction.
-There is no membership or chat implementation in this POC yet. DM capabilities
-are reserved and fail closed until consent/block handling is implemented.
+Event roles require an event scope in PostgreSQL. Acceptance/removal creates or
+revokes the participant assignment in the membership transaction. The host grant
+is created with the event. Chat checks accepted membership and open event state
+in addition to grants. DM capabilities are reserved and fail closed until
+consent/block handling is implemented.
 
 The evaluator denies blocked, uninvited, expired or revoked accounts/grants.
 Onboarding accounts can only work on their own profile. It derives an event's
@@ -93,7 +94,7 @@ and records an idempotency UUID and resource. Failed actions roll back their
 usage; retries return `replay`, and the caller must return the original action
 result rather than create another object. Keep the action's own unique request ID.
 Changing a limit, window or role does not erase historical usage. These quota
-primitives are tested but no public event/invitation creation endpoint exists yet.
+primitives are used by event creation; a public invitation creation endpoint is still future work.
 The existing operator-only invite CLI remains a deliberate bootstrap path.
 
 Reputation should become a versioned policy over verified signals, not a public
@@ -104,6 +105,6 @@ not negative signals; event count alone should not earn privileges.
 A future policy worker can adjust budgets and bounded grants with an audit reason,
 recording the previous/new values and policy version. Use conservative thresholds,
 a cooldown and an appeal/manual override path. No reputation thresholds are active
-yet: there are no event outcomes to evaluate. Never automatically award `admin`,
+yet; outcomes are not used to change permissions automatically. Never automatically award `admin`,
 moderation powers, access to another event's chat, or consent to private messaging.
 Reputation changes must preserve quota history and cannot override blocks.

@@ -2,13 +2,13 @@
 
 A Telegram Mini App POC for an invite-only community built around doing things together. English first, coffee colors, pixel characters, and readable typography.
 
-The POC covers registration, avatar selection, emoji tags, spoken languages, a long-form Markdown profile, and an optional **Ask me questions** interview. Profiles are currently visible only to their owner. Private adventure filters support countries, cities, Online and event languages.
+The POC covers registration, avatar selection, emoji tags, spoken languages, a long-form Markdown profile, and an optional **Ask me questions** interview. Saved profiles are shared in the context of adventures; drafts and interview answers stay private. Adventure filters support countries, cities, Online and event languages.
 
-The [geography and access design](docs/discovery-and-access.md) describes the implemented location catalog, filter matching, scoped roles, expiring grants and transactional usage budgets. Events have a database foundation; event/feed/chat screens and reputation automation are not implemented yet.
+The [geography and access design](docs/discovery-and-access.md) describes the implemented location catalog, filter matching, scoped roles, expiring grants and transactional usage budgets. The [adventures v1 guide](docs/adventures.md) covers creation, discovery, applications, accepted parties, private meeting details and the Telegram relay. Reputation automation is not implemented yet.
 
 ## Interface and interests
 
-The character sheet uses a centered layout with a compact step bar. Copy is limited to labels, actions, state and information needed to make a decision. Product vocabulary follows RPGs: a member is a **questr**, their profile is a **character sheet**, and a future shared activity is an **adventure**. For example, “4 questrs signed up for this adventure.” Counts only appear when backed by real data; adventures are outside this POC.
+The character sheet uses a centered layout with a compact step bar. Copy is limited to labels, actions, state and information needed to make a decision. Product vocabulary follows RPGs: a member is a **questr**, their profile is a **character sheet**, and a shared activity is an **adventure**. For example, “4 questrs signed up for this adventure.” Party counts come from accepted memberships, including the host.
 
 The searchable catalog contains 290 interests across 12 topics, including specific artists, genres, activities and scientific interests. Search supports aliases, accents, punctuation and small typos, with optional topic filters, keyboard navigation and custom tags. Selected tags persist by stable code; existing profiles keep their tags. Catalog definitions and aliases live in `shared/interests.ts`; UI category labels live in `src/locales/en.ts`.
 
@@ -91,7 +91,7 @@ The editor discloses that bio validation uses OpenRouter, including for manually
 
 The browser sends official Telegram Mini App `initData` to the server. The server verifies the HMAC signature, freshness, and numeric user ID before issuing a session. Client-provided `initDataUnsafe` is never trusted. [Telegram authentication documentation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
 
-Optionally set `TELEGRAM_WEBHOOK_SECRET` and configure the bot's webhook to `/api/telegram/webhook` with that secret. The POC records `/start` and deduplicates incoming update IDs. It does not implement member messaging or a bot chat relay.
+For applications and party messaging, set `TELEGRAM_WEBHOOK_SECRET`, configure `/api/telegram/webhook` with that secret, and enable private bot topics in BotFather. The [setup and delivery notes](docs/adventures.md#telegram-setup) describe the durable bot queues and deployment checks.
 
 Demo authentication is rejected when configured with a non-localhost app origin. An API key and bot token are not included in this repository. Live provider output and real Telegram clients require those credentials and an HTTPS deployment.
 
@@ -104,7 +104,9 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 | Identity and access | `users`, `telegram_accounts`, `sessions`, `invites`, `user_consents` |
 | Profiles | `profile_drafts`, `profiles`, `profile_answers`, `profile_tags`, `profile_languages` |
 | Catalogs | `avatar_presets`, `tags`, `tag_translations`, `languages`, `locations` |
-| Discovery | `discovery_preferences`, `discovery_locations`, `discovery_languages`, `events` |
+| Discovery | `discovery_preferences`, `discovery_locations`, `discovery_languages` |
+| Adventures | `events`, `event_memberships`, `event_private_details`, `event_activity` |
+| Bot messaging | `event_bot_topics`, `event_messages`, `bot_inbox`, `bot_outbox` |
 | Authorization | `roles`, `role_capabilities`, `role_assignments`, `capability_budgets`, `capability_usage`, `permission_audit` |
 | Interview | `ai_conversations`, `ai_messages`, `ai_proposals` |
 | Content review | `content_reviews` (text hash, policy/model key, verdict and spans); review metadata on `ai_messages` |
@@ -114,10 +116,10 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 - Each account has one private editable draft and a separately confirmed profile. Auto-save uses optimistic revisions and serialized writes.
 - Catalog tags have stable codes, separate emoji, and translation rows. Custom tags retain their original label, emoji, and locale. A tag is either a catalog reference or a custom value, enforced by the database.
 - Invitations are stored as hashes and redeemed atomically in the same transaction as registration and required consent records.
-- HTTP-only sessions expire after 14 days. All profile and interview endpoints operate on the authenticated owner; they do not accept a target user's ID.
+- HTTP-only sessions expire after 14 days. Profile editing and interview endpoints operate on the authenticated owner. Event-scoped read endpoints expose saved characters only to authorized viewers.
 - Markdown rendering does not execute raw HTML or JSX. Unsafe URL protocols and external image embeds are excluded from the profile renderer.
 
-The POC retains its local records until its database is removed or records are explicitly deleted. Automatic retention jobs, account export/deletion UI, human moderation tools, clubs, outings, and a city scene are outside this implementation. Set retention and operator policies before inviting real pilot users.
+The POC retains its local records until its database is removed or records are explicitly deleted. Automatic retention jobs, account export/deletion UI, human moderation tools, clubs, global DMs, and a city scene are outside this implementation. Set retention and operator policies before inviting real pilot users.
 
 ## Frontend and localization
 
@@ -138,7 +140,7 @@ npm run build
 
 Integration tests create a new, randomly named `questr_test_*` database, apply migrations, test against real PostgreSQL, and remove only that test database afterward. They are skipped unless `TEST_DATABASE_URL` is provided. The connection must have permission to create test databases.
 
-Browser tests cover desktop and mobile registration, source/visual Markdown conversion, custom tags, profile editing and reload, bio comparisons and reviewed interview proposals, topic changes with unsent text, concurrent changes, unsafe Markdown rendering, and content highlights/correction in bios and chat. Integration tests also exercise direct publication rejection, review outages, edits during a review, unsafe generated proposals, and idempotent topic-change retries. They use a running dev server or start one with `AUTH_MODE=demo AI_MODE=demo` so automated runs make no paid model calls. An already-running target must also be in demo mode.
+Browser tests cover the two-user adventure lifecycle on desktop/mobile, plus registration, source/visual Markdown conversion, custom tags, profile editing and reload, bio comparisons and reviewed interview proposals, topic changes with unsent text, concurrent changes, unsafe Markdown rendering, and content highlights/correction in bios and chat. Integration tests also exercise direct publication rejection, review outages, edits during a review, unsafe generated proposals, and idempotent topic-change retries. They use a running dev server or start one with `AUTH_MODE=demo AI_MODE=demo` so automated runs make no paid model calls. An already-running target must also be in demo mode.
 
 To run those same browser scenarios against a production Docker build configured in demo mode: `PLAYWRIGHT_BASE_URL=http://localhost:5180 npm run test:e2e`.
 

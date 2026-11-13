@@ -6,13 +6,14 @@ import { api, ApiError } from './api.ts';
 import { errorText, t, type TranslationKey } from './i18n.ts';
 import { useDraft } from './useDraft.ts';
 import { Character } from './components/Character.tsx';
-import { TagPicker, TagPills } from './components/Tags.tsx';
-import { Markdown } from './components/Markdown.tsx';
+import { TagPicker } from './components/Tags.tsx';
+import { ProfileCard } from './components/ProfileCard.tsx';
+import { Adventures } from './components/Adventures.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Interview } from './components/Interview.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
-import { LanguagePicker, SpokenLanguages, DiscoverySettings } from './components/Discovery.tsx';
-import type { BioReview, ContentSpan } from '../shared/content-policy.ts';
+import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
+import type { BioReview } from '../shared/content-policy.ts';
 
 const BioEditor = lazy(() => import('./components/BioEditor.tsx'));
 declare global {
@@ -25,6 +26,8 @@ const steps: { id: Draft['currentStep']; label: TranslationKey }[] = [
 ];
 
 export function App() {
+  const [adventuresOpen, setAdventuresOpen] = useState(location.hash.startsWith('#adventures'));
+  useEffect(() => { const change = () => setAdventuresOpen(location.hash.startsWith('#adventures')); window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [state, setState] = useState<AppState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,12 +136,13 @@ export function App() {
       <div className="header-right">{config?.authMode === 'demo' && <span className="preview-badge">{t('app.demo')}</span>}<button className="text-button" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
     </header>
     <div className="workspace">
-      {draft && !showProfile && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
+      {draft && !showProfile && !adventuresOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
         {steps.map((step, index) => <button key={step.id} className={`step ${currentStep === step.id ? 'active' : ''} ${index < stepIndex ? 'done' : ''}`}
           disabled={busy || (step.id !== 'avatar' && !draft.avatarId)} aria-current={currentStep === step.id ? 'step' : undefined} onClick={() => void go(step.id)}>
           <span className="step-number">{index < stepIndex ? <Check size={13} /> : index + 1}</span><span>{t(step.label)}</span>
         </button>)}
       </nav>}
+      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen ? 'active' : ''} aria-current={!adventuresOpen ? 'page' : undefined} onClick={() => { location.hash = 'character'; }}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'adventures'; }); }}>{t('nav.adventures')}</button></nav>}
       <main className={`main-content ${currentStep === 'welcome' ? 'welcome-content' : ''}`}>
         {!!visibleError && <div className="error-banner" role="alert"><span>{errorText(visibleError)}</span>
           <button className="text-button" onClick={() => void run(async () => { if (conflict || !state) await loadState(); else await flush(); })}>{t(conflict ? 'common.reload' : 'common.retry')}</button></div>}
@@ -152,7 +156,7 @@ export function App() {
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
             <p className="form-privacy"><LockKeyhole size={13} />{t('footer.private')}</p>
           </form>
-        </section> : showProfile && state.profile ? <section>
+        </section> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
@@ -211,11 +215,4 @@ function PageHeading({ title }: { title: TranslationKey }) {
 }
 function SaveStatus({ state }: { state: 'saved' | 'saving' | 'error' }) {
   return <span className={`save-status ${state}`} role="status">{state === 'saving' ? <LoaderCircle size={14} className="spin" /> : <CheckCheck size={15} />}{t(state === 'saving' ? 'common.saving' : state === 'error' ? 'common.unsaved' : 'common.saved')}</span>;
-}
-function ProfileCard({ profile, flagged }: { profile: Profile; flagged?: ContentSpan[] }) {
-  return <article className="profile-card paper-card"><div className="profile-banner"><span className="pixel-spark" /><span>{t('profile.badge')}</span><span className="banner-stars">✧ · ✦</span></div>
-    <div className="profile-identity"><Character id={profile.avatarId} /><div><h2 dir="auto">{profile.displayName}</h2><SpokenLanguages codes={profile.spokenLanguages} />{!!profile.tags.length && <TagPills items={profile.tags} />}</div></div>
-    <div className="profile-body">{profile.introMarkdown.trim() ? <Markdown content={profile.introMarkdown} flagged={flagged} /> : <div className="empty-bio"><PenLine size={22} /><p>{t('profile.noBio')}</p></div>}</div>
-
-  </article>;
 }

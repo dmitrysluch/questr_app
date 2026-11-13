@@ -413,7 +413,7 @@ integration('permissions enforce ownership, location/event scopes, expiry, revoc
   const grant = (await pool.query("INSERT INTO role_assignments(user_id,role_code,event_id,reason) VALUES($1,'organizer',$2,'Test host') RETURNING id", [id, event])).rows[0].id;
   assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: event }), true);
   assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: randomUUID() }), false);
-  assert.equal(await can(pool, id, 'events.group_chat', { type: 'event', id: event }), true);
+  assert.equal(await can(pool, id, 'events.group_chat', { type: 'event', id: event }), false); // Drafts and a role alone do not open a party chat.
   await pool.query("UPDATE role_assignments SET valid_from=now()+interval '1 day' WHERE id=$1", [grant]);
   assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: event }), false);
   await pool.query("UPDATE role_assignments SET valid_from=now()-interval '2 days',valid_until=now()-interval '1 day' WHERE id=$1", [grant]);

@@ -20,10 +20,13 @@ export async function can(db: Db, userId: string, capability: Capability, resour
   let locationId: string | null = resource.type === 'location' ? resource.id : null;
   let eventStatus: string | null = null;
   if (resource.type === 'event') {
-    const event = (await db.query('SELECT location_id,status FROM events WHERE id=$1', [resource.id])).rows[0];
+    const event = (await db.query("SELECT e.location_id,e.status FROM events e JOIN users u ON u.id=e.created_by WHERE e.id=$1 AND u.status='active'", [resource.id])).rows[0];
     if (!event) return false;
     locationId = event.location_id; // Resolve scope on the server, never trust a caller's country.
     eventStatus = event.status;
+    if (capability === 'events.group_chat') {
+      if (event.status !== 'published' || !(await db.query("SELECT 1 FROM event_memberships WHERE event_id=$1 AND user_id=$2 AND status='accepted'", [resource.id, userId])).rowCount) return false;
+    }
     if (event.status === 'draft' && capability === 'events.view') {
       return can(db, userId, 'events.edit', resource);
     }

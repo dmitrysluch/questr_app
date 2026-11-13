@@ -20,7 +20,7 @@ function locationChoice(location: Location): Choice {
   return { id: location.id, label: location.kind === 'country' ? t('locations.allCountry', { name: location.name }) : location.name,
     detail: location.kind === 'city' ? location.countryName : location.kind === 'online' ? t('locations.global') : t('locations.country') };
 }
-function LocationPicker({ value, onChange }: { value: string[]; onChange: (ids: string[]) => void }) {
+export function LocationPicker({ value, onChange, single = false }: { value: string[]; onChange: (ids: string[]) => void; single?: boolean }) {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<Location[]>([]);
   const [cache, setCache] = useState<Record<string, Location>>({});
@@ -51,7 +51,7 @@ function LocationPicker({ value, onChange }: { value: string[]; onChange: (ids: 
     return () => { active = false; clearTimeout(timer); };
   }, [query, retry]);
   return <><SelectionPicker label={t('locations.label')} placeholder={t('locations.search')} value={value} onChange={onChange}
-    query={query} onQuery={setQuery} loading={loading} items={items.map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
+    query={query} onQuery={setQuery} loading={loading} limit={single ? 1 : 50} items={items.filter(item => !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
     {!!error && <p className="field-error" role="alert">{errorText(error)} <button type="button" className="text-button" onClick={() => setRetry(old => old + 1)}>{t('common.retry')}</button></p>}</>;
 }
 export function DiscoverySettings({ initial, spokenLanguages, onSaved }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void }) {

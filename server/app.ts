@@ -16,6 +16,8 @@ import { draftInputSchema, messageSchema, registerSchema, tagKey, selectedTagsSc
 import { locationIdSchema } from '../shared/discovery.ts';
 import { getDiscovery, saveDiscovery, searchLocations } from './discovery.ts';
 import { grantMember, requireCapability } from './permissions.ts';
+import { Adventures } from './events.ts';
+import { eventRoutes } from './event-routes.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
@@ -100,10 +102,11 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   app.post('/api/telegram/webhook', async (req, res) => {
     const provided = req.get('X-Telegram-Bot-Api-Secret-Token') ?? '';
     if (!config.webhookSecret || Buffer.byteLength(provided) !== Buffer.byteLength(config.webhookSecret) || !timingSafeEqual(Buffer.from(provided), Buffer.from(config.webhookSecret))) throw new AppError(401, 'INVALID_TELEGRAM_AUTH');
-    const update = z.object({ update_id: z.number().int(), message: z.object({ text: z.string().optional(), from: z.object({ id: z.number().int() }) }).optional() }).parse(req.body);
+    const update = z.object({ update_id: z.number().int(), message: z.object({ text: z.string().max(20000).optional(), message_thread_id: z.number().int().optional(), chat: z.object({ id: z.number().int(), type: z.string() }).optional(), from: z.object({ id: z.number().int() }).optional() }).optional() }).parse(req.body);
     await transaction(pool, async client => {
       const inserted = await client.query('INSERT INTO bot_updates(update_id) VALUES($1) ON CONFLICT DO NOTHING RETURNING update_id', [update.update_id]);
-      if (inserted.rowCount && update.message?.text?.startsWith('/start')) {
+      if (!inserted.rowCount || !update.message?.from || (update.message.chat && (update.message.chat.type !== 'private' || update.message.chat.id !== update.message.from.id))) return;
+      if (/^\/start(?:@questr_game)?(?: |$)/.test(update.message.text ?? '')) {
         const telegramId = update.message.from.id;
         await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [telegramId]);
         const account = await client.query('SELECT user_id FROM telegram_accounts WHERE telegram_user_id=$1', [telegramId]);
@@ -112,6 +115,10 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
           await client.query('INSERT INTO telegram_accounts(user_id,telegram_user_id) VALUES($1,$2)', [rows[0].id, telegramId]);
         }
         await client.query('UPDATE telegram_accounts SET bot_started_at=COALESCE(bot_started_at,now()) WHERE telegram_user_id=$1', [update.message.from.id]);
+      }
+      if (update.message.chat && update.message.text) {
+        await client.query(`INSERT INTO bot_inbox(update_id,user_id,text,thread_id)
+          SELECT $1,user_id,$3,$4 FROM telegram_accounts WHERE telegram_user_id=$2`, [update.update_id, update.message.from.id, update.message.text, update.message.message_thread_id ?? null]);
       }
     });
     res.json({ ok: true });
@@ -161,6 +168,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     if (currentUser(res).status === 'pending_invite') throw new AppError(403, 'INVITE_REQUIRED');
     next();
   });
+  app.use('/api/events', (req, res, next) => { if (req.method !== 'GET') throttle(`events:${currentUser(res).id}`, 20); next(); });
+  app.use('/api/events', eventRoutes(new Adventures(pool, reviewer), config));
   app.put('/api/draft', async (req, res) => {
     await requireCapability(pool, currentUser(res).id, 'profile.edit', { type: 'profile', id: currentUser(res).id });
     const input = draftInputSchema.parse(req.body);
