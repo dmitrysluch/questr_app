@@ -59,7 +59,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     }
   }
   app.get('/api/health', async (_req, res) => { await pool.query('SELECT 1'); res.json({ ok: true }); });
-  app.get('/api/config', (_req, res) => res.json({ authMode: config.authMode, aiMode: config.aiMode, botUsername: 'questr_game', termsVersion }));
+  app.get('/api/config', (_req, res) => res.json({ authMode: config.authMode, aiMode: config.aiMode, botUsername: 'questr_game', termsVersion, googleMapsBrowserKey: config.googleMapsBrowserKey }));
 
   app.post('/api/auth/demo', async (req, res) => {
     if (config.authMode !== 'demo') throw new AppError(404, 'NOT_FOUND');
@@ -174,8 +174,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     await requireCapability(pool, currentUser(res).id, 'profile.edit', { type: 'profile', id: currentUser(res).id });
     const input = draftInputSchema.parse(req.body);
     const { rows } = await pool.query(`UPDATE profile_drafts SET display_name=$2,avatar_preset_id=$3,intro_markdown=$4,tags=$5,
-      mode=$6,current_step=$7,spoken_languages=$9,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
-    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages]);
+      mode=$6,current_step=$7,spoken_languages=$9,open_to_romance=$10,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
+    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages, input.openToRomance]);
     if (!rows[0]) throw new AppError(409, 'DRAFT_CONFLICT');
     res.json({ draft: mapDraft(rows[0]) });
   });
@@ -191,9 +191,9 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       if (!rows[0] || rows[0].revision !== revision) throw new AppError(409, 'DRAFT_CONFLICT');
       const draft = draftInputSchema.parse(mapDraft(rows[0]));
       if (!draft.avatarId) throw new AppError(400, 'AVATAR_REQUIRED');
-      await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown) VALUES($1,$2,$3,$4)
+      await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown,open_to_romance) VALUES($1,$2,$3,$4,$5)
         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,avatar_preset_id=EXCLUDED.avatar_preset_id,
-        intro_markdown=EXCLUDED.intro_markdown,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown]);
+        intro_markdown=EXCLUDED.intro_markdown,open_to_romance=EXCLUDED.open_to_romance,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown, draft.openToRomance]);
       await client.query('DELETE FROM profile_tags WHERE user_id=$1', [userId]);
       await client.query('DELETE FROM profile_languages WHERE user_id=$1', [userId]);
       await client.query('INSERT INTO profile_languages(user_id,language_code,position) SELECT $1,code,ordinality-1 FROM unnest($2::text[]) WITH ORDINALITY AS x(code,ordinality)', [userId, draft.spokenLanguages]);
@@ -204,6 +204,19 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       await client.query("UPDATE users SET status='active',updated_at=now() WHERE id=$1", [userId]);
     });
     res.json({ profile: await getProfile(pool, userId) });
+  });
+
+  app.put('/api/profile/romance', async (req, res) => {
+    const input = z.object({ openToRomance: z.boolean(), revision: z.number().int().nonnegative() }).strict().parse(req.body);
+    const userId = currentUser(res).id;
+    await transaction(pool, async db => {
+      await requireCapability(db, userId, 'profile.edit', { type: 'profile', id: userId });
+      const profile = (await db.query('SELECT revision FROM profiles WHERE user_id=$1 FOR UPDATE', [userId])).rows[0];
+      if (!profile || profile.revision !== input.revision) throw new AppError(409, 'PROFILE_CONFLICT');
+      await db.query('UPDATE profiles SET open_to_romance=$2,revision=revision+1,updated_at=now() WHERE user_id=$1', [userId, input.openToRomance]);
+      await db.query('UPDATE profile_drafts SET open_to_romance=$2,revision=revision+1,updated_at=now() WHERE user_id=$1', [userId, input.openToRomance]);
+    });
+    res.json({ profile: await getProfile(pool, userId), draft: await getDraft(pool, userId) });
   });
 
   app.get('/api/locations', async (req, res) => {

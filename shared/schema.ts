@@ -23,6 +23,7 @@ export const draftInputSchema = z.object({
   introMarkdown: z.string(),
   tags: selectedTagsSchema,
   spokenLanguages: spokenLanguagesSchema.default([]),
+  openToRomance: z.boolean().default(false),
   mode: z.enum(['manual', 'interview']),
   currentStep: z.enum(['avatar', 'bio', 'review']),
 }).strict();
@@ -60,7 +61,7 @@ export interface Proposal {
 }
 export interface Profile {
   displayName: string; avatarId: string; introMarkdown: string;
-  tags: ProfileTag[]; spokenLanguages: string[]; revision: number; completedAt: string;
+  tags: ProfileTag[]; spokenLanguages: string[]; openToRomance: boolean; revision: number; completedAt: string;
 }
 export interface AppState {
   user: { id: string; status: 'pending_invite' | 'onboarding' | 'active' | 'blocked'; locale: string };
@@ -72,4 +73,4 @@ export interface AppState {
   bioReview: BioReview | null;
   discovery: DiscoveryPreferences;
 }
-export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string }
+export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string; googleMapsBrowserKey: string }

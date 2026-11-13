@@ -439,3 +439,12 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
   .party-person { min-width: 110px; padding: 10px; }
 }
 .unavailable-character { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); }
+.event-reminder { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 20px; color: var(--muted); }
+.event-reminder select { max-width: 240px; padding: 9px 12px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+.event-map-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 12px 0; }
+.google-place-widget { min-width: min(100%, 320px); margin: 12px 0; }
+.google-place-widget gmp-place-autocomplete { width: 100%; }
+.romance-control { margin-top: 11px; }
+.romance-button, .romance-badge { display: inline-flex; align-items: center; border: 1px solid #bd9c91; background: #f7eeea; color: #7f514b; padding: 7px 10px; font-size: 11px; }
+.romance-button.active { background: #ead7d3; border-color: #a6746a; }
+.romance-draft { margin: 20px 0 26px; font-size: 12px; }

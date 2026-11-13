@@ -25,7 +25,7 @@ async function person(name = 'Moss') {
   await agent.post('/api/profile/publish').send({ revision: draft.revision }).expect(200);
   return { agent, id: state.user.id as string };
 }
-function fields(extra = {}) { return { title: 'Coffee and records', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', startsAt: new Date(Date.now() + 86400000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
+function fields(extra = {}) { return { title: 'Coffee and records', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', startsAt: new Date(Date.now() + 86400000).toISOString(), endsAt: new Date(Date.now() + 86400000 + 7200000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
 const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (await who.agent.post('/api/events').send(fields(extra)).expect(201)).body.event;
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
@@ -37,7 +37,7 @@ integration('creation is atomic, idempotent, budgeted and validates geography, t
   assert.equal(results[0].body.event.participantCount, 1); assert.equal(results[0].body.event.canChat, true);
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM capability_usage WHERE user_id=$1", [host.id])).rows[0].n, 1);
   await host.agent.post('/api/events').send({ ...body, title: 'Different title' }).expect(409);
-  for (const change of [{ locationId: 'country:IL' }, { locationId: 'online', meetingDetails: 'javascript:alert(1)' }, { startsAt: '2020-01-01T00:00:00Z' }, { timeZone: 'Moon/Crater' }]) await host.agent.post('/api/events').send(fields(change)).expect(400);
+  for (const change of [{ locationId: 'country:IL' }, { locationId: 'online', meetingDetails: 'javascript:alert(1)' }, { startsAt: '2020-01-01T00:00:00Z' }, { endsAt: '2020-01-01T00:00:00Z' }, { meetingMapUrl: 'https://evil.example/maps/secret' }, { timeZone: 'Moon/Crater' }]) await host.agent.post('/api/events').send(fields(change)).expect(400);
   await host.agent.post('/api/events').send(fields({ descriptionMarkdown: 'I want to have sex with you.' })).expect(422);
   await create(host, { locationId: 'online', meetingDetails: 'https://meet.example/private' });
   await host.agent.post('/api/events').send(fields()).expect(429);
@@ -53,6 +53,8 @@ integration('discovery applies location ancestry and language together without e
   assert.ok(!JSON.stringify(first).includes('Secret door')); assert.ok(!JSON.stringify(first).includes('meetingDetails'));
   await guest.agent.put('/api/discovery').send({ revision: 1, locationIds: ['city:294801','online'], languageCodes: ['en'] }).expect(200);
   assert.deepEqual(new Set((await guest.agent.get('/api/events')).body.events.filter((e: any) => ids.includes(e.id)).map((e: any) => e.id)), new Set([ids[0],ids[3]]));
+  await guest.agent.put('/api/discovery').send({ revision: 2, locationIds: ['country:IL'], languageCodes: [] }).expect(200);
+  assert.deepEqual(new Set((await guest.agent.get('/api/events')).body.events.filter((e: any) => ids.includes(e.id)).map((e: any) => e.id)), new Set([ids[0],ids[1],ids[4]]));
   assert.equal((await guest.agent.get(`/api/events/${ids[0]}`)).body.event.meetingDetails, null);
   await guest.agent.get(`/api/events/${ids[0]}/profiles/${host.id}`).expect(200);
   await guest.agent.get(`/api/events/${ids[0]}/profiles/${randomUUID()}`).expect(404);
@@ -83,6 +85,42 @@ integration('last-seat acceptance is serialized; exit revokes private details, c
   await host.agent.post(`/api/events/${event.id}/status`).send({ status: 'cancelled', revision: 0 }).expect(200);
   await stranger.agent.get(`/api/events/${event.id}`).expect(404);
   await accepted.agent.get(`/api/events/${event.id}`).expect(200); // Former applicants retain public history only.
+});
+integration('calendar exports only authorized meeting points and Telegram reminders follow live membership', async () => {
+  const host = await person(), guest = await person(), stranger = await person();
+  const event = await create(host, { meetingDetails: 'SECRET private climbing gym entrance', meetingMapUrl: 'https://maps.app.goo.gl/abc123' });
+  assert.equal(Date.parse(event.endsAt) - Date.parse(event.startsAt), 7200000);
+  const publicCalendar = (await guest.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text;
+  assert.match(publicCalendar, /DTSTART:\d{8}T\d{6}Z/);
+  assert.match(publicCalendar, /DTEND:\d{8}T\d{6}Z/);
+  assert.ok(!publicCalendar.includes('SECRET'));
+  await guest.agent.put(`/api/events/${event.id}/reminder`).send({ minutesBefore: 60 }).expect(403);
+  await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200);
+  assert.equal((await guest.agent.get(`/api/events/${event.id}`)).body.event.meetingMapUrl, 'https://maps.app.goo.gl/abc123');
+  const partyCalendar = (await guest.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text;
+  assert.ok(partyCalendar.includes('SECRET'));
+  assert.ok(partyCalendar.includes('maps.app.goo.gl/abc123'));
+  assert.ok(!(await stranger.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text.includes('SECRET'));
+  await guest.agent.put(`/api/events/${event.id}/reminder`).send({ minutesBefore: 60 }).expect(200);
+  assert.equal((await guest.agent.get(`/api/events/${event.id}`)).body.event.reminderMinutes, 60);
+  await pool.query('UPDATE events SET starts_at=now()+interval \'30 minutes\' WHERE id=$1', [event.id]);
+  const bot = new EventBot(pool, config, (async () => Response.json({ ok: true, result: { message_id: 1 } })) as typeof fetch);
+  await bot.reminders();
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM bot_outbox WHERE kind='reminder' AND user_id=$1 AND event_id=$2", [guest.id, event.id])).rows[0].n, 1);
+  await guest.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
+  while (await bot.outbox()) { /* Drain queued notifications and the revoked reminder. */ }
+  assert.equal((await pool.query("SELECT state FROM bot_outbox WHERE kind='reminder' AND user_id=$1 AND event_id=$2", [guest.id, event.id])).rows[0].state, 'discarded');
+  assert.ok(!(await guest.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text.includes('SECRET'));
+});
+integration('romance interest is opt-in, saved on the profile and revision-protected', async () => {
+  const personA = await person();
+  const original = (await personA.agent.get('/api/me').expect(200)).body.profile;
+  assert.equal(original.openToRomance, false);
+  const updated = (await personA.agent.put('/api/profile/romance').send({ revision: original.revision, openToRomance: true }).expect(200)).body;
+  assert.equal(updated.profile.openToRomance, true);
+  assert.equal(updated.draft.openToRomance, true);
+  await personA.agent.put('/api/profile/romance').send({ revision: original.revision, openToRomance: false }).expect(409);
+  assert.equal((await personA.agent.get('/api/me').expect(200)).body.profile.openToRomance, true);
 });
 integration('editing uses revisions, preserves accepted seats and never puts a private address in notifications', async () => {
   const host = await person(), guest = await person(); const event = await create(host, { capacity: 3 });
@@ -120,6 +158,9 @@ integration('bot topics, retries, moderated applications and delivery-time revoc
   await text(8004, 'I will bring my jazz records.'); await bot.inbox();
   assert.equal((await pool.query('SELECT status FROM event_memberships WHERE user_id=$1 AND event_id=$2', [guest.id,event.id])).rows[0].status, 'pending');
   await decide(host, event.id, guest.id, 'accept').expect(200); await apply(other, event.id); await decide(host, event.id, other.id, 'accept').expect(200);
+  await text(8007, 'I want to have sex with you.'); await bot.inbox();
+  assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8007')).rowCount, 0);
+  assert.ok((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:8007:reply'")).rows[0].body.includes('QUESTR messages'));
   await text(8005, 'See you at seven!'); await text(8005, 'See you at seven!'); await bot.inbox();
   assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8005')).rowCount, 1);
   await other.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);

@@ -2,9 +2,9 @@
 
 A Telegram Mini App POC for an invite-only community built around doing things together. English first, coffee colors, pixel characters, and readable typography.
 
-The POC covers registration, avatar selection, emoji tags, spoken languages, a long-form Markdown profile, and an optional **Ask me questions** interview. Saved profiles are shared in the context of adventures; drafts and interview answers stay private. Adventure filters support countries, cities, Online and event languages.
+The POC covers registration, avatar selection, emoji tags, spoken languages, an opt-in romance signal, a long-form Markdown profile, and an optional **Ask me questions** interview. Saved profiles are shared in the context of adventures; drafts and interview answers stay private. Adventure filters support countries, cities, Online and optional event languages.
 
-The [geography and access design](docs/discovery-and-access.md) describes the implemented location catalog, filter matching, scoped roles, expiring grants and transactional usage budgets. The [adventures v1 guide](docs/adventures.md) covers creation, discovery, applications, accepted parties, private meeting details and the Telegram relay. Reputation automation is not implemented yet.
+The [geography and access design](docs/discovery-and-access.md) describes the implemented location catalog, filter matching, scoped roles, expiring grants and transactional usage budgets. The [adventures v1 guide](docs/adventures.md) covers creation, discovery, applications, accepted parties, private meeting details, start/end times, calendar export, reminders and the Telegram relay. Reputation automation is not implemented yet.
 
 ## Interface and interests
 
@@ -72,7 +72,7 @@ The two model operations live in `server/assistant.ts`. A tool-using agent runti
 
 ### Explicit-content checks
 
-The interview and drafting prompts prohibit explicitly sexual descriptions, invitations and requests. An independent model call through OpenRouter reviews each answer, the bio before preview/publication, and generated bio proposals. Ordinary romance, orientation, gender identity, and neutral non-graphic education or personal boundaries are allowed. The policy is defined in `shared/content-policy.ts`; the reviewer is in `server/moderation.ts`.
+The interview and drafting prompts prohibit explicitly sexual descriptions, invitations and requests. An independent model call through OpenRouter reviews each answer, the bio before preview/publication, generated bio proposals, adventure descriptions, applications and party-chat messages. Ordinary romance, orientation, gender identity, and neutral non-graphic education or personal boundaries are allowed. The opt-in “Open to romance” profile signal does not change this content rule. The policy is defined in `shared/content-policy.ts`; the reviewer is in `server/moderation.ts`.
 
 - A flagged answer stays in the private conversation with muted red highlighting. The interviewer gently explains the profile rule and asks about another interest. Opening a conversation reviews older answers that have not been checked under the current policy/model.
 - A flagged bio stays editable, with the offending passages highlighted in both visual and Markdown modes. Highlighting never modifies the saved Markdown or undo history. An expandable list of exact passages also supports browsers without the CSS Custom Highlight API.
@@ -105,7 +105,7 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 | Profiles | `profile_drafts`, `profiles`, `profile_answers`, `profile_tags`, `profile_languages` |
 | Catalogs | `avatar_presets`, `tags`, `tag_translations`, `languages`, `locations` |
 | Discovery | `discovery_preferences`, `discovery_locations`, `discovery_languages` |
-| Adventures | `events`, `event_memberships`, `event_private_details`, `event_activity` |
+| Adventures | `events`, `event_memberships`, `event_private_details`, `event_reminders`, `event_activity` |
 | Bot messaging | `event_bot_topics`, `event_messages`, `bot_inbox`, `bot_outbox` |
 | Authorization | `roles`, `role_capabilities`, `role_assignments`, `capability_budgets`, `capability_usage`, `permission_audit` |
 | Interview | `ai_conversations`, `ai_messages`, `ai_proposals` |

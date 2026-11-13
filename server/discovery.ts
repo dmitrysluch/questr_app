@@ -39,11 +39,12 @@ export async function searchLocations(db: Db, options: { query?: string; parentI
   return rows;
 }
 // This predicate only filters discovery. Callers must also authorize each event.
-// Empty selections mean no configured feed, never an accidental worldwide feed.
+// An empty language selection means all languages. A location is always required.
 export async function eventMatchesDiscovery(db: Db, userId: string, eventId: string): Promise<boolean> {
   const { rowCount } = await db.query(`SELECT 1 FROM events e JOIN locations l ON l.id=e.location_id
     WHERE e.id=$2 AND e.status='published'
-    AND EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1 AND language_code=e.language_code)
+    AND (NOT EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1)
+      OR EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1 AND language_code=e.language_code))
     AND EXISTS(SELECT 1 FROM discovery_locations WHERE user_id=$1 AND (location_id=l.id OR location_id=l.parent_id))`, [userId, eventId]);
   return !!rowCount;
 }

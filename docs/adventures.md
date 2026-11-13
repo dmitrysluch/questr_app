@@ -7,7 +7,8 @@ member directory. The Mini App manages adventures; Telegram handles messages.
 ## Local walkthrough
 
 Open `http://localhost:5180/#adventures` after saving a character. In Discover,
-choose locations and languages under Adventure filters, or create an adventure.
+choose locations and optionally languages under Adventure filters, or create an adventure.
+An empty language selection includes every language in the chosen locations.
 My adventures includes hosted adventures, applications and accessible history,
 regardless of discovery filters. To try an application, open a separate browser
 profile/incognito session, save a second character and open the same adventure URL.
@@ -15,16 +16,33 @@ In demo authentication mode the application form is in the Mini App. Accept it
 from the host's browser; the applicant can then see the meeting details. Refresh
 reloads immediately; visible pages also refresh every 20 seconds and on focus.
 
-An adventure has a Markdown description, one city or Online, one language, a start
-instant and IANA time zone, party size (2–50, **including the host**), and private
-meeting details. Online adventures require an HTTPS meeting link. Public content
-and application messages use the existing explicit-content reviewer; private
+An adventure has a Markdown description, one city or Online, one language, start
+and end instants and an IANA time zone, party size (2–50, **including the host**),
+and private meeting details. Offline hosts can choose a place with Google Places
+when `GOOGLE_MAPS_BROWSER_KEY` is configured, or enter a venue and Maps link
+manually. The picker stores a Place ID in the Maps link; hosts write their own
+meeting instructions because Places names and addresses cannot be persisted as
+application data. The browser key needs Google Maps JavaScript and Places API (New),
+billing, and an HTTP referrer restriction. A Maps search link works without a key.
+Online adventures require an HTTPS meeting link. If an accepted party has a Zoom
+URL in its details or public description, it gets a Join Zoom button. A link in
+the public description remains visible to all viewers, so use private joining
+details when the call is intended for accepted members only. Public content
+and application and party-chat messages use the existing explicit-content reviewer; private
 meeting details are not sent to the model. Demo review uses limited local fixtures.
 The UI explains connected review through OpenRouter before publication/submission.
 
 Local wall times are converted explicitly, not interpreted in the viewer's zone.
 Nonexistent and repeated daylight-saving times are rejected with an actionable
 error. Event displays use the selected event time zone.
+
+The calendar download is an `.ics` event with start, end and a one-hour alert.
+It includes an exact address or call link only when the downloader currently has
+access to private meeting details. Accepted members and hosts can also select a
+15-minute, one-hour or one-day Telegram reminder in Telegram mode. The bot checks
+live membership before sending; it does not include private joining details in
+the reminder. A reminder requires the user to have started the bot. Changing the
+start time resets unsent reminders; cancellation clears queued reminders.
 
 ## Lifecycle and authorization
 
@@ -57,9 +75,12 @@ error. Event displays use the selected event time zone.
   Leaving a closed adventure still works. Old messages already delivered cannot
   be recalled by revoking access.
 
-The new schema is `db/migrations/006_adventures.sql`: memberships, private details,
+The base schema is `db/migrations/006_adventures.sql`: memberships, private details,
 activity audit, per-user bot topics, messages, durable inbox and outbox. Role grants
-and budget primitives remain in the existing authorization tables.
+and budget primitives remain in the existing authorization tables. Migration
+`007_event_details_and_romance.sql` adds end time, map URL and reminder records,
+plus the profile's opt-in romance signal. The latter is a profile interest signal;
+it does not relax the existing explicit-sexual-content policy.
 
 ## Telegram setup
 

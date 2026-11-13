@@ -18,12 +18,13 @@ test('create an adventure, apply from another character, accept, edit and withdr
   const editor = page.getByRole('dialog');
   await editor.getByLabel('Adventure title', { exact: true }).fill('Coffee, records & a slow afternoon');
   await editor.getByLabel('What are we doing?', { exact: true }).fill('Bring **one record** you love. We will listen over coffee.');
-  await editor.getByLabel('Date & time', { exact: true }).fill('2030-06-15T19:30');
+  await editor.getByLabel('Starts', { exact: true }).fill('2030-06-15T19:30');
+  await editor.getByLabel('Ends', { exact: true }).fill('2030-06-15T21:30');
   await editor.getByLabel('Time zone', { exact: true }).selectOption('Asia/Jerusalem');
   await editor.getByRole('combobox', { name: 'Where', exact: true }).fill('Haifa');
   await editor.getByRole('option', { name: 'Haifa Israel', exact: true }).click();
   await editor.getByLabel('Party size', { exact: true }).fill('3');
-  await editor.getByLabel('Meeting details', { exact: true }).fill('Private door 42, ring the bell');
+  await editor.getByLabel('Exact meeting point — accepted party only', { exact: true }).fill('Private door 42, ring the bell');
   await page.screenshot({ path: `.artifacts/${info.project.name}-adventure-editor.png`, fullPage: true });
   await editor.getByRole('button', { name: 'Publish adventure' }).click();
   await expect(page.getByRole('heading', { name: 'Coffee, records & a slow afternoon', level: 1 })).toBeVisible();
@@ -55,7 +56,7 @@ test('create an adventure, apply from another character, accept, edit and withdr
   await page.screenshot({ path: `.artifacts/${info.project.name}-adventure-host.png`, fullPage: true });
   await guest.screenshot({ path: `.artifacts/${info.project.name}-adventure-party.png`, fullPage: true });
   await page.getByRole('button', { name: 'Edit adventure' }).click();
-  await page.getByRole('dialog').getByLabel('Meeting details', { exact: true }).fill('Updated private door 43');
+  await page.getByRole('dialog').getByLabel('Exact meeting point — accepted party only', { exact: true }).fill('Updated private door 43');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await guest.getByRole('button', { name: 'Refresh', exact: true }).click();

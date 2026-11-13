@@ -50,7 +50,7 @@ export class EventBot {
           const raw = row.text.split('quest_')[1];
           const eventId = `${raw.slice(0,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}-${raw.slice(16,20)}-${raw.slice(20)}`;
           const event = await this.adventures.detail(row.user_id, eventId);
-          if (event.canChat) await reply(`${event.title}\n\nMessages in this topic go to the accepted party under your QUESTR name. Open QUESTR for meeting details.`, eventId);
+          if (event.canChat) await reply(`${event.title}\n\nMessages in this topic go to the accepted party under your QUESTR name. ${this.config.aiMode === 'openrouter' ? 'Your messages are sent through OpenRouter to check for explicit sexual content before delivery. ' : 'This local demo uses a limited content check. '}Open QUESTR for meeting details.`, eventId);
           else if (event.myStatus === 'pending') await reply(`${event.title}\n\nYour application is waiting for the host.`, eventId);
           else if (event.canApply) await reply(`${event.title}\n\nWrite a short message to the host in this topic to apply (3–2000 characters). ${this.config.aiMode === 'openrouter' ? 'Your application is sent through OpenRouter to check for explicit sexual content before the host can read it.' : 'This local demo uses a limited content check without an AI provider.'}`, eventId);
           else await reply('This adventure is not accepting applications.');
@@ -61,6 +61,7 @@ export class EventBot {
             const event = await this.adventures.detail(row.user_id, mapping.event_id);
             if (event.canChat) {
               if (row.text.length > 3000) throw new AppError(400, 'MESSAGE_TOO_LONG');
+              await this.adventures.review(row.text);
               await transaction(this.pool, async sendDb => {
                 await sendDb.query('SELECT id FROM events WHERE id=$1 FOR SHARE', [event.id]);
                 if (!await can(sendDb, row.user_id, 'events.group_chat', { type: 'event', id: event.id })) throw new AppError(403, 'PERMISSION_DENIED');
@@ -79,7 +80,7 @@ export class EventBot {
         await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
       } catch (error) {
         if (error instanceof ZodError || (error instanceof AppError && error.status < 500)) {
-          const message = error instanceof ZodError ? 'Please write an application of 3–2000 characters.' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'Please keep explicit sexual content out of your application. Try a message about the adventure or why you would like to join.' : error.code === 'MESSAGE_TOO_LONG' ? 'Please keep each message under 3000 characters.' : 'This action is unavailable. Open QUESTR to check the adventure and your application.';
+          const message = error instanceof ZodError ? 'Please write an application of 3–2000 characters.' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'Please keep explicit sexual content out of QUESTR messages. Try a message about the adventure instead.' : error.code === 'MESSAGE_TOO_LONG' ? 'Please keep each message under 3000 characters.' : 'This action is unavailable. Open QUESTR to check the adventure and your application.';
           await reply(message);
           await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
         } else {
@@ -88,6 +89,21 @@ export class EventBot {
           if (terminal) await reply('Your message could not be processed. Please try again in a moment.');
         }
       }
+      return true;
+    });
+  }
+  async reminders(): Promise<boolean> {
+    return transaction(this.pool, async db => {
+      const row = (await db.query(`SELECT r.*,e.title,e.starts_at,e.time_zone,e.status FROM event_reminders r JOIN events e ON e.id=r.event_id
+        WHERE r.queued_at IS NULL AND e.starts_at-make_interval(mins=>r.minutes_before)<=now()
+        ORDER BY e.starts_at LIMIT 1 FOR UPDATE OF r SKIP LOCKED`)).rows[0];
+      if (!row) return false;
+      if (row.status === 'published' && row.starts_at.getTime() > Date.now() && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id })) {
+        const localStart = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short', timeZone: row.time_zone }).format(row.starts_at);
+        await queueBot(db, { key: `reminder:${row.schedule_id}`, userId: row.user_id, eventId: row.event_id,
+          kind: 'reminder', body: `Reminder: ${row.title} starts ${localStart} (${row.time_zone}). Open QUESTR for the latest meeting details.` });
+      }
+      await db.query('UPDATE event_reminders SET queued_at=now() WHERE event_id=$1 AND user_id=$2', [row.event_id, row.user_id]);
       return true;
     });
   }
@@ -106,6 +122,7 @@ export class EventBot {
         const message = (await db.query('SELECT sender_id FROM event_messages WHERE id=$1', [row.message_id])).rows[0];
         allowed = !!message && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id }) && await can(db, message.sender_id, 'events.group_chat', { type: 'event', id: row.event_id });
       }
+      if (allowed && row.kind === 'reminder') allowed = await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id });
       if (!allowed) { await db.query("UPDATE bot_outbox SET state='discarded' WHERE id=$1", [row.id]); return true; }
       try {
         const thread = row.in_topic && row.event_id ? await this.topic(db, row.user_id, row.event_id, account.telegram_user_id) : undefined;
@@ -125,7 +142,7 @@ export class EventBot {
     let stopping = false;
     const timer = setInterval(() => {
       if (running) return;
-      running = (async () => { for (let i = 0; i < 5 && !stopping; i++) { const received = await this.inbox(); const sent = await this.outbox(); if (!received && !sent) break; } })()
+      running = (async () => { for (let i = 0; i < 5 && !stopping; i++) { const due = await this.reminders(); const received = await this.inbox(); const sent = await this.outbox(); if (!due && !received && !sent) break; } })()
         .catch(() => console.error('QUESTR bot queue processing failed')).finally(() => { running = undefined; });
     }, 1000);
     timer.unref();

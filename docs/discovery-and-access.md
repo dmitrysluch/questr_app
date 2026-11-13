@@ -22,13 +22,15 @@ discovery and a Telegram party relay on this foundation. Global DMs remain futur
   [source attribution and refresh instructions](../server/data/README.md).
   Parent changes require an explicit migration because they affect access scopes.
 
-Matching is `(any selected location) AND (any selected event language)`:
+Matching requires a selected location. Selected adventure languages narrow the feed;
+leaving languages empty shows events in every language within those locations:
 
 | Selection | Matches | Does not match |
 | --- | --- | --- |
 | All Israel + English/Russian | Matching-language events in any Israeli city | Jordan, Online, Hebrew-only events |
 | Haifa + Tel Aviv + Online, English/Russian | Those cities and global online events | Jerusalem, Jordan, other languages |
-| Empty location or language selection | No configured feed | Implicit worldwide access |
+| Israel, no language selection | Events in every language in Israeli cities | Jordan and Online |
+| No location selection | No configured feed | Implicit worldwide access |
 
 The frontend lets people explicitly copy spoken languages into their adventure
 filters, but subsequent edits stay independent. Selecting a country doesn't

@@ -11,9 +11,11 @@ export const eventFieldsSchema = z.object({
   locationId: locationIdSchema,
   languageCode: languageCodeSchema,
   startsAt: z.iso.datetime({ offset: true }),
+  endsAt: z.iso.datetime({ offset: true }),
   timeZone: timeZoneSchema,
   capacity: z.number().int().min(2).max(50),
   meetingDetails: z.string().trim().min(3).max(2000),
+  meetingMapUrl: z.string().max(2048).default(''),
 }).strict();
 export type EventFields = z.infer<typeof eventFieldsSchema>;
 export const createEventSchema = eventFieldsSchema.extend({ requestId: z.uuid() });
@@ -23,13 +25,14 @@ export type MemberStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | '
 export interface EventPerson { id: string; displayName: string; avatarId: string; role: 'host' | 'participant'; status: MemberStatus; unavailable?: boolean; applicationText?: string }
 export interface Adventure {
   id: string; title: string; descriptionMarkdown: string; location: Location; languageCode: string;
-  startsAt: string; timeZone: string; capacity: number; participantCount: number; revision: number;
+  startsAt: string; endsAt: string; timeZone: string; capacity: number; participantCount: number; revision: number;
   status: 'draft' | 'published' | 'cancelled' | 'completed';
   host: Pick<EventPerson, 'id' | 'displayName' | 'avatarId'>;
   myStatus: MemberStatus | null; isHost: boolean;
 }
 export interface AdventureDetail extends Adventure {
-  meetingDetails: string | null; participants: EventPerson[]; applications: EventPerson[];
+  meetingDetails: string | null; meetingMapUrl: string | null; reminderMinutes: 15 | 60 | 1440 | null;
+  participants: EventPerson[]; applications: EventPerson[];
   canApply: boolean; canEdit: boolean; canManage: boolean; canChat: boolean;
   botUrl: string;
 }

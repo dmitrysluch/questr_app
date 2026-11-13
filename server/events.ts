@@ -18,7 +18,7 @@ const eventProjection = `SELECT e.*,l.name AS location_name,l.kind AS location_k
 function mapEvent(row: any, userId: string): Adventure {
   return { id: row.id, title: row.title, descriptionMarkdown: row.description_markdown,
     location: { id: row.location_id, name: row.location_name, kind: row.location_kind, parentId: row.parent_id, countryName: row.country_name },
-    languageCode: row.language_code, startsAt: row.starts_at.toISOString(), timeZone: row.time_zone,
+    languageCode: row.language_code, startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), timeZone: row.time_zone,
     capacity: row.capacity, participantCount: row.participant_count, revision: row.revision, status: row.status,
     host: { id: row.created_by, displayName: row.host_name, avatarId: row.host_avatar }, myStatus: row.my_status ?? null, isHost: row.created_by === userId };
 }
@@ -43,11 +43,21 @@ function recruiting(row: any) {
 }
 async function validateFields(db: Db, userId: string, fields: EventFields, requireCreate = true) {
   if (Date.parse(fields.startsAt) <= Date.now()) throw new AppError(400, 'EVENT_TIME_PAST');
+  if (Date.parse(fields.endsAt) <= Date.parse(fields.startsAt)) throw new AppError(400, 'EVENT_END_INVALID');
   const location = (await db.query("SELECT kind FROM locations WHERE id=$1 AND kind IN ('city','online')", [fields.locationId])).rows[0];
   if (!location) throw new AppError(400, 'EVENT_LOCATION_INVALID');
   if (location.kind === 'online') {
+    if (fields.meetingMapUrl) throw new AppError(400, 'EVENT_MAP_INVALID');
     try { const url = new URL(fields.meetingDetails); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }
     catch { throw new AppError(400, 'EVENT_LINK_INVALID'); }
+  }
+  if (fields.meetingMapUrl) {
+    try {
+      const url = new URL(fields.meetingMapUrl);
+      const maps = ['www.google.com', 'google.com', 'maps.google.com'].includes(url.hostname) && url.pathname.startsWith('/maps/');
+      const shared = url.hostname === 'maps.app.goo.gl' && url.pathname.length > 1;
+      if (url.protocol !== 'https:' || !(maps || shared) || url.username || url.password) throw new Error();
+    } catch { throw new AppError(400, 'EVENT_MAP_INVALID'); }
   }
   if (requireCreate) await requireCapability(db, userId, 'events.create', { type: 'location', id: fields.locationId });
 }
@@ -69,7 +79,8 @@ export class Adventures {
     const filter = mode === 'mine'
       ? `EXISTS(SELECT 1 FROM event_memberships WHERE event_id=e.id AND user_id=$1)`
       : `e.status='published' AND e.starts_at>now()
-        AND EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1 AND language_code=e.language_code)
+        AND (NOT EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1)
+          OR EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1 AND language_code=e.language_code))
         AND EXISTS(SELECT 1 FROM discovery_locations WHERE user_id=$1 AND (location_id=e.location_id OR location_id=l.parent_id))`;
     const { rows } = await this.pool.query(`${eventProjection} WHERE host_user.status='active' AND ${filter}
       ORDER BY e.starts_at ${mode === 'mine' ? 'DESC' : 'ASC'},e.id LIMIT 21 OFFSET $2`, [userId, offset]);
@@ -92,7 +103,12 @@ export class Adventures {
         FROM event_memberships m JOIN profiles p ON p.user_id=m.user_id JOIN users u ON u.id=m.user_id
         WHERE m.event_id=$1 AND (u.status='active' OR $2) AND (m.status='accepted' OR ($2 AND m.status='pending')) ORDER BY m.created_at,m.user_id`, [eventId, manage])).rows : [];
       return { ...event,
-        meetingDetails: (chat || editable) ? (await db.query('SELECT meeting_details FROM event_private_details WHERE event_id=$1', [eventId])).rows[0]?.meeting_details ?? null : null,
+        ...await (async () => {
+          if (!chat && !editable) return { meetingDetails: null, meetingMapUrl: null };
+          const privateRow = (await db.query('SELECT meeting_details,meeting_map_url FROM event_private_details WHERE event_id=$1', [eventId])).rows[0];
+          return { meetingDetails: privateRow?.meeting_details ?? null, meetingMapUrl: privateRow?.meeting_map_url || null };
+        })(),
+        reminderMinutes: (await db.query('SELECT minutes_before FROM event_reminders WHERE event_id=$1 AND user_id=$2', [eventId, userId])).rows[0]?.minutes_before ?? null,
         participants: members.filter(member => member.status === 'accepted'), applications: manage ? members.filter(member => member.status === 'pending') : [],
         canApply: !event.myStatus && !event.isHost && row.status === 'published' && row.starts_at.getTime() > Date.now() && event.participantCount < event.capacity,
         canEdit: editable && row.status === 'published' && row.starts_at.getTime() > Date.now(), canManage: manage, canChat: chat,
@@ -115,9 +131,9 @@ export class Adventures {
         return old.id;
       }
       await validateFields(db, userId, fields);
-      const row = (await db.query(`INSERT INTO events(created_by,title,description_markdown,location_id,language_code,starts_at,time_zone,capacity,status,request_id,request_hash)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,'published',$9,$10) RETURNING id`, [userId, fields.title, fields.descriptionMarkdown, fields.locationId, fields.languageCode, fields.startsAt, fields.timeZone, fields.capacity, input.requestId, fingerprint])).rows[0];
-      await db.query('INSERT INTO event_private_details(event_id,meeting_details) VALUES($1,$2)', [row.id, fields.meetingDetails]);
+      const row = (await db.query(`INSERT INTO events(created_by,title,description_markdown,location_id,language_code,starts_at,ends_at,time_zone,capacity,status,request_id,request_hash)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'published',$10,$11) RETURNING id`, [userId, fields.title, fields.descriptionMarkdown, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, input.requestId, fingerprint])).rows[0];
+      await db.query('INSERT INTO event_private_details(event_id,meeting_details,meeting_map_url) VALUES($1,$2,$3)', [row.id, fields.meetingDetails, fields.meetingMapUrl]);
       await db.query("INSERT INTO event_memberships(event_id,user_id,role,status) VALUES($1,$2,'host','accepted')", [row.id, userId]);
       await grantEventRole(db, row.id, userId, 'organizer', userId);
       await audit(db, row.id, userId, 'created');
@@ -137,9 +153,13 @@ export class Adventures {
       await validateFields(db, userId, input, row.location_id !== input.locationId);
       const count = (await db.query("SELECT count(*)::int AS count FROM event_memberships WHERE event_id=$1 AND status='accepted'", [eventId])).rows[0].count;
       if (count > input.capacity) throw new AppError(409, 'EVENT_CAPACITY_TOO_SMALL');
-      await db.query(`UPDATE events SET title=$2,description_markdown=$3,location_id=$4,language_code=$5,starts_at=$6,time_zone=$7,capacity=$8,revision=revision+1,updated_at=now() WHERE id=$1`,
-        [eventId, input.title, input.descriptionMarkdown, input.locationId, input.languageCode, input.startsAt, input.timeZone, input.capacity]);
-      await db.query('INSERT INTO event_private_details(event_id,meeting_details) VALUES($1,$2) ON CONFLICT(event_id) DO UPDATE SET meeting_details=EXCLUDED.meeting_details', [eventId, input.meetingDetails]);
+      await db.query(`UPDATE events SET title=$2,description_markdown=$3,location_id=$4,language_code=$5,starts_at=$6,ends_at=$7,time_zone=$8,capacity=$9,revision=revision+1,updated_at=now() WHERE id=$1`,
+        [eventId, input.title, input.descriptionMarkdown, input.locationId, input.languageCode, input.startsAt, input.endsAt, input.timeZone, input.capacity]);
+      await db.query('INSERT INTO event_private_details(event_id,meeting_details,meeting_map_url) VALUES($1,$2,$3) ON CONFLICT(event_id) DO UPDATE SET meeting_details=EXCLUDED.meeting_details,meeting_map_url=EXCLUDED.meeting_map_url', [eventId, input.meetingDetails, input.meetingMapUrl]);
+      if (row.starts_at.getTime() !== Date.parse(input.startsAt)) {
+        await db.query("DELETE FROM bot_outbox WHERE event_id=$1 AND kind='reminder' AND state='pending'", [eventId]);
+        await db.query('UPDATE event_reminders SET queued_at=NULL,schedule_id=gen_random_uuid() WHERE event_id=$1', [eventId]);
+      }
       await audit(db, eventId, userId, 'updated');
       await notifyMembers(db, eventId, `event:${eventId}:edit:${row.revision + 1}`, `Adventure updated: ${input.title}. Open QUESTR to check the latest time and meeting details.`, userId);
     });
@@ -206,6 +226,7 @@ export class Adventures {
       if (row.revision !== revision) throw new AppError(409, 'EVENT_CONFLICT');
       if (status === 'completed' && row.starts_at.getTime() > Date.now()) throw new AppError(409, 'EVENT_NOT_STARTED');
       await db.query('UPDATE events SET status=$2,revision=revision+1,updated_at=now() WHERE id=$1', [eventId, status]);
+      await db.query("DELETE FROM bot_outbox WHERE event_id=$1 AND kind='reminder' AND state='pending'", [eventId]);
       await audit(db, eventId, userId, status);
       await notifyMembers(db, eventId, `event:${eventId}:${status}`, `${row.title} was ${status}. The party chat is now closed; previous messages remain in your bot topic.`);
     });
@@ -218,5 +239,18 @@ export class Adventures {
     const profile = await getProfile(this.pool, targetId);
     if (!profile) throw new AppError(404, 'NOT_FOUND');
     return profile;
+  }
+  async setReminder(userId: string, eventId: string, minutesBefore: 15 | 60 | 1440 | null) {
+    await transaction(this.pool, async db => {
+      const event = await lockEvent(db, userId, eventId);
+      if (!await can(db, userId, 'events.group_chat', { type: 'event', id: eventId })) throw new AppError(403, 'PERMISSION_DENIED');
+      if (event.status !== 'published' || event.starts_at.getTime() <= Date.now()) throw new AppError(409, 'EVENT_CLOSED');
+      if (minutesBefore !== null && event.starts_at.getTime() - minutesBefore * 60000 <= Date.now()) throw new AppError(400, 'REMINDER_TOO_LATE');
+      await db.query("DELETE FROM bot_outbox WHERE event_id=$1 AND user_id=$2 AND kind='reminder' AND state='pending'", [eventId, userId]);
+      if (minutesBefore === null) await db.query('DELETE FROM event_reminders WHERE event_id=$1 AND user_id=$2', [eventId, userId]);
+      else await db.query(`INSERT INTO event_reminders(event_id,user_id,minutes_before) VALUES($1,$2,$3)
+        ON CONFLICT(event_id,user_id) DO UPDATE SET minutes_before=EXCLUDED.minutes_before,queued_at=NULL,schedule_id=gen_random_uuid()`, [eventId, userId, minutesBefore]);
+    });
+    return this.detail(userId, eventId);
   }
 }

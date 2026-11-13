@@ -3,6 +3,7 @@ import { ArrowLeft, CalendarDays, Globe2, Plus, RefreshCw, Users, LockKeyhole } 
 import type { AppConfig, Profile } from '../../shared/schema.ts';
 import { languages, type DiscoveryPreferences } from '../../shared/discovery.ts';
 import { wallTime, wallTimeToInstant, type Adventure, type AdventureDetail, type AdventureList, type EventFields } from '../../shared/events.ts';
+import { googleMapsSearch, zoomLink } from '../../shared/event-links.ts';
 import { api, ApiError } from '../api.ts';
 import { t, errorText, type TranslationKey } from '../i18n.ts';
 import { DiscoverySettings, LocationPicker } from './Discovery.tsx';
@@ -10,8 +11,9 @@ import { Character } from './Character.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ProfileCard } from './ProfileCard.tsx';
 import { Modal } from './Modal.tsx';
+import { GooglePlacePicker } from './GooglePlacePicker.tsx';
 const language = (code: string) => languages.find(l => l.code === code)?.label ?? code;
-function eventDate(event: Adventure) { return new Intl.DateTimeFormat('en', { timeZone: event.timeZone, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(event.startsAt)); }
+function eventDate(event: Adventure) { return new Intl.DateTimeFormat('en', { timeZone: event.timeZone, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }).formatRange(new Date(event.startsAt), new Date(event.endsAt)); }
 const statusKey = (event: Adventure): TranslationKey => event.status === 'published' && Date.parse(event.startsAt) <= Date.now() ? 'events.started' : `events.${event.status}`;
 const go = (id?: string) => { location.hash = id ? `adventures/${id}` : 'adventures'; };
 function EventFacts({ event }: { event: Adventure }) {
@@ -67,6 +69,13 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
     try { setProfile((await api<{ profile: Profile }>(`/events/${id}/profiles/${userId}`)).profile); }
     catch (error) { setError(error); } finally { setBusy(false); }
   }
+  async function setReminder(value: string) {
+    if (!detail) return;
+    setBusy(true); setError(null);
+    try { setDetail((await api<{ event: AdventureDetail }>(`/events/${detail.id}/reminder`, { method: 'PUT', body: { minutesBefore: value ? Number(value) : null } })).event); }
+    catch (error) { setError(error); } finally { setBusy(false); }
+  }
+  const callLink = detail?.canChat ? zoomLink(detail.descriptionMarkdown) ?? zoomLink(detail.meetingDetails ?? '') : null;
   return <section className="adventures">
     <div className="adventure-heading">{id ? <button className="text-button" onClick={() => go()}><ArrowLeft size={16} />{t('events.back')}</button> : <h1>{t('nav.adventures')}</h1>}<div className="event-actions"><button className="icon-button" disabled={loading || busy} aria-label={t('events.refresh')} onClick={() => void reload()}><RefreshCw size={18} /></button>{!id && <button className="pixel-button small" onClick={() => setEditor('new')}><Plus size={16} />{t('events.create')}</button>}</div></div>
     {!id && <><div className="event-tabs"><button className={view === 'discover' ? 'active' : ''} onClick={() => setView('discover')}>{t('events.discover')}</button><button className={view === 'mine' ? 'active' : ''} onClick={() => setView('mine')}>{t('events.mine')}</button></div>{view === 'discover' && <DiscoverySettings initial={discovery} spokenLanguages={spokenLanguages} onSaved={onDiscovery} />}</>}
@@ -75,9 +84,11 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
       <article className="paper-card event-detail"><div className="event-status">{t(statusKey(detail))}</div><h1 dir="auto">{detail.title}</h1><EventFacts event={detail} />
         <button className="event-host text-button" disabled={busy} onClick={() => void showCharacter(detail.host.id)}><Character id={detail.host.avatarId} />{t('events.host', { name: detail.host.displayName })}</button>
         <Markdown content={detail.descriptionMarkdown} />
-        {detail.meetingDetails && <div className="meeting-details"><h2><LockKeyhole size={17} />{t('events.meeting')}</h2>{detail.location.kind === 'online' ? <a href={detail.meetingDetails} target="_blank" rel="noreferrer">{detail.meetingDetails}</a> : <p dir="auto">{detail.meetingDetails}</p>}<small>{t('events.private')}</small></div>}
+        {detail.meetingDetails && <div className="meeting-details"><h2><LockKeyhole size={17} />{t(detail.location.kind === 'online' ? 'events.joiningDetails' : 'events.meetingPoint')}</h2>{detail.location.kind === 'online' ? <a href={detail.meetingDetails} target="_blank" rel="noreferrer">{detail.meetingDetails}</a> : <p dir="auto">{detail.meetingDetails}</p>}{detail.location.kind === 'city' && <a className="text-button" href={detail.meetingMapUrl ?? googleMapsSearch(`${detail.meetingDetails}, ${detail.location.name}`)} target="_blank" rel="noreferrer">{t('events.openGoogleMaps')}</a>}<small>{t('events.private')}</small></div>}
         {!detail.isHost && detail.myStatus && <p className="membership-status" role="status">{t(`events.${detail.myStatus}`)}</p>}
         <div className="event-actions">
+          {callLink && <a className="pixel-button" href={callLink} target="_blank" rel="noreferrer">{t('events.joinZoom')}</a>}
+          <a className="outline-button" href={`/api/events/${detail.id}/calendar.ics`} download>{t('events.calendar')}</a>
           {detail.canApply && (config.authMode === 'telegram' ? <a className="pixel-button" href={detail.botUrl} target="_blank" rel="noreferrer">{t('events.applyBot')}</a> : <button className="pixel-button" onClick={() => { setError(null); setApplication(true); }}>{t('events.apply')}</button>)}
           {detail.canChat && config.authMode === 'telegram' && <a className="pixel-button" href={detail.botUrl} target="_blank" rel="noreferrer">{t('events.chat')}</a>}
           {!detail.canApply && !detail.myStatus && <span>{t(detail.participantCount >= detail.capacity ? 'events.full' : 'events.closed')}</span>}
@@ -86,6 +97,7 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
           {detail.isHost && detail.status === 'published' && <button className="text-button" disabled={busy} onClick={() => setConfirmation({ title: 'events.confirmCancel', hint: 'events.cancelHint', path: '/status', body: { status: 'cancelled', revision: detail.revision } })}>{t('events.cancel')}</button>}
           {detail.isHost && detail.status === 'published' && Date.parse(detail.startsAt) <= Date.now() && <button className="outline-button" disabled={busy} onClick={() => setConfirmation({ title: 'events.confirmComplete', hint: 'events.cancelHint', path: '/status', body: { status: 'completed', revision: detail.revision } })}>{t('events.complete')}</button>}
         </div>{detail.canChat && config.authMode === 'demo' && <p className="field-hint">{t('events.demoChat')}</p>}
+        {detail.canChat && detail.status === 'published' && Date.parse(detail.startsAt) > Date.now() && config.authMode === 'telegram' && <label className="event-reminder">{t('events.remindMe')}<select value={detail.reminderMinutes ?? ''} disabled={busy} onChange={e => void setReminder(e.target.value)}><option value="">{t('events.reminderOff')}</option><option value="15">{t('events.reminder15')}</option><option value="60">{t('events.reminder60')}</option><option value="1440">{t('events.reminderDay')}</option></select></label>}
       </article>
       {!!detail.participants.length && <section className="party-section"><h2>{t('events.party')}</h2><div className="party-grid">{detail.participants.map(person => <div className="party-person" key={person.id}><button className="person-button" disabled={busy || person.unavailable} onClick={() => void showCharacter(person.id)}><Character id={person.avatarId} /><span>{person.displayName}{person.unavailable && <small className="unavailable-character">{t('events.unavailable')}</small>}</span></button>{detail.canManage && person.role !== 'host' && <button className="text-button" disabled={busy} onClick={() => setConfirmation({ title: 'events.confirmRemove', hint: 'events.accessEnds', path: `/members/${person.id}`, body: { action: 'remove' } })}>{t('events.remove')}</button>}</div>)}</div></section>}
       {detail.canManage && <section className="applications"><h2>{t('events.applications')} <span>{detail.applications.length}</span></h2>{!detail.applications.length && <p className="field-hint">{t('events.noApplications')}</p>}{detail.applications.map(person => <article className="paper-card application" key={person.id}><button className="person-button" disabled={busy || person.unavailable} onClick={() => void showCharacter(person.id)}><Character id={person.avatarId} /><span>{person.displayName}{person.unavailable && <small className="unavailable-character">{t('events.unavailable')}</small>}</span></button><p dir="auto">{person.applicationText}</p><div className="event-actions"><button className="pixel-button small" disabled={busy || person.unavailable || detail.participantCount >= detail.capacity || Date.parse(detail.startsAt) <= Date.now()} onClick={() => void action(`/members/${person.id}`, { action: 'accept' })}>{t('events.accept')}</button><button className="outline-button" disabled={busy} onClick={() => void action(`/members/${person.id}`, { action: 'decline' })}>{t('events.decline')}</button></div></article>)}</section>}
@@ -97,34 +109,39 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
   </section>;
 }
 function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { config: AppConfig; initial?: AdventureDetail; spokenLanguages: string[]; onClose: () => void; onSaved: (event: AdventureDetail) => void }) {
-  const defaults = useRef<EventFields>({ title: initial?.title ?? '', descriptionMarkdown: initial?.descriptionMarkdown ?? '', startsAt: initial?.startsAt ?? new Date(Date.now() + 86400000).toISOString(), timeZone: initial?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, capacity: initial?.capacity ?? 6, languageCode: initial?.languageCode ?? spokenLanguages[0] ?? 'en', locationId: initial?.location.id ?? '', meetingDetails: initial?.meetingDetails ?? '' });
+  const defaults = useRef<EventFields>({ title: initial?.title ?? '', descriptionMarkdown: initial?.descriptionMarkdown ?? '', startsAt: initial?.startsAt ?? new Date(Date.now() + 86400000).toISOString(), endsAt: initial?.endsAt ?? new Date(Date.now() + 93600000).toISOString(), timeZone: initial?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, capacity: initial?.capacity ?? 6, languageCode: initial?.languageCode ?? spokenLanguages[0] ?? 'en', locationId: initial?.location.id ?? '', meetingDetails: initial?.meetingDetails ?? '', meetingMapUrl: initial?.meetingMapUrl ?? '' });
   const [fields, setFields] = useState(defaults.current);
   const [localTime, setLocalTime] = useState(wallTime(defaults.current.startsAt, defaults.current.timeZone));
+  const [localEndTime, setLocalEndTime] = useState(wallTime(defaults.current.endsAt, defaults.current.timeZone));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [discard, setDiscard] = useState(false);
   const requestId = useRef(crypto.randomUUID());
   const zones = [...new Set(['UTC', fields.timeZone, ...Intl.supportedValuesOf('timeZone')])].sort();
   const change = (patch: Partial<EventFields>) => setFields(old => ({ ...old, ...patch }));
-  function close() { if (busy) return; if (JSON.stringify(fields) !== JSON.stringify(defaults.current) || localTime !== wallTime(defaults.current.startsAt, defaults.current.timeZone)) setDiscard(true); else onClose(); }
+  const pickedPlace = useCallback(({ mapUrl }: { mapUrl: string }) => change({ meetingMapUrl: mapUrl }), []);
+  function close() { if (busy) return; if (JSON.stringify(fields) !== JSON.stringify(defaults.current) || localTime !== wallTime(defaults.current.startsAt, defaults.current.timeZone) || localEndTime !== wallTime(defaults.current.endsAt, defaults.current.timeZone)) setDiscard(true); else onClose(); }
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(null);
     try {
-      let instant: string;
-      try { instant = wallTimeToInstant(localTime, fields.timeZone); } catch (error) { throw { code: error instanceof Error ? error.message : 'EVENT_TIME_INVALID' }; }
+      let instant: string, endInstant: string;
+      try { instant = wallTimeToInstant(localTime, fields.timeZone); endInstant = wallTimeToInstant(localEndTime, fields.timeZone); } catch (error) { throw { code: error instanceof Error ? error.message : 'EVENT_TIME_INVALID' }; }
+      if (Date.parse(endInstant) <= Date.parse(instant)) throw { code: 'EVENT_END_INVALID' };
       if (!fields.locationId) throw { code: 'EVENT_LOCATION_INVALID' };
-      const body = { ...fields, startsAt: instant, ...(initial ? { revision: initial.revision } : { requestId: requestId.current }) };
+      const body = { ...fields, startsAt: instant, endsAt: endInstant, ...(initial ? { revision: initial.revision } : { requestId: requestId.current }) };
       const result = await api<{ event: AdventureDetail }>(initial ? `/events/${initial.id}` : '/events', { method: initial ? 'PUT' : 'POST', body });
       onSaved(result.event);
     } catch (error) { setError(error); } finally { setBusy(false); }
   }
   return <Modal wide title={t(initial ? 'events.edit' : 'events.create')} onClose={close}><form className="event-form" onSubmit={event => void submit(event)}><fieldset disabled={busy}>
     <label htmlFor="event-title">{t('events.title')}</label><input id="event-title" required minLength={3} maxLength={160} value={fields.title} onChange={e => change({ title: e.target.value })} autoFocus />
-    <label htmlFor="event-description">{t('events.description')}</label><textarea id="event-description" required minLength={10} maxLength={12000} rows={5} value={fields.descriptionMarkdown} onChange={e => change({ descriptionMarkdown: e.target.value })} /><p className="field-hint">{t('events.descriptionHint')}</p>
-    <div className="event-form-grid"><div><label htmlFor="event-when">{t('events.when')}</label><input id="event-when" type="datetime-local" value={localTime} onChange={e => setLocalTime(e.target.value)} required /></div><div><label htmlFor="event-zone">{t('events.zone')}</label><select id="event-zone" value={fields.timeZone} onChange={e => change({ timeZone: e.target.value })}>{zones.map(zone => <option key={zone}>{zone}</option>)}</select></div></div>
+    <label htmlFor="event-description">{t('events.description')}</label><textarea id="event-description" required minLength={10} maxLength={12000} rows={5} value={fields.descriptionMarkdown} onChange={e => change({ descriptionMarkdown: e.target.value })} /><p className="field-hint">{t('events.descriptionHint')}</p>{zoomLink(fields.descriptionMarkdown) && <p className="field-error">{t('events.publicCallWarning')}</p>}
+    <div className="event-form-grid"><div><label htmlFor="event-when">{t('events.start')}</label><input id="event-when" type="datetime-local" value={localTime} onChange={e => { const old = Date.parse(`${localTime}:00Z`), next = Date.parse(`${e.target.value}:00Z`); if (Number.isFinite(old) && Number.isFinite(next)) setLocalEndTime(new Date(Date.parse(`${localEndTime}:00Z`) + next - old).toISOString().slice(0,16)); setLocalTime(e.target.value); }} required /></div><div><label htmlFor="event-end">{t('events.end')}</label><input id="event-end" type="datetime-local" value={localEndTime} onChange={e => setLocalEndTime(e.target.value)} required /></div></div>
+    <label htmlFor="event-zone">{t('events.zone')}</label><select id="event-zone" value={fields.timeZone} onChange={e => change({ timeZone: e.target.value })}>{zones.map(zone => <option key={zone}>{zone}</option>)}</select>
     <LocationPicker single value={fields.locationId ? [fields.locationId] : []} onChange={ids => change({ locationId: ids[0] ?? '' })} />
     <div className="event-form-grid"><div><label htmlFor="event-language">{t('events.language')}</label><select id="event-language" value={fields.languageCode} onChange={e => change({ languageCode: e.target.value })}>{languages.map(l => <option key={l.code} value={l.code}>{l.label} · {l.native}</option>)}</select></div><div><label htmlFor="event-capacity">{t('events.capacity')}</label><input id="event-capacity" type="number" min={2} max={50} required value={fields.capacity} onChange={e => change({ capacity: Number(e.target.value) })} /><p className="field-hint">{t('events.capacityHint')}</p></div></div>
-    <label htmlFor="event-meeting">{t(fields.locationId === 'online' ? 'events.link' : 'events.meeting')}</label><textarea id="event-meeting" required minLength={3} maxLength={2000} rows={3} value={fields.meetingDetails} onChange={e => change({ meetingDetails: e.target.value })} /><p className="field-hint">{t('events.private')}</p>
+    <label htmlFor="event-meeting">{t(fields.locationId === 'online' ? 'events.privateLink' : 'events.privatePoint')}</label><textarea id="event-meeting" required minLength={3} maxLength={2000} rows={3} value={fields.meetingDetails} onChange={e => change({ meetingDetails: e.target.value, meetingMapUrl: '' })} /><p className="field-hint">{t('events.private')}</p>
+    {fields.locationId && fields.locationId !== 'online' && <><div className="event-map-actions">{config.googleMapsBrowserKey && <GooglePlacePicker keyValue={config.googleMapsBrowserKey} onPick={pickedPlace} />}<a className="text-button" href={googleMapsSearch(`${fields.meetingDetails || ''} ${initial?.location.name ?? ''}`.trim() || 'meeting point')} target="_blank" rel="noreferrer">{t('events.findGoogleMaps')}</a></div><label htmlFor="event-map-url">{t('events.mapLink')}</label><input id="event-map-url" type="url" value={fields.meetingMapUrl} onChange={e => change({ meetingMapUrl: e.target.value })} placeholder="https://maps.app.goo.gl/…" /><p className="field-hint">{t('events.mapLinkHint')}</p></>}
     </fieldset><p className="field-hint">{t(config.aiMode === 'openrouter' ? 'events.moderationLive' : 'events.moderation')}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button" disabled={busy}>{t(busy ? 'common.saving' : initial ? 'events.save' : 'events.publish')}</button></div></form>
     {discard && <Modal title={t('events.discard')} onClose={() => setDiscard(false)}><p>{t('events.discardHint')}</p><div className="modal-actions"><button className="pixel-button small" onClick={onClose}>{t('events.confirm')}</button></div></Modal>}
   </Modal>;

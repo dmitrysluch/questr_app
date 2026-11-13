@@ -2,7 +2,7 @@ export interface Config {
   databaseUrl: string; port: number; appOrigin: string;
   authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter';
   openrouterApiKey: string; openrouterModel: string; openrouterReasoningEffort: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'; botToken: string;
-  webhookSecret: string; publicAppUrl: string; secureCookie: boolean;
+  webhookSecret: string; publicAppUrl: string; secureCookie: boolean; googleMapsBrowserKey: string;
 }
 export function loadConfig(): Config {
   const authMode = process.env.AUTH_MODE ?? 'demo';
@@ -18,6 +18,7 @@ export function loadConfig(): Config {
     openrouterReasoningEffort: reasoning as Config['openrouterReasoningEffort'],
     botToken: process.env.TELEGRAM_BOT_TOKEN ?? '', webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
     publicAppUrl: process.env.PUBLIC_APP_URL ?? '', secureCookie: process.env.COOKIE_SECURE === 'true',
+    googleMapsBrowserKey: process.env.GOOGLE_MAPS_BROWSER_KEY ?? '',
   };
   if (config.authMode === 'telegram' && !config.botToken) throw new Error('TELEGRAM_BOT_TOKEN is required in telegram mode');
   if (config.aiMode === 'openrouter' && !config.openrouterApiKey) throw new Error('OPENROUTER_API_KEY is required in openrouter mode');

@@ -376,7 +376,7 @@ integration('event discovery combines country descendants or exact cities/Online
   await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
   const events: Record<string, string> = {};
   for (const [key, location, language] of [['haifa', 'city:294801', 'ru'], ['telAviv', 'city:293397', 'en'], ['jerusalem', 'city:281184', 'en'], ['amman', 'city:250441', 'en'], ['online', 'online', 'ru'], ['hebrew', 'city:294801', 'he']]) {
-    events[key] = (await pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at,status) VALUES($1,'Test quest',$2,$3,now()+interval '1 day','published') RETURNING id", [state.user.id, location, language])).rows[0].id;
+    events[key] = (await pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at,ends_at,status) VALUES($1,'Test quest',$2,$3,now()+interval '1 day',now()+interval '1 day 2 hours','published') RETURNING id", [state.user.id, location, language])).rows[0].id;
   }
   const matches = async () => {
     const result: Record<string, boolean> = {};
@@ -389,8 +389,8 @@ integration('event discovery combines country descendants or exact cities/Online
   prefs = await saveDiscovery(pool, state.user.id, { ...prefs, locationIds: ['city:294801', 'city:293397', 'online'] });
   assert.deepEqual(await matches(), { haifa: true, telAviv: true, jerusalem: false, amman: false, online: true, hebrew: false });
   await saveDiscovery(pool, state.user.id, { ...prefs, languageCodes: [] });
-  assert.ok(Object.values(await matches()).every(value => !value));
-  await assert.rejects(pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at) VALUES($1,'Country is a filter','country:IL','en',now())", [state.user.id]), /city or Online/);
+  assert.deepEqual(await matches(), { haifa: true, telAviv: true, jerusalem: false, amman: false, online: true, hebrew: true });
+  await assert.rejects(pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at,ends_at) VALUES($1,'Country is a filter','country:IL','en',now(),now()+interval '2 hours')", [state.user.id]), /city or Online/);
 });
 
 integration('permissions enforce ownership, location/event scopes, expiry, revocation and blocked accounts', async () => {
@@ -409,7 +409,7 @@ integration('permissions enforce ownership, location/event scopes, expiry, revoc
   assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'city:250441' }), false);
   assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'online' }), false);
   assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'city:999999999' }), false);
-  const event = (await pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at) VALUES($1,'Scoped quest','online','en',now()) RETURNING id", [id])).rows[0].id;
+  const event = (await pool.query("INSERT INTO events(created_by,title,location_id,language_code,starts_at,ends_at) VALUES($1,'Scoped quest','online','en',now(),now()+interval '2 hours') RETURNING id", [id])).rows[0].id;
   const grant = (await pool.query("INSERT INTO role_assignments(user_id,role_code,event_id,reason) VALUES($1,'organizer',$2,'Test host') RETURNING id", [id, event])).rows[0].id;
   assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: event }), true);
   assert.equal(await can(pool, id, 'events.edit', { type: 'event', id: randomUUID() }), false);

@@ -83,7 +83,8 @@ export function DiscoverySettings({ initial, spokenLanguages, onSaved }: { initi
         <LanguagePicker label={t('discovery.languages')} value={value.languageCodes} onChange={languageCodes => edit({ languageCodes })} />
         {!!spokenLanguages.length && <button type="button" className="text-button use-spoken" onClick={() => edit({ languageCodes: spokenLanguages })}>{t('discovery.useSpoken')}</button>}
       </fieldset>
-      {(!value.locationIds.length || !value.languageCodes.length) && <p className="field-hint">{t('discovery.empty')}</p>}
+      {!value.locationIds.length && <p className="field-hint">{t('discovery.empty')}</p>}
+      {value.locationIds.length > 0 && !value.languageCodes.length && <p className="field-hint">{t('discovery.allLanguages')}</p>}
       {!!error && <p className="field-error" role="alert">{errorText(error)}{error instanceof ApiError && error.code === 'PREFERENCES_CONFLICT' && <button type="button" className="text-button" disabled={busy} onClick={() => void reload()}>{t('discovery.reload')}</button>}</p>}
       <div className="discovery-actions"><span role="status">{saved && <><Check size={14} />{t('common.saved')}</>}</span><button type="button" className="pixel-button small" disabled={busy || !dirty} onClick={() => void save()}>{t(busy ? 'common.saving' : 'discovery.save')}</button></div>
       <small className="location-credit">{t('locations.coverage')} <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a></small>

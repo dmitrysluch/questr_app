@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-export async function queueBot(db: PoolClient, input: { key: string; userId: string; eventId?: string; messageId?: string; body: string; kind?: 'notification' | 'reply' | 'relay'; inTopic?: boolean }) {
+export async function queueBot(db: PoolClient, input: { key: string; userId: string; eventId?: string; messageId?: string; body: string; kind?: 'notification' | 'reply' | 'relay' | 'reminder'; inTopic?: boolean }) {
   await db.query(`INSERT INTO bot_outbox(dedupe_key,user_id,event_id,message_id,body,kind,in_topic)
     VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(dedupe_key) DO NOTHING`,
   [input.key, input.userId, input.eventId ?? null, input.messageId ?? null, input.body, input.kind ?? 'notification', input.inTopic ?? false]);

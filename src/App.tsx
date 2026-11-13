@@ -158,7 +158,11 @@ export function App() {
           </form>
         </section> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
-          <ProfileCard profile={state.profile} />
+          <ProfileCard profile={state.profile} busy={busy} onRomanceToggle={() => void run(async () => {
+            await flush();
+            await api('/profile/romance', { method: 'PUT', body: { revision: state.profile!.revision, openToRomance: !state.profile!.openToRomance } });
+            await loadState();
+          })} />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
 
           <div className="page-actions"><span className="privacy-note"><LockKeyhole size={14} />{t('review.private')}</span><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
@@ -180,6 +184,7 @@ export function App() {
           <PageHeading title="bio.title" />
           <div className="bio-layout"><div className="bio-main">
             <div className="profile-languages"><LanguagePicker label={t('languages.spoken')} value={draft.spokenLanguages} onChange={spokenLanguages => edit({ spokenLanguages })} /></div>
+            <label className="checkbox-label romance-draft"><input type="checkbox" checked={draft.openToRomance} onChange={e => edit({ openToRomance: e.target.checked })} />{t('profile.romance')}</label>
             <div className="section-heading"><h2>{t('bio.tagsTitle')}</h2><span>{t('common.optional')}</span></div>
             <TagPicker value={draft.tags} onChange={tags => edit({ tags })} />
             <div className="story-heading"><h2>{t('bio.storyTitle')}</h2></div>
