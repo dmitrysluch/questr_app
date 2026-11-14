@@ -78,7 +78,7 @@ The two model operations live in `server/assistant.ts`. A tool-using agent runti
 
 ### Explicit-content checks
 
-The interview and drafting prompts prohibit explicitly sexual descriptions, invitations and requests. An independent model call through OpenRouter reviews each answer, the bio before preview/publication, generated bio proposals, adventure descriptions, applications and party-chat messages. Ordinary romance, orientation, gender identity, and neutral non-graphic education or personal boundaries are allowed. The opt-in “Open to romance” profile signal does not change this content rule. The policy is defined in `shared/content-policy.ts`; the reviewer is in `server/moderation.ts`.
+The interview and drafting prompts prohibit explicitly sexual descriptions, invitations and requests. An independent model call through OpenRouter reviews each answer, the bio before preview/publication, generated bio proposals, adventure descriptions, applications, party-chat messages and direct messages. Ordinary romance, orientation, gender identity, and neutral non-graphic education or personal boundaries are allowed. The opt-in “Open to romance” profile signal does not change this content rule. The policy is defined in `shared/content-policy.ts`; the reviewer is in `server/moderation.ts`.
 
 - A flagged answer stays in the private conversation with muted red highlighting. The interviewer gently explains the profile rule and asks about another interest. Opening a conversation reviews older answers that have not been checked under the current policy/model.
 - A flagged bio stays editable, with the offending passages highlighted in both visual and Markdown modes. Highlighting never modifies the saved Markdown or undo history. An expandable list of exact passages also supports browsers without the CSS Custom Highlight API.
@@ -100,7 +100,7 @@ Each issued code is single-use. The default expiry is 7 days, selectable from 1 
 
 The browser sends official Telegram Mini App `initData` to the server. The server verifies the HMAC signature, freshness, and numeric user ID before issuing a session. Client-provided `initDataUnsafe` is never trusted. [Telegram authentication documentation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
 
-For applications and party messaging, set `TELEGRAM_WEBHOOK_SECRET`, configure `/api/telegram/webhook` with that secret, and enable private bot topics in BotFather. The [setup and delivery notes](docs/adventures.md#telegram-setup) describe the durable bot queues and deployment checks.
+For applications, party chats and consent-gated direct messages, set `TELEGRAM_WEBHOOK_SECRET`, configure `/api/telegram/webhook` with that secret, and enable private bot topics in BotFather. The [setup and delivery notes](docs/adventures.md#telegram-setup) describe bot commands, durable queues and deployment checks.
 
 Demo authentication is rejected when configured with a non-localhost app origin. An API key and bot token are not included in this repository. Live provider output and real Telegram clients require those credentials and an HTTPS deployment.
 
@@ -115,7 +115,7 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 | Catalogs | `avatar_presets`, `tags`, `tag_translations`, `languages`, `locations` |
 | Discovery | `discovery_preferences`, `discovery_locations`, `discovery_languages` |
 | Adventures | `events`, `event_memberships`, `event_private_details`, `event_reminders`, `event_activity` |
-| Bot messaging | `event_bot_topics`, `event_messages`, `bot_inbox`, `bot_outbox` |
+| Bot messaging | `event_bot_topics`, `event_messages`, `dm_conversations`, `dm_messages`, `dm_bot_topics`, `bot_inbox`, `bot_outbox` |
 | Authorization | `roles`, `role_capabilities`, `role_assignments`, `capability_budgets`, `capability_usage`, `permission_audit` |
 | Interview | `ai_conversations`, `ai_messages`, `ai_proposals` |
 | Content review | `content_reviews` (text hash, policy/model key, verdict and spans); review metadata on `ai_messages` |

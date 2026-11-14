@@ -20,7 +20,7 @@ import type { BioReview } from '../shared/content-policy.ts';
 
 const BioEditor = lazy(() => import('./components/BioEditor.tsx'));
 declare global {
-  interface Window { Telegram?: { WebApp?: { initData: string; ready: () => void; expand: () => void; setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void } } }
+  interface Window { Telegram?: { WebApp?: { initData: string; ready: () => void; expand: () => void; openTelegramLink?: (url: string) => void; setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void } } }
 }
 const steps: { id: Draft['currentStep']; label: TranslationKey }[] = [
   { id: 'avatar', label: 'steps.avatar' },

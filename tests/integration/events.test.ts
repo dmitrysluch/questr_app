@@ -200,6 +200,64 @@ integration('bot topics, retries, moderated applications and delivery-time revoc
   await text(8006, 'This cannot be relayed.'); await bot.inbox();
   assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8006')).rowCount, 0);
 });
+integration('bot commands select party and private topics; consent and live roles gate DM delivery', async () => {
+  const host = await person('Host'), guest = await person('Guest'), other = await person('Other');
+  const event = await create(host, { capacity: 3 });
+  await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200);
+  await apply(other, event.id); await decide(host, event.id, other.id, 'accept').expect(200);
+  for (const [who, telegramId] of [[host,3001],[guest,3002],[other,3003]] as const) await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id,bot_started_at) VALUES($1,$2,now())', [who.id,telegramId]);
+  const calls: { method: string; body: any }[] = []; let nextThread = 300, nextMessage = 0;
+  const fakeFetch = (async (url: string | URL | Request, options?: RequestInit) => {
+    const method = String(url).split('/').at(-1)!; const body = JSON.parse(String(options?.body)); calls.push({ method, body });
+    return Response.json({ ok: true, result: method === 'createForumTopic' ? { message_thread_id: ++nextThread } : { message_id: ++nextMessage } });
+  }) as typeof fetch;
+  const bot = new EventBot(pool, config, fakeFetch);
+  const send = async (updateId: number, telegramId: number, text: string, thread?: number) => {
+    await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+      .send({ update_id: updateId, message: { from: { id: telegramId }, chat: { id: telegramId, type: 'private' }, text, ...(thread ? { message_thread_id: thread } : {}) } }).expect(200);
+    assert.equal(await bot.inbox(), true);
+  };
+  const drain = async () => { while (await bot.outbox()) { /* dispatch */ } };
+  const eventCode = event.id.replaceAll('-', '').slice(0, 8), hostCode = host.id.replaceAll('-', '').slice(0, 8);
+  await send(9001, 3002, '/chats');
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9001:reply'")).rows[0].body, new RegExp(eventCode));
+  await send(9002, 3002, `/people ${eventCode}`);
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9002:reply'")).rows[0].body, new RegExp(hostCode));
+  await send(9003, 3002, `/dm ${eventCode} ${hostCode}`); await drain();
+  const dm = (await pool.query('SELECT * FROM dm_conversations WHERE event_id=$1 AND requested_by=$2', [event.id, guest.id])).rows[0];
+  assert.equal(dm.status, 'draft');
+  const thread = Number((await pool.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [dm.id, guest.id])).rows[0].thread_id);
+  await send(9004, 3002, 'I can bring my jazz records.', thread);
+  assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'pending');
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM capability_usage WHERE user_id=$1 AND capability='dm.send_opener'", [guest.id])).rows[0].n, 1);
+  await drain();
+  assert.ok(calls.some(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.text.includes(`/accept ${dm.id.replaceAll('-', '').slice(0, 8)}`)));
+  assert.ok(!calls.some(c => String(c.body.chat_id) === '3003' && c.body.text?.includes('jazz records')));
+  await send(9005, 3002, 'Another message before consent.', thread);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [dm.id])).rows[0].n, 1);
+  await send(9006, 3001, `/accept ${dm.id.replaceAll('-', '').slice(0, 8)}`); await drain();
+  assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'accepted');
+  assert.ok(calls.some(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.text.includes('Guest:\nI can bring my jazz records.')));
+  const otherCode = other.id.replaceAll('-', '').slice(0, 8);
+  await send(9008, 3002, `/dm ${eventCode} ${otherCode}`); await drain();
+  const second = (await pool.query('SELECT id,status FROM dm_conversations WHERE event_id=$1 AND requested_by=$2 AND id<>$3', [event.id, guest.id, dm.id])).rows[0];
+  const secondThread = Number((await pool.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [second.id, guest.id])).rows[0].thread_id);
+  await send(9009, 3002, 'I want to have sex with you.', secondThread);
+  assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [second.id])).rows[0].status, 'draft');
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [second.id])).rows[0].n, 0);
+  await send(9010, 3002, 'Would you like to bring a record?', secondThread);
+  await send(9011, 3003, `/decline ${second.id.replaceAll('-', '').slice(0, 8)}`);
+  assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [second.id])).rows[0].status, 'declined');
+  await drain();
+  assert.ok(!calls.some(c => String(c.body.chat_id) === '3003' && c.body.text?.includes('Would you like to bring a record?')));
+  await send(9007, 3002, 'See you tomorrow.', thread);
+  await guest.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
+  await drain();
+  assert.equal((await pool.query("SELECT state FROM bot_outbox WHERE kind='dm_relay' AND dm_message_id=(SELECT id FROM dm_messages WHERE telegram_update_id=9007)")).rows[0].state, 'discarded');
+  assert.equal(await can(pool, guest.id, 'dm.message', { type: 'profile', id: host.id }), false);
+  await send(9012, 3001, `/block ${dm.id.replaceAll('-', '').slice(0, 8)}`);
+  assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'blocked');
+});
 integration('blocked accounts cannot chat or expose their character, while hosts can release their occupied seat', async () => {
   const host = await person(), guest = await person(); const event = await create(host);
   await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200);

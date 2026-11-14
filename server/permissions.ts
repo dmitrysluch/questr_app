@@ -3,15 +3,29 @@ import { AppError } from './errors.ts';
 
 type Db = Pool | PoolClient;
 export type Capability = 'profile.view' | 'profile.edit' | 'events.view' | 'events.create' | 'events.edit' | 'events.accept' | 'events.group_chat' | 'events.group_chat_moderator' | 'dm.send_opener' | 'dm.message' | 'invite.create' | 'admin';
-export type Resource = { type: 'global' } | { type: 'location'; id: string } | { type: 'event'; id: string } | { type: 'profile'; id: string };
+export type Resource = { type: 'global' } | { type: 'location'; id: string } | { type: 'event'; id: string } | { type: 'profile'; id: string; eventId?: string };
 
 export async function can(db: Db, userId: string, capability: Capability, resource: Resource): Promise<boolean> {
   const user = (await db.query('SELECT status FROM users WHERE id=$1', [userId])).rows[0];
   if (!user || !['onboarding', 'active'].includes(user.status)) return false;
   if (user.status !== 'active' && !capability.startsWith('profile.')) return false;
-  // DM permissions require consent/block relationships, not just a role. Until
-  // that workflow exists, these reserved capabilities always fail closed.
-  if (capability.startsWith('dm.')) return false;
+  if (capability.startsWith('dm.')) {
+    if (resource.type !== 'profile' || resource.id === userId) return false;
+    const target = (await db.query("SELECT 1 FROM users WHERE id=$1 AND status='active'", [resource.id])).rowCount;
+    if (!target) return false;
+    const grants = (await db.query(`SELECT e.id,e.status,c.status AS consent
+      FROM event_memberships mine JOIN event_memberships theirs ON theirs.event_id=mine.event_id
+      JOIN events e ON e.id=mine.event_id JOIN users host ON host.id=e.created_by
+      JOIN role_assignments a ON a.user_id=mine.user_id AND a.event_id=e.id
+      JOIN role_capabilities p ON p.role_code=a.role_code AND p.capability=$3
+      LEFT JOIN dm_conversations c ON c.event_id=e.id AND c.first_user_id=LEAST($1::uuid,$2::uuid) AND c.second_user_id=GREATEST($1::uuid,$2::uuid)
+      WHERE mine.user_id=$1 AND theirs.user_id=$2 AND mine.status='accepted' AND theirs.status='accepted'
+        AND host.status='active' AND ($4::uuid IS NULL OR e.id=$4) AND a.revoked_at IS NULL
+        AND a.valid_from<=now() AND (a.valid_until IS NULL OR a.valid_until>now())`, [userId, resource.id, capability, resource.eventId ?? null])).rows;
+    return grants.some(grant => capability === 'dm.send_opener'
+      ? grant.status === 'published' && (!grant.consent || grant.consent === 'draft')
+      : grant.status === 'published' && grant.consent === 'accepted');
+  }
   if (capability.startsWith('profile.') && resource.type !== 'profile') return false;
   if (capability.startsWith('events.') && !['event', 'location'].includes(resource.type)) return false;
   if (capability === 'events.create' && resource.type !== 'location') return false;
@@ -60,7 +74,7 @@ export async function requireCapability(db: Db, userId: string, capability: Capa
 export async function grantMember(db: PoolClient, userId: string) {
   await db.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'member','Invitation redeemed')", [userId]);
   await db.query("INSERT INTO permission_audit(user_id,action,details,reason) VALUES($1,'role.granted','{\"role\":\"member\"}','Invitation redeemed')", [userId]);
-  await db.query("INSERT INTO capability_budgets(user_id,capability,max_uses,window_seconds) VALUES($1,'events.create',2,604800),($1,'invite.create',3,604800) ON CONFLICT DO NOTHING", [userId]);
+  await db.query("INSERT INTO capability_budgets(user_id,capability,max_uses,window_seconds) VALUES($1,'events.create',2,604800),($1,'invite.create',3,604800),($1,'dm.send_opener',3,604800) ON CONFLICT DO NOTHING", [userId]);
 }
 // Must run in the SAME transaction as the action. Serializes competing consumes;
 // rollback also restores quota. A retry cannot spend again or change its target.

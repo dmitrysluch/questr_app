@@ -333,6 +333,7 @@ test('interest search supports niche aliases, keyboard selection, filters, remov
 
 test('interest limit blocks additions until a selected tag is removed', async ({ page }) => {
   await register(page);
+  await expect(page.locator('.save-status.saved')).toBeVisible();
   const state = (await (await page.request.get('/api/me')).json());
   const selected = tags.slice(0, 30).map(tag => ({ kind: 'catalog', code: tag.code }));
   expect((await page.request.put('/api/draft', { data: { ...state.draft, tags: selected } })).status()).toBe(200);

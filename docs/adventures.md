@@ -31,7 +31,7 @@ Online adventures require an HTTPS meeting link. If an accepted party has a Zoom
 URL in its details or public description, it gets a Join Zoom button. A link in
 the public description remains visible to all viewers, so use private joining
 details when the call is intended for accepted members only. Public content
-and application and party-chat messages use the existing explicit-content reviewer; private
+and application, party-chat and direct messages use the existing explicit-content reviewer; private
 meeting details are not sent to the model. Demo review uses limited local fixtures.
 The UI explains connected review through OpenRouter before publication/submission.
 
@@ -85,7 +85,8 @@ start time resets unsent reminders; cancellation clears queued reminders.
   be recalled by revoking access.
 
 The base schema is `db/migrations/006_adventures.sql`: memberships, private details,
-activity audit, per-user bot topics, messages, durable inbox and outbox. Role grants
+activity audit, per-user bot topics, messages, durable inbox and outbox. Migration
+`013_bot_direct_messages.sql` adds consent-gated, event-scoped private topics. Role grants
 and budget primitives remain in the existing authorization tables. Migration
 `007_event_details_and_romance.sql` adds end time, map URL and reminder records,
 plus the profile's opt-in romance signal. The latter is a profile interest signal;
@@ -107,8 +108,24 @@ it does not relax the existing explicit-sexual-content policy.
 5. Accept in QUESTR, then use “Open party chat”. Text in that topic is delivered
    to accepted members' own topics under the sender's QUESTR display name. Raw
    Telegram messages are not forwarded; IDs/usernames are not shared. Only text
-   messages are supported in v1 (up to 3000 characters). Bot commands and messages
-   outside a mapped topic cannot accidentally become party messages.
+   messages are supported in v1 (up to 3000 characters). Use `/chats` to list
+   accessible adventures, `/chat <code>` to open a party topic, and
+   `/people <code>` to see accepted participants who have started the bot.
+6. Use `/dm <adventure code> <person code>` to open a private topic and write an
+   opener. The other person receives the reviewed opener and must use
+   `/accept <chat code>` before either side can exchange more messages. They can
+   use `/decline <chat code>`, and either side can later use `/block <chat code>`.
+   A declined/blocked conversation cannot be restarted from the same adventure.
+   Opening a private chat requires an accepted membership and an event-scoped
+   `dm.send_opener` role grant. The default budget is three first contacts per
+   rolling seven days; replies require `dm.message` and live roles on both sides.
+   Party and private messages stop when a participant leaves or the adventure
+   closes, including messages queued but not yet delivered.
+
+The Mini App button uses Telegram's `openTelegramLink` when available. A bot
+deep link may still show Telegram's **Start** button before it sends `/start`;
+the Bot API cannot force the client to open a specific private topic directly.
+The bot posts in that topic so it is easy to open from the chat list.
 
 Official references: [private bot topics](https://core.telegram.org/bots/api#createforumtopic),
 [bot account fields](https://core.telegram.org/bots/api#getme), and

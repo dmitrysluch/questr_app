@@ -15,6 +15,10 @@ import { GooglePlacePicker } from './GooglePlacePicker.tsx';
 function eventDate(event: Adventure) { return new Intl.DateTimeFormat(getLocale(), { timeZone: event.timeZone, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }).formatRange(new Date(event.startsAt), new Date(event.endsAt)); }
 const statusKey = (event: Adventure): TranslationKey => event.status === 'published' && Date.parse(event.startsAt) <= Date.now() ? 'events.started' : event.status === 'published' && !event.recruitmentOpen ? 'events.recruitmentClosed' : `events.${event.status}`;
 const go = (id?: string) => { location.hash = id ? `adventures/${id}` : 'adventures'; };
+function openBot(event: React.MouseEvent<HTMLAnchorElement>, url: string) {
+  const telegram = window.Telegram?.WebApp;
+  if (telegram?.openTelegramLink) { event.preventDefault(); telegram.openTelegramLink(url); }
+}
 function EventFacts({ event }: { event: Adventure }) {
   const place = event.location.kind === 'online' ? event.onlinePlatform || t('events.online') : [event.district, locationName(event.location.id, event.location.name)].filter(Boolean).join(' · ');
   return <div className="event-facts"><span><CalendarDays size={16} />{eventDate(event)} · {event.timeZone}</span><span><Globe2 size={16} />{place} · {languageName(event.languageCode)}</span><span><Coins size={16} />{event.costEstimate}</span><span><Users size={16} />{t('events.seatsLeft', { count: Math.max(0, event.capacity - event.participantCount) })} · {t('events.count', { count: event.participantCount, capacity: event.capacity })}</span></div>;
@@ -95,8 +99,8 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
         <div className="event-actions">
           {callLink && <a className="pixel-button" href={callLink} target="_blank" rel="noreferrer">{t('events.joinCall')}</a>}
           <a className="outline-button" href={`/api/events/${detail.id}/calendar.ics`} download>{t('events.calendar')}</a>
-          {detail.canApply && (config.authMode === 'telegram' ? <a className="pixel-button" href={detail.botUrl} target="_blank" rel="noreferrer">{t('events.applyBot')}</a> : <button className="pixel-button" onClick={() => { setError(null); setApplication(true); }}>{t('events.apply')}</button>)}
-          {detail.canChat && config.authMode === 'telegram' && <a className="pixel-button" href={detail.botUrl} target="_blank" rel="noreferrer">{t('events.chat')}</a>}
+          {detail.canApply && (config.authMode === 'telegram' ? <a className="pixel-button" href={detail.botUrl} onClick={event => openBot(event, detail.botUrl)} target="_blank" rel="noreferrer">{t('events.applyBot')}</a> : <button className="pixel-button" onClick={() => { setError(null); setApplication(true); }}>{t('events.apply')}</button>)}
+          {detail.canChat && config.authMode === 'telegram' && <a className="pixel-button" href={detail.botUrl} onClick={event => openBot(event, detail.botUrl)} target="_blank" rel="noreferrer">{t('events.chat')}</a>}
           {!detail.canApply && !detail.myStatus && <span>{t(detail.participantCount >= detail.capacity ? 'events.full' : !detail.recruitmentOpen ? 'events.recruitmentClosed' : 'events.closed')}</span>}
           {!detail.isHost && ['pending', 'accepted'].includes(detail.myStatus ?? '') && <button className="outline-button" disabled={busy} onClick={() => setConfirmation({ title: 'events.confirmLeave', hint: 'events.accessEnds', path: '/leave', body: {}, leave: true })}>{t(detail.myStatus === 'pending' ? 'events.withdraw' : 'events.leave')}</button>}
           {detail.canEdit && <button className="outline-button" onClick={() => { setError(null); setEditor(detail); }}>{t('events.edit')}</button>}

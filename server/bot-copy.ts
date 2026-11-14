@@ -4,7 +4,8 @@ type Key = 'updated' | 'newApplication' | 'accepted' | 'declined' | 'removed' | 
   | 'finishCharacter' | 'topicChatLive' | 'topicChatDemo' | 'topicPending' | 'topicApplyLive' | 'topicApplyDemo'
   | 'notAccepting' | 'chooseTopic' | 'applicationSent' | 'alreadyPending' | 'chatClosed' | 'botHelp'
   | 'applicationLength' | 'explicitContent' | 'noLinks' | 'messageLength' | 'unavailable' | 'processingFailed'
-  | 'reminder' | 'openButton';
+  | 'reminder' | 'openButton' | 'chatsEmpty' | 'chatsList' | 'peopleList' | 'peopleEmpty'
+  | 'chatNotFound' | 'dmStart' | 'dmWaiting' | 'dmRequested' | 'dmAccepted' | 'dmDeclined' | 'dmBlocked' | 'dmUnavailable' | 'dmNoRequest' | 'dmList';
 
 const copy: Record<Locale, Record<Key, string>> = {
   en: {
@@ -25,7 +26,7 @@ const copy: Record<Locale, Record<Key, string>> = {
     chooseTopic: 'Open an adventure in QUESTR and use its bot button to choose a topic.',
     applicationSent: 'Application sent. The host will review your character and message.',
     alreadyPending: 'Your application is already waiting for the host.', chatClosed: 'This party chat is closed to you.',
-    botHelp: 'Open an adventure in QUESTR, then use “Apply in bot” or “Open party chat”. Each adventure has its own private topic here.',
+    botHelp: '/chats — your chats. /chat <code> — party. /people <code> — accepted participants. /dm <adventure code> <person code> — private chat. /help — commands.',
     applicationLength: 'Please write an application of 3–2000 characters.',
     explicitContent: 'Please keep explicit sexual content out of QUESTR messages. Try a message about the adventure instead.',
     noLinks: 'Please write your first message without links. You can ask the host about the adventure instead.',
@@ -34,6 +35,20 @@ const copy: Record<Locale, Record<Key, string>> = {
     processingFailed: 'Your message could not be processed. Please try again in a moment.',
     reminder: 'Reminder: {title} starts {time} ({zone}). Open QUESTR for the latest meeting details.',
     openButton: 'Open QUESTR',
+    chatsEmpty: 'No active party chats. Join an adventure in QUESTR first.',
+    chatsList: 'Party chats:\n{items}\n\nUse /chat <code> to open one, or /people <code> to see its party.',
+    peopleList: '{title} — party:\n{items}\n\nUse /dm <adventure code> <person code> to open a private thread. The other person must accept your first message.',
+    peopleEmpty: 'No other accepted party members yet.',
+    chatNotFound: 'Could not find a chat you can access. Use /chats to see your adventures.',
+    dmStart: 'Private thread with {name} from {title}. Write an opener. It will be shown to {name} for approval before you can chat.',
+    dmWaiting: 'Your opener is waiting for a reply. Further messages are not delivered yet.',
+    dmRequested: '{name} from {title} would like to message you:\n\n{message}\n\n/accept {code} or /decline {code}',
+    dmAccepted: 'Private chat with {name} is open. Reply in this topic. /block {code} closes it.',
+    dmDeclined: 'Private chat declined.',
+    dmBlocked: 'Private chat closed. You will not receive more messages here.',
+    dmUnavailable: 'Private chat unavailable. Use /people <adventure code> to see who you can contact.',
+    dmNoRequest: 'No pending private chat found. Use /chats to see your chats.',
+    dmList: 'Private chats:\n{items}\n\nUse /dm <adventure code> <person code> to open one; /block <chat code> closes it.',
   },
   ru: {
     updated: 'Вылазка «{title}» обновлена. Открой QUESTR, чтобы проверить время и детали встречи.',
@@ -53,7 +68,7 @@ const copy: Record<Locale, Record<Key, string>> = {
     chooseTopic: 'Открой вылазку в QUESTR и нажми кнопку бота, чтобы выбрать тему.',
     applicationSent: 'Заявка отправлена. Организатор прочитает твоё сообщение и посмотрит персонажа.',
     alreadyPending: 'Твоя заявка уже ждёт ответа организатора.', chatClosed: 'Чат этой группы тебе недоступен.',
-    botHelp: 'Открой вылазку в QUESTR и нажми «Подать заявку в боте» или «Открыть чат группы». У каждой вылазки своя закрытая тема.',
+    botHelp: '/chats — твои чаты. /chat <код> — группа. /people <код> — участники. /dm <код вылазки> <код участника> — личный чат. /help — команды.',
     applicationLength: 'Напиши заявку длиной от 3 до 2000 символов.',
     explicitContent: 'Пожалуйста, не добавляй откровенно сексуальный текст в сообщения QUESTR. Лучше напиши о самой вылазке.',
     noLinks: 'Первое сообщение должно быть без ссылок. Ты можешь спросить организатора о вылазке.',
@@ -62,6 +77,20 @@ const copy: Record<Locale, Record<Key, string>> = {
     processingFailed: 'Не удалось обработать сообщение. Попробуй чуть позже.',
     reminder: 'Напоминание: «{title}» начинается {time} ({zone}). Проверь актуальные детали встречи в QUESTR.',
     openButton: 'Открыть QUESTR',
+    chatsEmpty: 'Активных чатов группы пока нет. Сначала присоединись к вылазке в QUESTR.',
+    chatsList: 'Чаты вылазок:\n{items}\n\n/chat <код> — открыть чат, /people <код> — увидеть участников.',
+    peopleList: '«{title}» — участники:\n{items}\n\n/dm <код вылазки> <код участника> — открыть личную тему. Первое сообщение адресат должен принять.',
+    peopleEmpty: 'Других принятых участников пока нет.',
+    chatNotFound: 'Нет доступного чата с таким кодом. Список: /chats.',
+    dmStart: 'Личная тема с {name} из вылазки «{title}». Напиши первое сообщение. {name} увидит его и решит, открыть ли чат.',
+    dmWaiting: 'Первое сообщение ждёт ответа. Следующие пока не доставляются.',
+    dmRequested: '{name} из вылазки «{title}» хочет написать тебе:\n\n{message}\n\n/accept {code} или /decline {code}',
+    dmAccepted: 'Личный чат с {name} открыт. Пиши в этой теме. /block {code} — закрыть его.',
+    dmDeclined: 'Личный чат отклонён.',
+    dmBlocked: 'Личный чат закрыт. Новых сообщений здесь не будет.',
+    dmUnavailable: 'Личный чат недоступен. Посмотреть доступных людей: /people <код вылазки>.',
+    dmNoRequest: 'Заявка на личный чат не найдена. Список: /chats.',
+    dmList: 'Личные чаты:\n{items}\n\n/dm <код вылазки> <код участника> — открыть тему; /block <код чата> — закрыть её.',
   },
 };
 

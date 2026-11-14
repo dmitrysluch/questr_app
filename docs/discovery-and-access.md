@@ -2,11 +2,12 @@
 
 The POC has profiles, AI-assisted bios, spoken languages, private adventure filters
 and scoped access. [Adventures v1](adventures.md) builds creation, applications,
-discovery and a Telegram party relay on this foundation. Global DMs remain future work.
+discovery and a Telegram party relay on this foundation. Event-scoped DMs require
+consent; global DMs remain future work.
 
 ## Languages and geography
 
-- `users.locale` is the interface language; it remains `en`.
+- `users.locale` is the interface language (`en` or `ru`), separate from spoken languages.
 - `profile_languages` lists languages a person speaks, using stable language codes.
   Drafts keep their own language selection until the profile is saved.
 - `discovery_preferences` has its own revision and two normalized join tables:
@@ -63,9 +64,11 @@ Current templates:
 
 - `member`: read/edit own profile; view/create events after profile completion.
   Existing invited accounts are backfilled. Registration grants this once.
-- `organizer`: edit an assigned event, accept applicants, use/moderate its chat.
+- `organizer`: edit an assigned event, accept applicants, use/moderate its chat,
+  and request event-scoped DMs.
 - `applicant`: view the assigned event, including its public history. No chat access.
-- `participant`: view an assigned event and use its chat while accepted and open.
+- `participant`: view an assigned event, use its chat, and request event-scoped DMs
+  while accepted and open.
 - `event_moderator`: moderate one event's chat.
 - `inviter`: create invitations, subject to its separate budget.
 - `admin`: use administrative operations. It is NOT a bypass into private chats.
@@ -73,8 +76,10 @@ Current templates:
 Event roles require an event scope in PostgreSQL. Acceptance/removal creates or
 revokes the participant assignment in the membership transaction. The host grant
 is created with the event. Chat checks accepted membership and open event state
-in addition to grants. DM capabilities are reserved and fail closed until
-consent/block handling is implemented.
+in addition to grants. A DM opener spends a separate budget only when the first
+reviewed message is sent. The recipient must accept before later messages are
+delivered. Decline or block closes the conversation; access is rechecked before
+each delivery.
 
 The evaluator denies blocked, uninvited, expired or revoked accounts/grants.
 Onboarding accounts can only work on their own profile. It derives an event's
@@ -86,7 +91,8 @@ publication and AI-draft application now require `profile.edit`.
 
 A budget belongs to **an account + a capability**, not a role name. Overlapping
 roles cannot multiply an allowance. POC defaults are 2 event creations per rolling
-7 days and 3 invitations per rolling 7 days; these are provisional configuration,
+7 days, 3 invitations per rolling 7 days, and 3 DM openers per rolling 7 days;
+these are provisional configuration,
 not reputation rules. A budget does not itself grant permission: the invitation
 budget is dormant unless `inviter` is explicitly assigned.
 
@@ -96,8 +102,8 @@ and records an idempotency UUID and resource. Failed actions roll back their
 usage; retries return `replay`, and the caller must return the original action
 result rather than create another object. Keep the action's own unique request ID.
 Changing a limit, window or role does not erase historical usage. These quota
-primitives are used by event creation; a public invitation creation endpoint is still future work.
-The existing operator-only invite CLI remains a deliberate bootstrap path.
+primitives are used by event creation, invitation issuance and DM openers.
+The operator invite CLI remains a bootstrap path.
 
 Reputation should become a versioned policy over verified signals, not a public
 popularity score. Candidate signals: account age, confirmed conduct, cancellation
