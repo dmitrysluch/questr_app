@@ -100,7 +100,7 @@ Each issued code is single-use. The default expiry is 7 days, selectable from 1 
 
 The browser sends official Telegram Mini App `initData` to the server. The server verifies the HMAC signature, freshness, and numeric user ID before issuing a session. Client-provided `initDataUnsafe` is never trusted. [Telegram authentication documentation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
 
-For applications, party chats and consent-gated direct messages, set `TELEGRAM_WEBHOOK_SECRET`, configure `/api/telegram/webhook` with that secret, and enable private bot topics in BotFather. The [setup and delivery notes](docs/adventures.md#telegram-setup) describe bot commands, durable queues and deployment checks.
+Applications are submitted in the Mini App. For Telegram application notifications, party chats and consent-gated direct messages, set `TELEGRAM_WEBHOOK_SECRET`, configure `/api/telegram/webhook` with that secret, and enable private bot topics in BotFather. The [setup and delivery notes](docs/adventures.md#telegram-setup) describe bot commands, durable queues and deployment checks.
 
 Demo authentication is rejected when configured with a non-localhost app origin. An API key and bot token are not included in this repository. Live provider output and real Telegram clients require those credentials and an HTTPS deployment.
 

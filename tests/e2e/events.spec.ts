@@ -41,10 +41,18 @@ test('create an adventure, apply from another character, accept, edit and withdr
   const guest = await guestContext.newPage();
   const base = new URL(page.url()).origin;
   await character(guest, 'Jazz questr');
+  await guest.route('**/api/config', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), authMode: 'telegram' } });
+  });
+  await guest.route('https://telegram.org/js/telegram-web-app.js', route => route.fulfill({ contentType: 'text/javascript', body: 'window.Telegram = { WebApp: { initData: "test-mini-app", ready() {}, expand() {} } };' }));
+  await guest.route('**/api/auth/telegram', route => route.fulfill({ json: { ok: true } }));
   await guest.goto(`${base}/${hash}`);
   await expect(guest.getByRole('heading', { name: 'Coffee, records & a slow afternoon', level: 1 })).toBeVisible();
   await expect(guest.locator('.meeting-details')).toHaveCount(0);
   await guest.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(guest.getByRole('dialog')).toBeVisible();
+  expect(new URL(guest.url()).host).toBe(new URL(base).host);
   await guest.getByLabel('Message to the host').fill('I will bring my favourite Bill Evans record.');
   await guest.getByRole('button', { name: 'Send application' }).click();
   await expect(guest.getByRole('status')).toContainText('Waiting for the host');

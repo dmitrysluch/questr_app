@@ -99,7 +99,7 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
         <div className="event-actions">
           {callLink && <a className="pixel-button" href={callLink} target="_blank" rel="noreferrer">{t('events.joinCall')}</a>}
           <a className="outline-button" href={`/api/events/${detail.id}/calendar.ics`} download>{t('events.calendar')}</a>
-          {detail.canApply && (config.authMode === 'telegram' ? <a className="pixel-button" href={detail.botUrl} onClick={event => openBot(event, detail.botUrl)} target="_blank" rel="noreferrer">{t('events.applyBot')}</a> : <button className="pixel-button" onClick={() => { setError(null); setApplication(true); }}>{t('events.apply')}</button>)}
+          {detail.canApply && <button className="pixel-button" onClick={() => { setError(null); setApplication(true); }}>{t('events.apply')}</button>}
           {detail.canChat && config.authMode === 'telegram' && <a className="pixel-button" href={detail.botUrl} onClick={event => openBot(event, detail.botUrl)} target="_blank" rel="noreferrer">{t('events.chat')}</a>}
           {!detail.canApply && !detail.myStatus && <span>{t(detail.participantCount >= detail.capacity ? 'events.full' : !detail.recruitmentOpen ? 'events.recruitmentClosed' : 'events.closed')}</span>}
           {!detail.isHost && ['pending', 'accepted'].includes(detail.myStatus ?? '') && <button className="outline-button" disabled={busy} onClick={() => setConfirmation({ title: 'events.confirmLeave', hint: 'events.accessEnds', path: '/leave', body: {}, leave: true })}>{t(detail.myStatus === 'pending' ? 'events.withdraw' : 'events.leave')}</button>}

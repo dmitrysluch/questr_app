@@ -101,10 +101,11 @@ it does not relax the existing explicit-sexual-content policy.
 3. Register `/api/telegram/webhook` with the matching Bot API `secret_token` and
    message updates. The bot worker starts only in Telegram mode with a configured
    webhook secret. The existing invitation and signed Mini App login still apply.
-4. As two real test users, start the bot and finish registration. “Apply in bot”
-   opens an adventure-specific `/start quest_<id>` link. The bot creates that
-   user's private topic and asks for a message. Opening the link alone never
-   submits an application. The typed first contact is reviewed before delivery.
+4. As two real test users, start the bot and finish registration. Apply from
+   the adventure page in the Mini App: write the first message in the form and
+   submit it there. The typed first contact is reviewed before delivery.
+   Existing `/start quest_<id>` links still open an adventure topic in the bot,
+   but opening a bot link alone does not submit an application.
 5. Accept in QUESTR, then use “Open party chat”. Text in that topic is delivered
    to accepted members' own topics under the sender's QUESTR display name. Raw
    Telegram messages are not forwarded; IDs/usernames are not shared. Only text
