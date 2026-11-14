@@ -1,5 +1,7 @@
+import { expandedInterests } from './interest-expansion.ts';
+
 // Stable codes are persisted; labels and search aliases can be localized independently.
-export const tagCategories = ['sports', 'food', 'music', 'art', 'science', 'films', 'travel', 'games', 'tech', 'outdoors', 'books', 'life'] as const;
+export const tagCategories = ['sports', 'food', 'music', 'art', 'creative', 'science', 'films', 'travel', 'games', 'tech', 'outdoors', 'books', 'life'] as const;
 export type TagCategory = typeof tagCategories[number];
 export interface CatalogTag { code: string; label: string; emoji: string; category: TagCategory; keywords: readonly string[] }
 type Entry = readonly [code: string, label: string, emoji: string, aliases?: string];
@@ -58,7 +60,7 @@ const groups: Record<TagCategory, readonly Entry[]> = {
     ['sushi', 'Sushi', '🍣', 'omakase'],
     ['pizza', 'Pizza', '🍕', 'neapolitan'],
     ['bbq', 'Barbecue', '🔥', 'bbq|grilling|smoking meat'],
-    ['plant_based', 'Plant-based cooking', '🥬', 'vegan|vegetarian'],
+    ['plant_based', 'Plant-based cooking', '🥬', 'plant based recipes|vegan recipes|vegetarian recipes'],
     ['spicy_food', 'Spicy food', '🌶️', 'chilli|chili|hot sauce'],
     ['cheese', 'Cheese', '🧀'],
     ['chocolate', 'Chocolate', '🍫', 'cacao|cocoa'],
@@ -93,14 +95,6 @@ const groups: Record<TagCategory, readonly Entry[]> = {
     ['live_music', 'Live music', '🎸', 'concerts|gigs|concert'],
     ['music_festivals', 'Music festivals', '🎪', 'festival|raves'],
     ['vinyl', 'Vinyl records', '💿', 'record collecting|records|record shops'],
-    ['djing', 'DJing', '🎚️', 'dj|mixes|mixing|decks'],
-    ['music_production', 'Music production', '🎛️', 'ableton|fl studio|daw|producing'],
-    ['field_recording', 'Field recording', '🎙️', 'found sounds|sound design'],
-    ['modular_synths', 'Modular synths', '🎛️', 'eurorack|synthesizers|synthesis'],
-    ['guitar', 'Guitar', '🎸'],
-    ['piano', 'Piano', '🎹', 'keys|keyboard'],
-    ['drums', 'Drums', '🥁', 'drumming|percussion'],
-    ['singing', 'Singing', '🎤', 'choir|vocals'],
     ['charlotte_gainsbourg', 'Charlotte Gainsbourg', '🎙️', 'charlotte ginsbourg|gainsbourg|charlotte gainsburg'],
     ['bjork', 'Björk', '🦢', 'bjork'],
     ['aphex_twin', 'Aphex Twin', '🎛️', 'richard d james'],
@@ -120,11 +114,11 @@ const groups: Record<TagCategory, readonly Entry[]> = {
     ['charli_xcx', 'Charli xcx', '🎤', 'charli'],
   ],
   art: [
-    ['art', 'Art & making', '🎨', 'arts|crafts'],
+    ['art', 'Visual art', '🎨', 'art|fine arts'],
     ['photography', 'Photography', '📷', 'photos|camera'],
     ['film_photography', 'Film photography', '📷', 'analogue photography|analog photography|35mm|darkroom'],
     ['street_photography', 'Street photography', '📸'],
-    ['painting', 'Painting', '🖌️', 'watercolor|watercolour|oil painting'],
+    ['painting', 'Painting', '🖌️', 'painting|paint'],
     ['drawing', 'Drawing', '✏️', 'sketching|illustration'],
     ['urban_sketching', 'Urban sketching', '✏️'],
     ['ceramics', 'Ceramics', '🏺', 'pottery|clay|wheel throwing'],
@@ -137,6 +131,14 @@ const groups: Record<TagCategory, readonly Entry[]> = {
     ['architecture', 'Architecture', '🏛️', 'buildings|brutalism|bauhaus'],
     ['museums', 'Museums & galleries', '🖼️', 'museums|galleries|exhibitions'],
     ['street_art', 'Street art', '🎨', 'graffiti|murals'],
+  ],
+  creative: [
+    ['djing', 'DJing', '🎚️', 'dj|mixes|mixing|decks'],
+    ['music_production', 'Music production', '🎛️', 'ableton|fl studio|daw|producing'],
+    ['field_recording', 'Field recording', '🎙️', 'found sounds|sound design'],
+    ['modular_synths', 'Modular synths', '🎛️', 'eurorack|synthesizers|synthesis'],
+    ['guitar', 'Guitar', '🎸'], ['piano', 'Piano', '🎹', 'keys|keyboard'],
+    ['drums', 'Drums', '🥁', 'drumming|percussion'], ['singing', 'Singing', '🎤', 'choir|vocals'],
     ['theatre', 'Theatre', '🎭', 'theater|plays|acting'],
     ['improv', 'Improv', '🎭', 'improvisational theatre|improvisational comedy'],
     ['contemporary_dance', 'Contemporary dance', '💃', 'modern dance'],
@@ -230,7 +232,7 @@ const groups: Record<TagCategory, readonly Entry[]> = {
     ['warhammer', 'Warhammer', '⚔️', '40k|miniatures|wargaming'],
     ['indie_games', 'Indie games', '🕹️', 'indie gaming'],
     ['retro_games', 'Retro games', '👾', 'retrogaming|arcade|emulation'],
-    ['rpg_games', 'RPGs', '⚔️', 'role playing games|baldurs gate|disco elysium'],
+    ['rpg_games', 'RPGs', '⚔️', 'role playing games|computer role playing games'],
     ['soulslikes', 'Soulslikes', '🗡️', 'dark souls|elden ring|bloodborne'],
     ['cozy_games', 'Cozy games', '🌱', 'cosy games|stardew valley|animal crossing'],
     ['strategy_games', 'Strategy games', '🏰', 'rts|4x|civilization'],
@@ -287,7 +289,7 @@ const groups: Record<TagCategory, readonly Entry[]> = {
     ['speculative_fiction', 'Speculative fiction', '🪐', 'weird fiction|new weird'],
     ['poetry', 'Poetry', '🪶', 'poems|poets'],
     ['comics', 'Comics', '💬', 'graphic novels'],
-    ['manga', 'Manga', '📖'],
+    ['manga', 'Reading manga', '📖', 'manga|read manga'],
     ['nonfiction', 'Nonfiction', '📚', 'non fiction|essays'],
     ['book_clubs', 'Book clubs', '📖', 'reading groups'],
     ['creative_writing', 'Creative writing', '✍️', 'fiction writing|short stories'],
@@ -321,5 +323,8 @@ const groups: Record<TagCategory, readonly Entry[]> = {
 };
 
 export const tags: readonly CatalogTag[] = tagCategories.flatMap(category =>
-  groups[category].map(([code, label, emoji, aliases]) => ({ code, label, emoji, category, keywords: aliases?.split('|') ?? [] })),
+  [...groups[category], ...(expandedInterests[category] ?? [])].map(([code, label, emoji, aliases]) => ({ code, label, emoji, category, keywords: aliases?.split('|') ?? [] })),
 );
+
+// Keep legacy codes valid in saved profiles while no longer suggesting them.
+export const hiddenTagCodes = new Set(['cozy_games']);

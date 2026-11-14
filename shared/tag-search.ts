@@ -1,4 +1,4 @@
-import { tags, type CatalogTag, type TagCategory } from './interests.ts';
+import { hiddenTagCodes, tags, type CatalogTag, type TagCategory } from './interests.ts';
 
 export function normalizeTagSearch(text: string) {
   return text.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase('en')
@@ -21,7 +21,7 @@ export function searchTags(query: string, category?: TagCategory, excluded: Read
   const normalized = normalizeTagSearch(query);
   const words = normalized.split(' ').filter(Boolean);
   const scored = index.flatMap(({ tag, label, aliases }) => {
-    if ((category && tag.category !== category) || excluded.has(tag.code)) return [];
+    if ((category && tag.category !== category) || excluded.has(tag.code) || hiddenTagCodes.has(tag.code)) return [];
     const localLabel = translatedLabel ? normalizeTagSearch(translatedLabel(tag)) : label;
     const fields = [label, localLabel, ...aliases];
     let score = 0;

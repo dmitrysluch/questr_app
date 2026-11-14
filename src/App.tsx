@@ -15,6 +15,7 @@ import { Interview } from './components/Interview.tsx';
 import { AskMeTopics } from './components/AskMeTopics.tsx';
 import { Invites } from './components/Invites.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
+import { PixelEmoji } from './components/PixelEmoji.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview } from '../shared/content-policy.ts';
 
@@ -212,7 +213,7 @@ export function App() {
         <section hidden={currentStep !== 'bio'}>
           <PageHeading title="bio.title" />
           <div className="bio-layout"><div className="bio-main">
-            <label className="checkbox-label romance-draft"><input type="checkbox" checked={draft.openToRomance} onChange={e => edit({ openToRomance: e.target.checked })} />{t('profile.romance')}</label>
+            <label className="checkbox-label romance-draft"><input type="checkbox" checked={draft.openToRomance} onChange={e => edit({ openToRomance: e.target.checked })} /><PixelEmoji emoji="💗" />{t('profile.romance')}</label>
             <div className="section-heading"><h2>{t('bio.tagsTitle')}</h2><span>{t('common.optional')}</span></div>
             <TagPicker value={draft.tags} onChange={tags => edit({ tags })} />
             <AskMeTopics value={draft.askMeTopics} onChange={askMeTopics => edit({ askMeTopics })} reviews={currentTopicReviews} />

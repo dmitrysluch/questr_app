@@ -36,10 +36,13 @@ export async function migrate(pool: Pool) {
     for (const [i, avatar] of avatars.entries()) {
       await client.query('INSERT INTO avatar_presets(id,label_key,asset_key,sort_order) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING', [avatar.id, `avatars.${avatar.id}`, avatar.asset, i]);
     }
-    for (const [i, tag] of tags.entries()) {
-      await client.query('INSERT INTO tags(code,emoji,sort_order) VALUES($1,$2,$3) ON CONFLICT(code) DO NOTHING', [tag.code, tag.emoji, i]);
-      await client.query('INSERT INTO tag_translations(tag_id,locale,label) VALUES($1,$2,$3) ON CONFLICT(tag_id,locale) DO NOTHING', [tag.code, 'en', tag.label]);
-    }
+    const catalog = JSON.stringify(tags.map((tag, sortOrder) => ({ code: tag.code, emoji: tag.emoji, sortOrder, label: tag.label })));
+    await client.query(`INSERT INTO tags(code,emoji,sort_order)
+      SELECT code,emoji,"sortOrder" FROM jsonb_to_recordset($1::jsonb) AS x(code text,emoji text,"sortOrder" integer,label text)
+      ON CONFLICT(code) DO UPDATE SET emoji=EXCLUDED.emoji,sort_order=EXCLUDED.sort_order`, [catalog]);
+    await client.query(`INSERT INTO tag_translations(tag_id,locale,label)
+      SELECT code,'en',label FROM jsonb_to_recordset($1::jsonb) AS x(code text,emoji text,"sortOrder" integer,label text)
+      ON CONFLICT(tag_id,locale) DO UPDATE SET label=EXCLUDED.label`, [catalog]);
   });
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

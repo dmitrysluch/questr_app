@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('Russian interface, catalog search, manual switch and reload', async ({ page }, info) => {
+  await expect.poll(async () => (await page.request.get('/api/health')).status()).toBe(200);
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Interface language' }).selectOption('ru');
   await expect(page.getByRole('heading', { name: 'Создай персонажа' })).toBeVisible();

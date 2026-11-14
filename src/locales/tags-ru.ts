@@ -1,4 +1,5 @@
 // Catalog codes remain stable across languages; custom tags retain their authored text.
+import { expandedTagLabelsRu } from '../../shared/interest-expansion.ts';
 export const tagLabelsRu: Record<string, string> = {
   indoor_climbing: 'Скалодром', pole_dancing: 'Танцы на пилоне', running: 'Бег', trail_running: 'Трейлраннинг',
   cycling: 'Велосипед', mountain_biking: 'Горный велосипед', swimming: 'Плавание', open_water: 'Плавание на открытой воде',
@@ -31,7 +32,7 @@ export const tagLabelsRu: Record<string, string> = {
   david_bowie: 'Дэвид Боуи', fka_twigs: 'FKA twigs', kendrick_lamar: 'Кендрик Ламар',
   sophie: 'SOPHIE', charli_xcx: 'Charli xcx',
 
-  art: 'Искусство и творчество', photography: 'Фотография', film_photography: 'Плёночная фотография',
+  art: 'Изобразительное искусство', photography: 'Фотография', film_photography: 'Плёночная фотография',
   street_photography: 'Уличная фотография', painting: 'Живопись', drawing: 'Рисование',
   urban_sketching: 'Городской скетчинг', ceramics: 'Керамика', sculpture: 'Скульптура',
   printmaking: 'Гравюра и печать', collage: 'Коллаж', pixel_art: 'Пиксель-арт',
@@ -88,7 +89,7 @@ export const tagLabelsRu: Record<string, string> = {
   nature_walks: 'Прогулки на природе', beach_days: 'Пляжный отдых',
 
   books: 'Книги', science_fiction: 'Научная фантастика', fantasy: 'Фэнтези',
-  speculative_fiction: 'Спекулятивная фантастика', poetry: 'Поэзия', comics: 'Комиксы', manga: 'Манга',
+  speculative_fiction: 'Спекулятивная фантастика', poetry: 'Поэзия', comics: 'Комиксы', manga: 'Читаю мангу',
   nonfiction: 'Нон-фикшн', book_clubs: 'Книжные клубы', creative_writing: 'Писательское творчество',
   zines: 'Зины', ursula_le_guin: 'Урсула Ле Гуин', terry_pratchett: 'Терри Пратчетт',
   stanislaw_lem: 'Станислав Лем', borges: 'Хорхе Луис Борхес', octavia_butler: 'Октавия Батлер',
@@ -99,4 +100,5 @@ export const tagLabelsRu: Record<string, string> = {
   standup_comedy: 'Стендап', karaoke: 'Караоке', picnics: 'Пикники', long_walks: 'Долгие прогулки',
   deep_conversations: 'Долгие разговоры', podcasts: 'Подкасты', journaling: 'Личный дневник',
   urban_exploration: 'Городские исследования', cosplay: 'Косплей',
+  ...expandedTagLabelsRu,
 };
