@@ -81,6 +81,11 @@ start time resets unsent reminders; cancellation clears queued reminders.
 - Contextual character endpoints expose the host to adventure viewers, applicants
   to the host, and accepted party members to one another. They return saved profile
   fields only; private drafts, interview answers, filters and Telegram IDs stay out.
+- The accepted party view places avatars and names in a horizontal row. Up to three
+  pixel badges show tags shared with the viewer and mutual romance interest; badge
+  labels appear on hover. Ask me topics open below the row, and each avatar leads
+  to a contextual character page with a return link. Pending applicants and other
+  viewers do not receive the roster or its match data.
 - The host can cancel, or complete after the start time. Both close chat and remove
   the adventure from discovery. Cancellation notifies pending and accepted members.
   Leaving a closed adventure still works. Old messages already delivered cannot

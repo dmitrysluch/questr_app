@@ -6,6 +6,7 @@ import { transaction } from './db.ts';
 import { can, consumeCapability, requireCapability } from './permissions.ts';
 import { ContentReviewer, reviewContent } from './moderation.ts';
 import { getProfile } from './store.ts';
+import { tagKey, type ProfileTag } from '../shared/schema.ts';
 import { queueBot, notifyMembers, recipientLocale } from './event-notifications.ts';
 import { botText } from './bot-copy.ts';
 
@@ -106,10 +107,26 @@ export class Adventures {
       const editable = await can(db, userId, 'events.edit', { type: 'event', id: eventId });
       const manage = row.status === 'published' && await can(db, userId, 'events.accept', { type: 'event', id: eventId });
       const chat = await can(db, userId, 'events.group_chat', { type: 'event', id: eventId });
-      const members = (chat || editable) ? (await db.query(`SELECT m.user_id AS id,p.display_name AS "displayName",p.avatar_preset_id AS "avatarId",m.role,m.status,(u.status<>'active') AS unavailable,
+      const rawMembers = (chat || editable) ? (await db.query(`SELECT m.user_id AS id,p.display_name AS "displayName",p.avatar_preset_id AS "avatarId",m.role,m.status,(u.status<>'active') AS unavailable,
+        p.ask_me_topics AS "askMeTopics",(p.open_to_romance AND (SELECT open_to_romance FROM profiles WHERE user_id=$3) AND m.user_id<>$3) AS "romanceMatch",
         CASE WHEN $2 THEN m.application_text ELSE NULL END AS "applicationText"
         FROM event_memberships m JOIN profiles p ON p.user_id=m.user_id JOIN users u ON u.id=m.user_id
-        WHERE m.event_id=$1 AND (u.status='active' OR $2) AND (m.status='accepted' OR ($2 AND m.status='pending')) ORDER BY m.created_at,m.user_id`, [eventId, manage])).rows : [];
+        WHERE m.event_id=$1 AND (u.status='active' OR $2) AND (m.status='accepted' OR ($2 AND m.status='pending')) ORDER BY m.created_at,m.user_id`, [eventId, manage, userId])).rows : [];
+      const acceptedIds = rawMembers.filter(member => member.status === 'accepted' && !member.unavailable).map(member => member.id);
+      const tagRows = acceptedIds.length ? (await db.query(`SELECT user_id,tag_id,custom_label,custom_emoji,locale FROM profile_tags
+        WHERE user_id=ANY($1::uuid[]) OR user_id=$2 ORDER BY position`, [acceptedIds, userId])).rows : [];
+      const tagsByUser = new Map<string, ProfileTag[]>();
+      for (const tag of tagRows) {
+        const value: ProfileTag = tag.tag_id ? { kind: 'catalog', code: tag.tag_id } : { kind: 'custom', label: tag.custom_label, emoji: tag.custom_emoji, locale: tag.locale };
+        tagsByUser.set(tag.user_id, [...(tagsByUser.get(tag.user_id) ?? []), value]);
+      }
+      const myTags = new Set((tagsByUser.get(userId) ?? []).map(tagKey));
+      const members = rawMembers.map(member => ({ ...member,
+        askMeTopics: member.status === 'accepted' && !member.unavailable ? member.askMeTopics : [],
+        romanceMatch: member.status === 'accepted' && !member.unavailable && member.romanceMatch,
+        matchingTags: member.status === 'accepted' && !member.unavailable && member.id !== userId
+          ? (tagsByUser.get(member.id) ?? []).filter(tag => myTags.has(tagKey(tag))).slice(0, 3) : [],
+      }));
       return { ...event,
         ...await (async () => {
           if (!chat && !editable) return { meetingDetails: null, meetingMapUrl: null };

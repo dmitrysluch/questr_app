@@ -12,6 +12,7 @@ import { Markdown } from './Markdown.tsx';
 import { ProfileCard } from './ProfileCard.tsx';
 import { Modal } from './Modal.tsx';
 import { GooglePlacePicker } from './GooglePlacePicker.tsx';
+import { PartyRoster } from './PartyRoster.tsx';
 function eventDate(event: Adventure) { return new Intl.DateTimeFormat(getLocale(), { timeZone: event.timeZone, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }).formatRange(new Date(event.startsAt), new Date(event.endsAt)); }
 const statusKey = (event: Adventure): TranslationKey => event.status === 'published' && Date.parse(event.startsAt) <= Date.now() ? 'events.started' : event.status === 'published' && !event.recruitmentOpen ? 'events.recruitmentClosed' : `events.${event.status}`;
 const go = (id?: string) => { location.hash = id ? `adventures/${id}` : 'adventures'; };
@@ -29,6 +30,7 @@ function EventError({ error }: { error: unknown }) {
 }
 export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: { config: AppConfig; discovery: DiscoveryPreferences; spokenLanguages: string[]; onDiscovery: (value: DiscoveryPreferences) => void }) {
   const [id, setId] = useState(location.hash.split('/')[1] ?? '');
+  const [personId, setPersonId] = useState(location.hash.split('/')[3] ?? '');
   const [view, setView] = useState<'discover' | 'mine'>('discover');
   const [list, setList] = useState<AdventureList>({ events: [], nextOffset: null });
   const [detail, setDetail] = useState<AdventureDetail | null>(null);
@@ -41,17 +43,31 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [confirmation, setConfirmation] = useState<{ title: TranslationKey; hint: TranslationKey; path: string; body: object; leave?: boolean } | null>(null);
   const generation = useRef(0);
-  useEffect(() => { const change = () => { setId(location.hash.split('/')[1] ?? ''); setDetail(null); setError(null); }; window.addEventListener('hashchange', change); return () => window.removeEventListener('hashchange', change); }, []);
+  useEffect(() => {
+    let previousId = location.hash.split('/')[1] ?? '';
+    const change = () => {
+      const nextId = location.hash.split('/')[1] ?? '';
+      if (nextId !== previousId) setDetail(null);
+      previousId = nextId;
+      setId(nextId); setPersonId(location.hash.split('/')[3] ?? ''); setProfile(null); setError(null);
+    };
+    window.addEventListener('hashchange', change);
+    return () => window.removeEventListener('hashchange', change);
+  }, []);
   const reload = useCallback(async (offset = 0, quiet = false) => {
     const current = ++generation.current;
     if (!quiet) setLoading(true);
     try {
-      if (id) { const result = await api<{ event: AdventureDetail }>(`/events/${id}`); if (current === generation.current) setDetail(result.event); }
+      if (id) {
+        const result = await api<{ event: AdventureDetail }>(`/events/${id}`);
+        const character = personId ? await api<{ profile: Profile }>(`/events/${id}/profiles/${personId}`) : null;
+        if (current === generation.current) { setDetail(result.event); if (character) setProfile(character.profile); }
+      }
       else { const result = await api<AdventureList>(`/events?view=${view}&offset=${offset}`); if (current === generation.current) setList(old => offset ? { ...result, events: [...old.events, ...result.events] } : result); }
       if (current === generation.current) setError(null);
     } catch (error) { if (current === generation.current) { setError(error); if (id) { setDetail(null); setProfile(null); } } }
     finally { if (current === generation.current) setLoading(false); }
-  }, [id, view, discovery.revision]);
+  }, [id, personId, view, discovery.revision]);
   useEffect(() => { void reload(); return () => { generation.current++; }; }, [reload]);
   useEffect(() => {
     const refresh = () => { if (!document.hidden && !busy && !editor && !application && !confirmation) void reload(0, true); };
@@ -68,11 +84,7 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
       if (leave) { setView('mine'); go(); }
     } catch (error) { setError(error); } finally { setBusy(false); }
   }
-  async function showCharacter(userId: string) {
-    setBusy(true); setError(null);
-    try { setProfile((await api<{ profile: Profile }>(`/events/${id}/profiles/${userId}`)).profile); }
-    catch (error) { setError(error); } finally { setBusy(false); }
-  }
+  function showCharacter(userId: string) { location.hash = `adventures/${id}/character/${userId}`; }
   async function setReminder(value: string) {
     if (!detail) return;
     setBusy(true); setError(null);
@@ -87,10 +99,10 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
   }
   const callLink = detail?.canChat && detail.location.kind === 'online' ? detail.meetingDetails : null;
   return <section className="adventures">
-    <div className="adventure-heading">{id ? <button className="text-button" onClick={() => go()}><ArrowLeft size={16} />{t('events.back')}</button> : <h1>{t('nav.adventures')}</h1>}<div className="event-actions"><button className="icon-button" disabled={loading || busy} aria-label={t('events.refresh')} onClick={() => void reload()}><RefreshCw size={18} /></button>{!id && <button className="pixel-button small" onClick={() => setEditor('new')}><Plus size={16} />{t('events.create')}</button>}</div></div>
+    <div className="adventure-heading">{id ? <button className="text-button" onClick={() => personId ? location.replace(`#adventures/${id}`) : go()}><ArrowLeft size={16} />{t(personId ? 'events.backToAdventure' : 'events.back')}</button> : <h1>{t('nav.adventures')}</h1>}{!personId && <div className="event-actions"><button className="icon-button" disabled={loading || busy} aria-label={t('events.refresh')} onClick={() => void reload()}><RefreshCw size={18} /></button>{!id && <button className="pixel-button small" onClick={() => setEditor('new')}><Plus size={16} />{t('events.create')}</button>}</div>}</div>
     {!id && <><div className="event-tabs"><button className={view === 'discover' ? 'active' : ''} onClick={() => setView('discover')}>{t('events.discover')}</button><button className={view === 'mine' ? 'active' : ''} onClick={() => setView('mine')}>{t('events.mine')}</button></div>{view === 'discover' && <DiscoverySettings initial={discovery} spokenLanguages={spokenLanguages} onSaved={onDiscovery} />}</>}
     {!editor && !confirmation && !application && <EventError error={error} />}
-    {loading && !detail ? <p role="status">{t('common.loading')}</p> : id && detail ? <>
+    {personId ? profile ? <ProfileCard profile={profile} /> : loading ? <p role="status">{t('common.loading')}</p> : null : loading && !detail ? <p role="status">{t('common.loading')}</p> : id && detail ? <>
       <article className="paper-card event-detail"><div className="event-status">{t(statusKey(detail))}</div><h1 dir="auto">{detail.title}</h1><p className="event-summary" dir="auto">{detail.activitySummary}</p><EventFacts event={detail} /><p className="event-experience"><strong>{t('events.experience')}:</strong> {detail.experienceNotes}</p>
         <button className="event-host text-button" disabled={busy} onClick={() => void showCharacter(detail.host.id)}><Character id={detail.host.avatarId} />{t('events.host', { name: detail.host.displayName })}</button>
         <Markdown content={detail.descriptionMarkdown} />
@@ -110,13 +122,12 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
         </div>{detail.canChat && config.authMode === 'demo' && <p className="field-hint">{t('events.demoChat')}</p>}
         {detail.canChat && detail.status === 'published' && Date.parse(detail.startsAt) > Date.now() && config.authMode === 'telegram' && <label className="event-reminder">{t('events.remindMe')}<select value={detail.reminderMinutes ?? ''} disabled={busy} onChange={e => void setReminder(e.target.value)}><option value="">{t('events.reminderOff')}</option><option value="15">{t('events.reminder15')}</option><option value="60">{t('events.reminder60')}</option><option value="1440">{t('events.reminderDay')}</option></select></label>}
       </article>
-      {!!detail.participants.length && <section className="party-section"><h2>{t('events.party')}</h2><div className="party-grid">{detail.participants.map(person => <div className="party-person" key={person.id}><button className="person-button" disabled={busy || person.unavailable} onClick={() => void showCharacter(person.id)}><Character id={person.avatarId} /><span>{person.displayName}{person.unavailable && <small className="unavailable-character">{t('events.unavailable')}</small>}</span></button>{detail.canManage && person.role !== 'host' && <button className="text-button" disabled={busy} onClick={() => setConfirmation({ title: 'events.confirmRemove', hint: 'events.accessEnds', path: `/members/${person.id}`, body: { action: 'remove' } })}>{t('events.remove')}</button>}</div>)}</div></section>}
+      {!!detail.participants.length && <PartyRoster people={detail.participants} busy={busy} canManage={detail.canManage} onProfile={personId => void showCharacter(personId)} onRemove={personId => setConfirmation({ title: 'events.confirmRemove', hint: 'events.accessEnds', path: `/members/${personId}`, body: { action: 'remove' } })} />}
       {detail.canManage && <section className="applications"><h2>{t('events.applications')} <span>{detail.applications.length}</span></h2>{!detail.applications.length && <p className="field-hint">{t('events.noApplications')}</p>}{detail.applications.map(person => <article className="paper-card application" key={person.id}><button className="person-button" disabled={busy || person.unavailable} onClick={() => void showCharacter(person.id)}><Character id={person.avatarId} /><span>{person.displayName}{person.unavailable && <small className="unavailable-character">{t('events.unavailable')}</small>}</span></button><p dir="auto">{person.applicationText}</p><div className="event-actions"><button className="pixel-button small" disabled={busy || person.unavailable || detail.participantCount >= detail.capacity || Date.parse(detail.startsAt) <= Date.now()} onClick={() => void action(`/members/${person.id}`, { action: 'accept' })}>{t('events.accept')}</button><button className="outline-button" disabled={busy} onClick={() => void action(`/members/${person.id}`, { action: 'decline' })}>{t('events.decline')}</button></div></article>)}</section>}
     </> : !id && <div className="adventure-list">{!list.events.length && <div className="events-empty"><Users size={28} /><h2>{t('events.empty')}</h2>{view === 'discover' && <p>{t('events.emptyHint')}</p>}</div>}{list.events.map(event => <button className="paper-card adventure-card" key={event.id} onClick={() => go(event.id)}><div className="event-status">{t(statusKey(event))}{event.myStatus && !event.isHost ? ` · ${t(`events.${event.myStatus}`)}` : ''}</div><h2 dir="auto">{event.title}</h2><p className="event-summary" dir="auto">{event.activitySummary}</p><EventFacts event={event} /><div className="card-host"><Character id={event.host.avatarId} /><span>{event.host.displayName}</span></div></button>)}{list.nextOffset !== null && <button className="outline-button" disabled={loading} onClick={() => void reload(list.nextOffset!)}>{t('events.more')}</button>}</div>}
     {editor && <EventEditor config={config} initial={editor === 'new' ? undefined : editor} spokenLanguages={spokenLanguages} onClose={() => setEditor(null)} onSaved={event => { setEditor(null); setDetail(event); setView('mine'); go(event.id); if (id === event.id) void reload(); }} />}
     {application && <Modal title={t('events.apply')} onClose={() => { if (!busy) { setApplication(false); setError(null); } }}><form onSubmit={event => { event.preventDefault(); void action('/applications', { message }); }}><label htmlFor="application-message">{t('events.message')}</label><textarea id="application-message" required minLength={3} maxLength={2000} rows={5} value={message} onChange={e => setMessage(e.target.value)} disabled={busy} autoFocus /><p className="field-hint">{t('events.firstMessageHint')}</p><p className="field-hint">{t(config.aiMode === 'openrouter' ? 'events.moderationLive' : 'events.moderation')}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button small" disabled={busy}>{t('events.send')}</button></div></form></Modal>}
     {confirmation && <Modal title={t(confirmation.title)} onClose={() => { if (!busy) { setConfirmation(null); setError(null); } }}><p>{t(confirmation.hint)}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button small" disabled={busy} onClick={() => void action(confirmation.path, confirmation.body, confirmation.leave)}>{t('events.confirm')}</button></div></Modal>}
-    {profile && <Modal wide title={t('events.profile')} onClose={() => setProfile(null)}><ProfileCard profile={profile} /></Modal>}
   </section>;
 }
 function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { config: AppConfig; initial?: AdventureDetail; spokenLanguages: string[]; onClose: () => void; onSaved: (event: AdventureDetail) => void }) {

@@ -1,10 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-async function character(page: Page, name: string) {
+import type { ProfileTag } from '../../shared/schema.ts';
+async function character(page: Page, name: string, profile: { tags?: ProfileTag[]; askMeTopics?: string[]; openToRomance?: boolean } = {}) {
   await expect.poll(async () => (await page.request.get('/api/health')).status()).toBe(200);
   await page.request.post('/api/auth/demo', { data: {} });
   const state = await (await page.request.get('/api/me')).json();
   const { draft } = await (await page.request.post('/api/register', { data: { displayName: name, invite: state.demoInvite, adult: true, terms: true, locale: 'en' } })).json();
-  const saved = await (await page.request.put('/api/draft', { data: { ...draft, avatarId: 'moss', spokenLanguages: ['en'], introMarkdown: `I am ${name}. Coffee and records are my thing.` } })).json();
+  const saved = await (await page.request.put('/api/draft', { data: { ...draft, avatarId: 'moss', spokenLanguages: ['en'], introMarkdown: `I am ${name}. Coffee and records are my thing.`, ...profile } })).json();
   expect((await page.request.put('/api/discovery', { data: { revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] } })).status()).toBe(200);
   expect((await page.request.post('/api/profile/publish', { data: { revision: saved.draft.revision } })).status()).toBe(200);
   return state.user.id as string;
@@ -12,7 +13,8 @@ async function character(page: Page, name: string) {
 async function noOverflow(page: Page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
 test('create an adventure, apply from another character, accept, edit and withdraw', async ({ page, browser }, info) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-  await character(page, 'Record keeper');
+  const sharedTags: ProfileTag[] = [{ kind: 'catalog', code: 'coffee' }, { kind: 'catalog', code: 'artist_miles_davis' }, { kind: 'catalog', code: 'book_dune' }];
+  await character(page, 'Record keeper', { tags: sharedTags, askMeTopics: ['Ask me how I found my first jazz record.'], openToRomance: true });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Adventures', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Create adventure', exact: true }).click();
@@ -40,7 +42,7 @@ test('create an adventure, apply from another character, accept, edit and withdr
   const guestContext = await browser.newContext({ viewport: page.viewportSize()!, baseURL: new URL(page.url()).origin });
   const guest = await guestContext.newPage();
   const base = new URL(page.url()).origin;
-  await character(guest, 'Jazz questr');
+  await character(guest, 'Jazz questr', { tags: sharedTags, openToRomance: true });
   await guest.route('**/api/config', async route => {
     const response = await route.fetch();
     await route.fulfill({ response, json: { ...await response.json(), authMode: 'telegram' } });
@@ -50,6 +52,7 @@ test('create an adventure, apply from another character, accept, edit and withdr
   await guest.goto(`${base}/${hash}`);
   await expect(guest.getByRole('heading', { name: 'Coffee, records & a slow afternoon', level: 1 })).toBeVisible();
   await expect(guest.locator('.meeting-details')).toHaveCount(0);
+  await expect(guest.locator('.party-person')).toHaveCount(0);
   await guest.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(guest.getByRole('dialog')).toBeVisible();
   expect(new URL(guest.url()).host).toBe(new URL(base).host);
@@ -59,11 +62,25 @@ test('create an adventure, apply from another character, accept, edit and withdr
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.locator('.application')).toContainText('Bill Evans');
   await page.locator('.application .person-button').click();
-  await expect(page.getByRole('dialog').locator('.profile-body')).toContainText('Jazz questr');
-  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('.profile-body')).toContainText('Jazz questr');
+  await page.getByRole('button', { name: 'Back to adventure' }).click();
   await page.getByRole('button', { name: 'Accept', exact: true }).click();
   await guest.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(guest.locator('.meeting-details')).toContainText('Private door 42');
+  await expect(guest.locator('.party-person')).toHaveCount(2);
+  const hostCard = guest.locator('.party-person').filter({ has: guest.getByRole('button', { name: "View Record keeper's character" }) });
+  await expect(hostCard.locator('.party-match')).toHaveCount(3);
+  await expect(hostCard.locator('.party-match').nth(0)).toHaveAttribute('title', 'Shared: Coffee');
+  await expect(hostCard.locator('.party-match').nth(1)).toHaveAttribute('title', 'Shared: Miles Davis');
+  await expect(hostCard.locator('.party-match').nth(2)).toHaveAttribute('title', 'Both open to romance');
+  await hostCard.getByRole('button', { name: 'Ask me' }).click();
+  await expect(guest.locator('.party-ask-topics')).toContainText('Ask me how I found my first jazz record.');
+  await hostCard.getByRole('button', { name: "View Record keeper's character" }).click();
+  await expect(guest.locator('.profile-ask-me')).toContainText('Ask me how I found my first jazz record.');
+  await expect(guest).toHaveURL(/#adventures\/[^/]+\/character\//);
+  await guest.reload();
+  await expect(guest.locator('.profile-ask-me')).toContainText('Ask me how I found my first jazz record.');
+  await guest.getByRole('button', { name: 'Back to adventure' }).click();
   await expect(guest.locator('.party-person')).toHaveCount(2);
   await noOverflow(page); await noOverflow(guest);
   await page.screenshot({ path: `.artifacts/${info.project.name}-adventure-host.png`, fullPage: true });

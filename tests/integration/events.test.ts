@@ -8,6 +8,7 @@ import { createApp } from '../../server/app.ts';
 import { loadConfig } from '../../server/config.ts';
 import { can } from '../../server/permissions.ts';
 import { EventBot } from '../../server/event-bot.ts';
+import type { ProfileTag } from '../../shared/schema.ts';
 const connection = process.env.TEST_DATABASE_URL;
 const database = `questr_events_${randomUUID().replaceAll('-', '')}`;
 const config = { ...loadConfig(), authMode: 'demo' as const, aiMode: 'demo' as const, botToken: 'fake-token', webhookSecret: 'test-secret', publicAppUrl: 'https://questr.example' };
@@ -16,12 +17,12 @@ let app: ReturnType<typeof createApp>;
 before(async () => { if (!connection) return; admin = createPool(connection); await admin.query(`CREATE DATABASE "${database}"`); const url = new URL(connection); url.pathname = `/${database}`; pool = createPool(url.toString()); await migrate(pool); app = createApp(pool, config); });
 after(async () => { if (!connection) return; await pool?.end(); await admin.query(`DROP DATABASE IF EXISTS "${database}"`); await admin.end(); });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
-async function person(name = 'Moss') {
+async function person(name = 'Moss', profile: { tags?: ProfileTag[]; askMeTopics?: string[]; openToRomance?: boolean } = {}) {
   const agent = request.agent(createApp(pool, config));
   const auth = await agent.post('/api/auth/demo').send({}).expect(200);
   const state = (await agent.get('/api/me').expect(200)).body;
   const { body } = await agent.post('/api/register').send({ displayName: name, invite: state.demoInvite, adult: true, terms: true, locale: 'en' }).expect(200);
-  const draft = (await agent.put('/api/draft').send({ ...body.draft, avatarId: 'moss', introMarkdown: 'I like coffee, music and long walks.', spokenLanguages: ['en', 'ru'] }).expect(200)).body.draft;
+  const draft = (await agent.put('/api/draft').send({ ...body.draft, avatarId: 'moss', introMarkdown: 'I like coffee, music and long walks.', spokenLanguages: ['en', 'ru'], ...profile }).expect(200)).body.draft;
   await agent.put('/api/discovery').send({ revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] }).expect(200);
   await agent.post('/api/profile/publish').send({ revision: draft.revision }).expect(200);
   return { agent, id: state.user.id as string, cookie: auth.headers['set-cookie'][0].split(';')[0] as string };
@@ -30,6 +31,31 @@ function fields(extra = {}) { return { title: 'Coffee and records', activitySumm
 const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (await who.agent.post('/api/events').send(fields(extra)).expect(201)).body.event;
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
+
+integration('party view shows shared tags, mutual romance and conversation topics only to the accepted party', async () => {
+  const custom = (label: string): ProfileTag => ({ kind: 'custom', label, emoji: '💿', locale: 'en' });
+  const host = await person('Host', { tags: [{ kind: 'catalog', code: 'coffee' }, custom('Record hunting')], askMeTopics: ['Ask me about my first record hunt.'], openToRomance: true });
+  const guest = await person('Guest', { tags: [custom('record HUNTING'), { kind: 'catalog', code: 'coffee' }], askMeTopics: ['Ask me which album I would bring.'], openToRomance: true });
+  const outsider = await person('Outsider');
+  const event = await create(host);
+  assert.deepEqual((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants, []);
+  await apply(guest, event.id);
+  assert.deepEqual((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants, []);
+  await decide(host, event.id, guest.id, 'accept').expect(200);
+  const guestView = (await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event;
+  const hostCard = guestView.participants.find((person: any) => person.id === host.id);
+  assert.deepEqual(hostCard.matchingTags, [{ kind: 'catalog', code: 'coffee' }, custom('Record hunting')]);
+  assert.equal(hostCard.romanceMatch, true);
+  assert.deepEqual(hostCard.askMeTopics, ['Ask me about my first record hunt.']);
+  const selfCard = guestView.participants.find((person: any) => person.id === guest.id);
+  assert.deepEqual(selfCard.matchingTags, []); assert.equal(selfCard.romanceMatch, false);
+  const hostView = (await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event;
+  assert.deepEqual(hostView.participants.find((person: any) => person.id === guest.id).matchingTags, [custom('record HUNTING'), { kind: 'catalog', code: 'coffee' }]);
+  assert.deepEqual((await outsider.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants, []);
+  const guestProfile = (await guest.agent.get('/api/me').expect(200)).body.profile;
+  await guest.agent.put('/api/profile/romance').send({ revision: guestProfile.revision, openToRomance: false }).expect(200);
+  assert.equal((await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants.find((person: any) => person.id === guest.id).romanceMatch, false);
+});
 
 integration('Telegram Mini App submits applications directly; organizer buttons decide only live applications', async () => {
   const host = await person('Host'), guest = await person('Jazz guest'), other = await person('Other');

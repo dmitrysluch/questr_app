@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { languageCodeSchema, locationIdSchema, type Location } from './discovery.ts';
-import type { Profile } from './schema.ts';
+import type { Profile, ProfileTag } from './schema.ts';
 
 export const timeZoneSchema = z.string().max(100).refine(zone => {
   try { new Intl.DateTimeFormat('en', { timeZone: zone }); return true; } catch { return false; }
@@ -30,7 +30,10 @@ export function hasPublicLink(text: string): boolean {
   return /(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+[a-z]{2,}\/)/i.test(text);
 }
 export type MemberStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'removed';
-export interface EventPerson { id: string; displayName: string; avatarId: string; role: 'host' | 'participant'; status: MemberStatus; unavailable?: boolean; applicationText?: string }
+export interface EventPerson {
+  id: string; displayName: string; avatarId: string; role: 'host' | 'participant'; status: MemberStatus;
+  unavailable?: boolean; applicationText?: string; matchingTags: ProfileTag[]; romanceMatch: boolean; askMeTopics: string[];
+}
 export interface Adventure {
   id: string; title: string; activitySummary: string; descriptionMarkdown: string; district: string; costEstimate: string;
   experienceNotes: string; onlinePlatform: string; recruitmentOpen: boolean; location: Location; languageCode: string;
