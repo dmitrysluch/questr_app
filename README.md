@@ -1,6 +1,6 @@
 # QUESTR
 
-A Telegram Mini App POC for an invite-only community built around doing things together. English first, coffee colors, pixel characters, and readable typography.
+A Telegram Mini App POC for an invite-only community built around doing things together. English and Russian UI, coffee colors, pixel characters, and readable typography.
 
 The POC covers registration, avatar selection, emoji tags, spoken languages, an opt-in romance signal, a long-form Markdown profile, and an optional **Ask me questions** interview. Saved profiles are shared in the context of adventures; drafts and interview answers stay private. New characters must choose and save at least one discovery location and adventure language before publication. Existing characters can still choose all adventure languages by clearing that filter. Discovery locations can be countries, cities or Online.
 
@@ -93,7 +93,10 @@ The editor discloses that bio validation uses OpenRouter, including for manually
 1. Serve the app behind HTTPS, for example at `https://questr.coffeecode.io`.
 2. Set `AUTH_MODE=telegram`, `TELEGRAM_BOT_TOKEN`, `APP_ORIGIN` to the exact HTTPS origin, and `COOKIE_SECURE=true`. With Docker, set `APP_ORIGIN_DOCKER` to that origin as well.
 3. Configure the bot's Main Mini App or menu button in BotFather to open that HTTPS URL.
-4. Create single-use invitations with `npm run invite` (or `docker compose exec app npm run invite`).
+4. Grant your existing character admin access with `npm run admin:grant -- --name <exact display name>` (or use `--user-id <uuid>`). In Docker, run the same command through `docker compose exec app`. This is a local operator command; there is no public self-service admin grant.
+5. Open **Admin** in the Mini App to issue and revoke invitations, grant inviter access, and set per-person budgets. `npm run invite` remains available for an initial, operator-issued code.
+
+Each issued code is single-use. The default expiry is 7 days, selectable from 1 to 30 days. Only its hash is stored; copy the plaintext code when it is created. The default `invite.create` budget is **3 issues per rolling 7 days** for a newly registered account, but the account needs an `inviter` or `admin` role to use it. An admin can change a person's limit and window without resetting usage history. Demo login codes and `npm run invite` are operator/system-issued and do not consume a person's budget.
 
 The browser sends official Telegram Mini App `initData` to the server. The server verifies the HMAC signature, freshness, and numeric user ID before issuing a session. Client-provided `initDataUnsafe` is never trusted. [Telegram authentication documentation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
 

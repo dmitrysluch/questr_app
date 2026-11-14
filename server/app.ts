@@ -16,9 +16,10 @@ import { askMeTopicsSchema, draftInputSchema, messageSchema, registerSchema, tag
 import { preferredLocale } from '../shared/locale.ts';
 import { locationIdSchema } from '../shared/discovery.ts';
 import { getDiscovery, saveDiscovery, searchLocations } from './discovery.ts';
-import { grantMember, requireCapability } from './permissions.ts';
+import { can, grantMember, requireCapability } from './permissions.ts';
 import { Adventures } from './events.ts';
 import { eventRoutes } from './event-routes.ts';
+import { inviteRoutes } from './invite-routes.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
@@ -144,14 +145,15 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   });
   app.get('/api/me', async (_req, res) => {
     const user = currentUser(res);
-    const [draft, profile, conversation, proposal, discovery] = await Promise.all([
+    const [draft, profile, conversation, proposal, discovery, admin, inviteCreate] = await Promise.all([
       getDraft(pool, user.id), getProfile(pool, user.id), getConversation(pool, user.id), getProposal(pool, user.id), getDiscovery(pool, user.id),
+      can(pool, user.id, 'admin', { type: 'global' }), can(pool, user.id, 'invite.create', { type: 'global' }),
     ]);
     const consent = await pool.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='ai_interview' AND document_version=$2", [user.id, `${aiConsentVersion}:${config.aiMode}`]);
     const ready = conversation?.mode === config.aiMode && !!consent.rowCount;
     const review = draft ? await storedReview(pool, reviewer, draft.introMarkdown) : null;
     const topicReviews = draft ? await Promise.all(draft.askMeTopics.map(topic => storedReview(pool, reviewer, topic))) : [];
-    res.json({ user, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown, askMeTopics: draft.askMeTopics, topicReviews: topicReviews.every(Boolean) ? topicReviews : undefined } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
+    res.json({ user, permissions: { admin, inviteCreate }, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown, askMeTopics: draft.askMeTopics, topicReviews: topicReviews.every(Boolean) ? topicReviews : undefined } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
   });
   app.put('/api/locale', async (req, res) => {
     const { locale } = z.object({ locale: z.enum(['en', 'ru']) }).strict().parse(req.body);
@@ -183,6 +185,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   });
   app.use('/api/events', (req, res, next) => { if (req.method !== 'GET') throttle(`events:${currentUser(res).id}`, 20); next(); });
   app.use('/api/events', eventRoutes(new Adventures(pool, reviewer), config));
+  app.use('/api/invites', (req, res, next) => { if (req.method !== 'GET') throttle(`invites:${currentUser(res).id}`, 30); next(); });
+  app.use('/api/invites', inviteRoutes(pool));
   app.put('/api/draft', async (req, res) => {
     await requireCapability(pool, currentUser(res).id, 'profile.edit', { type: 'profile', id: currentUser(res).id });
     const input = draftInputSchema.parse(req.body);

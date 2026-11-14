@@ -408,6 +408,39 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .workspace-tabs { display: flex; gap: 24px; max-width: 840px; margin: 24px auto 0; border-bottom: 1px solid var(--line); }
 .workspace-tabs button, .event-tabs button { background: transparent; border: 0; padding: 12px 2px; color: var(--muted); font-size: 14px; }
 .workspace-tabs button.active, .event-tabs button.active { color: var(--ink); box-shadow: 0 2px 0 var(--accent); font-weight: 650; }
+.invite-grid { display: grid; grid-template-columns: minmax(260px, .8fr) minmax(0, 1.2fr); gap: 24px; align-items: start; }
+.invite-issue, .invite-list-card { padding: 24px; }
+.invite-issue h2, .invite-list-card h2 { margin-bottom: 6px; }
+.invite-issue > label { margin-bottom: 8px; }
+.invite-issue select { width: 100%; border: 1px solid #d5cbbb; background: #fffdf8; color: var(--ink); padding: 12px; margin-bottom: 16px; }
+.invite-issue > .pixel-button { width: 100%; }
+.issued-invite { margin-top: 20px; padding: 14px; border: 1px solid #c9d0b7; background: #edf0e4; display: grid; gap: 10px; }
+.issued-invite span { font-size: 11px; color: #5b694b; }
+.issued-invite code { overflow-wrap: anywhere; user-select: all; font-size: 13px; }
+.issued-invite button { justify-self: start; }
+.invite-list-header, .invite-list-header > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.invite-list-header > div > span { font-size: 12px; color: var(--muted); }
+.invite-list { list-style: none; padding: 0; margin: 10px 0 0; }
+.invite-list li { padding: 14px 0; border-top: 1px solid var(--line); display: grid; gap: 7px; font-size: 12px; }
+.invite-list li > div:first-child { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.invite-status { display: inline-block; border: 1px solid #d0c5b3; padding: 3px 7px; font-size: 10px; color: #766754; }
+.invite-status.active { border-color: #bcc7a9; background: #ebefdf; color: #566a42; }
+.invite-status.revoked { border-color: #d4b4ae; background: #f4e6e2; color: #8e554c; }
+.invite-date, .invite-person { color: #817367; }
+.invite-actions { display: flex; align-items: center; gap: 12px; }
+.invite-revoke { justify-self: start; }
+.admin-inviters { margin-top: 36px; }
+.admin-search { display: flex; gap: 8px; max-width: 520px; margin-bottom: 18px; }
+.admin-search input { flex: 1; }
+.admin-user-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.admin-user { padding: 17px; display: grid; gap: 14px; }
+.admin-user-head, .admin-user-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.admin-user-head strong { overflow-wrap: anywhere; }
+.admin-user .checkbox-label { display: flex; align-items: center; gap: 8px; }
+.admin-budget-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.admin-budget-fields label { font-size: 11px; }
+.admin-budget-fields input { margin-top: 6px; }
+.admin-user-footer span { font-size: 11px; color: var(--muted); }
 .adventure-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .adventure-heading h1 { font-size: 30px; }
 .event-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
@@ -459,6 +492,11 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .event-form .selection-picker { margin-top: 18px; }
 .flagged-excerpt { background: #edd9d5; color: #955b52; margin: 12px 0; padding: 10px 14px; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
+  .invite-grid, .admin-user-list { grid-template-columns: 1fr; }
+  .invite-issue, .invite-list-card { padding: 18px; }
+  .invite-issue select, .admin-budget-fields input, .admin-search input { font-size: 16px; }
+  .workspace-tabs { gap: 18px; }
+  .workspace-tabs button { font-size: 12px; }
   .adventure-heading { flex-wrap: wrap; gap: 14px; }
   .adventure-heading h1 { font-size: 28px; }
   .adventure-list, .event-form-grid { grid-template-columns: minmax(0, 1fr); }

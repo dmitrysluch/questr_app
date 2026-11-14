@@ -72,6 +72,7 @@ export interface Profile {
 }
 export interface AppState {
   user: { id: string; status: 'pending_invite' | 'onboarding' | 'active' | 'blocked'; locale: string };
+  permissions: { admin: boolean; inviteCreate: boolean };
   draft: Draft | null;
   profile: Profile | null;
   conversation: Conversation | null;
@@ -79,5 +80,18 @@ export interface AppState {
   demoInvite: string | null;
   bioReview: BioReview | null;
   discovery: DiscoveryPreferences;
+}
+export interface InviteRecord {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  status: 'active' | 'redeemed' | 'expired' | 'revoked';
+  createdBy: string | null;
+  redeemedBy: string | null;
+}
+export interface InviteBudget { maxUses: number; used: number; windowDays: number }
+export interface InviterAccount {
+  id: string; displayName: string; isAdmin: boolean; isInviter: boolean;
+  budget: InviteBudget | null;
 }
 export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string; googleMapsBrowserKey: string }

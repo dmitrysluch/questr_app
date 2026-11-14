@@ -13,6 +13,7 @@ import { Adventures } from './components/Adventures.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Interview } from './components/Interview.tsx';
 import { AskMeTopics } from './components/AskMeTopics.tsx';
+import { Invites } from './components/Invites.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview } from '../shared/content-policy.ts';
@@ -155,7 +156,8 @@ export function App() {
   const wordCount = draft?.introMarkdown.trim().split(/\s+/).filter(Boolean).length ?? 0;
   const currentReview = bioReview?.introMarkdown === draft?.introMarkdown ? bioReview : null;
   const currentTopicReviews = currentReview && JSON.stringify(currentReview.askMeTopics) === JSON.stringify(draft?.askMeTopics) ? currentReview.topicReviews : undefined;
-  const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character');
+  const invitesOpen = state?.user.status === 'active' && state.permissions.inviteCreate && route.startsWith('#invites');
+  const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character') && !invitesOpen;
 
   return <div className="app-shell">
     <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR"><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>
@@ -168,7 +170,7 @@ export function App() {
           <span className="step-number">{index < stepIndex ? <Check size={13} /> : index + 1}</span><span className="step-label">{t(step.label)}</span>
         </button>)}
       </nav>}
-      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen ? 'active' : ''} aria-current={!adventuresOpen ? 'page' : undefined} onClick={() => { location.hash = 'character'; }}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'adventures'; }); }}>{t('nav.adventures')}</button></nav>}
+      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !invitesOpen ? 'active' : ''} aria-current={!adventuresOpen && !invitesOpen ? 'page' : undefined} onClick={() => { location.hash = 'character'; }}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'adventures'; }); }}>{t('nav.adventures')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'invites'; }); }}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}</nav>}
       <main className={`main-content ${currentStep === 'welcome' ? 'welcome-content' : ''}`}>
         {!!visibleError && <div className="error-banner" role="alert"><span>{errorText(visibleError)}</span>
           <button className="text-button" onClick={() => void run(async () => { if (conflict || !state) await loadState(); else await flush(); })}>{t(conflict ? 'common.reload' : 'common.retry')}</button></div>}
@@ -182,7 +184,7 @@ export function App() {
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
             <p className="form-privacy"><LockKeyhole size={13} />{t('footer.private')}</p>
           </form>
-        </section> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
+        </section> : invitesOpen ? <Invites admin={state.permissions.admin} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} busy={busy} onRomanceToggle={() => void run(async () => {
             await flush();

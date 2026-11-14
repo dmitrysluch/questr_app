@@ -15,6 +15,7 @@
     "start": "tsx --env-file-if-exists=.env server/index.ts",
     "db:migrate": "tsx --env-file-if-exists=.env server/migrate.ts",
     "invite": "tsx --env-file-if-exists=.env scripts/invite.ts",
+    "admin:grant": "tsx --env-file-if-exists=.env scripts/grant-admin.ts",
     "test": "tsx --test tests/*.test.ts",
     "test:integration": "tsx --env-file-if-exists=.env --test tests/integration/*.test.ts",
     "test:e2e": "playwright test"
