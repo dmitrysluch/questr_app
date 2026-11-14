@@ -62,15 +62,17 @@ no scheduled job is required to make an expired permission stop working.
 
 Current templates:
 
-- `member`: read/edit own profile; view/create events after profile completion.
-  Existing invited accounts are backfilled. Registration grants this once.
+- `member`: read/edit own profile and view events after profile completion.
+  Registration grants this once.
+- `event_creator`: create events, subject to a separate rolling budget. Existing
+  members were backfilled when this became a separate role.
 - `organizer`: edit an assigned event, accept applicants, use/moderate its chat,
   and request event-scoped DMs.
 - `applicant`: view the assigned event, including its public history. No chat access.
 - `participant`: view an assigned event, use its chat, and request event-scoped DMs
   while accepted and open.
 - `event_moderator`: moderate one event's chat.
-- `inviter`: create invitations, subject to its separate budget.
+- `inviter`: create invitations, subject to its separate budget and invite-chain depth.
 - `admin`: use administrative operations. It is NOT a bypass into private chats.
 
 Event roles require an event scope in PostgreSQL. Acceptance/removal creates or
@@ -94,7 +96,20 @@ roles cannot multiply an allowance. POC defaults are 2 event creations per rolli
 7 days, 3 invitations per rolling 7 days, and 3 DM openers per rolling 7 days;
 these are provisional configuration,
 not reputation rules. A budget does not itself grant permission: the invitation
-budget is dormant unless `inviter` is explicitly assigned.
+budget is dormant unless `inviter` is explicitly assigned. The event budget is
+similarly dormant without `event_creator`.
+
+An admin can grant or revoke global `event_creator`, `inviter`, and `admin` roles
+in the Mini App, and edit the event and invite budgets. Event-scoped roles still
+come from event membership. Invites carry `eventCreator` and `inviteDepth`.
+Depth 0 grants no invitation role; depth 1 lets the recipient invite, but their
+invitees cannot; depth 2 lets the recipient and their direct invitees invite.
+Each non-admin issuer can grant only their own global event-creation right and
+at most one less invite level than they hold. An admin can issue depth 0–2.
+Registration applies the grants in the same transaction as redemption. Older
+codes retain event creation and no invite delegation; this matches their
+pre-existing behavior. The admin UI shows grants on issued codes without
+revealing the code again.
 
 `consumeCapability` must run inside the transaction performing the action. It
 serializes spending, checks live authorization, counts a rolling time window,

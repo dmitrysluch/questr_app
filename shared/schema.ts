@@ -88,10 +88,13 @@ export interface InviteRecord {
   status: 'active' | 'redeemed' | 'expired' | 'revoked';
   createdBy: string | null;
   redeemedBy: string | null;
+  eventCreator: boolean;
+  inviteDepth: number;
 }
 export interface InviteBudget { maxUses: number; used: number; windowDays: number }
 export interface InviterAccount {
-  id: string; displayName: string; isAdmin: boolean; isInviter: boolean;
+  id: string; displayName: string; isAdmin: boolean; isInviter: boolean; inviteDepth: number; isEventCreator: boolean;
   budget: InviteBudget | null;
+  eventBudget: InviteBudget | null;
 }
 export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string; googleMapsBrowserKey: string }

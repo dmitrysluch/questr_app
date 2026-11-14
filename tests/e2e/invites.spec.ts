@@ -35,10 +35,12 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await page.reload();
     await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Admin' }).click();
     await expect(page.getByRole('heading', { name: 'Invites', exact: true })).toBeVisible();
+    await page.getByLabel('Invite chain', { exact: true }).selectOption('2');
     await page.getByRole('button', { name: 'Create invite' }).click();
     await expect(page.locator('.issued-invite code')).toHaveText(/^QUEST-[A-Za-z0-9_-]{24}$/);
     const newest = page.locator('.invite-list li').first();
     await expect(newest.locator('.invite-status.active')).toBeVisible();
+    await expect(newest).toContainText('Invite chain: 2');
     await newest.getByRole('button', { name: 'Revoke', exact: true }).click();
     await newest.getByRole('button', { name: 'Confirm revoke' }).click();
     await expect(newest.locator('.invite-status.revoked')).toBeVisible();
@@ -50,9 +52,13 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     const card = page.locator('.admin-user').filter({ hasText: friendName });
     await expect(card).toBeVisible();
+    await card.getByLabel('Create adventures').uncheck();
     await card.getByLabel('Can issue invites').check();
+    await card.getByLabel('Maximum invite chain').selectOption('2');
     await card.getByLabel('Invites per window').fill('1');
     await card.getByRole('button', { name: 'Save access' }).click();
+    await expect(card.getByLabel('Create adventures')).not.toBeChecked();
+    await expect(card.getByLabel('Maximum invite chain')).toHaveValue('2');
     await guest.reload();
     await expect(guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Invites' })).toBeVisible();
     await guest.getByRole('button', { name: 'Invites', exact: true }).click();

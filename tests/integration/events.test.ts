@@ -289,7 +289,7 @@ integration('Telegram explicit throttling is retried; ambiguous sends stop rathe
 });
 integration('organizers can maintain their event after losing creation rights, but cannot move it outside their scope', async () => {
   const host = await person(); const event = await create(host);
-  await pool.query("UPDATE role_assignments SET revoked_at=now() WHERE user_id=$1 AND role_code='member'", [host.id]);
+  await pool.query("UPDATE role_assignments SET revoked_at=now() WHERE user_id=$1 AND role_code='event_creator'", [host.id]);
   const { requestId: _, ...input } = fields({ title: 'Updated title with retained host rights', revision: 0 });
   await host.agent.put(`/api/events/${event.id}`).send(input).expect(200);
   await host.agent.put(`/api/events/${event.id}`).send({ ...input, revision: 1, locationId: 'online', meetingDetails: 'https://meet.example/new' }).expect(403);

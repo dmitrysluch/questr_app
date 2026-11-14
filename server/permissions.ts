@@ -71,9 +71,12 @@ export async function can(db: Db, userId: string, capability: Capability, resour
 export async function requireCapability(db: Db, userId: string, capability: Capability, resource: Resource) {
   if (!await can(db, userId, capability, resource)) throw new AppError(403, 'PERMISSION_DENIED');
 }
-export async function grantMember(db: PoolClient, userId: string) {
+export async function grantMember(db: PoolClient, userId: string, grants: { eventCreator: boolean; inviteDepth: number; invitedBy: string | null }) {
   await db.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'member','Invitation redeemed')", [userId]);
   await db.query("INSERT INTO permission_audit(user_id,action,details,reason) VALUES($1,'role.granted','{\"role\":\"member\"}','Invitation redeemed')", [userId]);
+  if (grants.eventCreator) await db.query("INSERT INTO role_assignments(user_id,role_code,granted_by,reason) VALUES($1,'event_creator',$2,'Invitation redeemed')", [userId, grants.invitedBy]);
+  if (grants.inviteDepth > 0) await db.query("INSERT INTO role_assignments(user_id,role_code,invite_depth,granted_by,reason) VALUES($1,'inviter',$2,$3,'Invitation redeemed')", [userId, grants.inviteDepth, grants.invitedBy]);
+  await db.query("INSERT INTO permission_audit(user_id,actor_id,action,details,reason) VALUES($1,$2,'invite.grants.applied',$3,'Invitation redeemed')", [userId, grants.invitedBy, JSON.stringify({ eventCreator: grants.eventCreator, inviteDepth: grants.inviteDepth })]);
   await db.query("INSERT INTO capability_budgets(user_id,capability,max_uses,window_seconds) VALUES($1,'events.create',2,604800),($1,'invite.create',3,604800),($1,'dm.send_opener',3,604800) ON CONFLICT DO NOTHING", [userId]);
 }
 // Must run in the SAME transaction as the action. Serializes competing consumes;

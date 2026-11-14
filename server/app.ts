@@ -170,12 +170,13 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       if (fresh.status !== 'pending_invite') return;
       const redeemed = await client.query(`UPDATE invites i SET redeemed_by=$1,redeemed_at=now()
         WHERE token_hash=$2 AND redeemed_by IS NULL AND revoked_at IS NULL AND expires_at>now()
-        AND (created_by IS NULL OR EXISTS(SELECT 1 FROM users inviter WHERE inviter.id=i.created_by AND inviter.status='active')) RETURNING id`, [user.id, hash(input.invite)]);
+        AND (created_by IS NULL OR EXISTS(SELECT 1 FROM users inviter WHERE inviter.id=i.created_by AND inviter.status='active'))
+        RETURNING id,created_by,grants_event_creation,invite_depth`, [user.id, hash(input.invite)]);
       if (!redeemed.rowCount) throw new AppError(400, 'INVALID_INVITE');
       await client.query("UPDATE users SET status='onboarding',locale=$2,updated_at=now() WHERE id=$1", [user.id, input.locale]);
       for (const kind of ['adult', 'terms']) await client.query('INSERT INTO user_consents(user_id,kind,document_version) VALUES($1,$2,$3)', [user.id, kind, termsVersion]);
       await client.query('INSERT INTO profile_drafts(user_id,display_name) VALUES($1,$2)', [user.id, input.displayName]);
-      await grantMember(client, user.id);
+      await grantMember(client, user.id, { eventCreator: redeemed.rows[0].grants_event_creation, inviteDepth: redeemed.rows[0].invite_depth, invitedBy: redeemed.rows[0].created_by });
     });
     res.json({ draft: await getDraft(pool, user.id) });
   });

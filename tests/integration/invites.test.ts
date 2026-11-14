@@ -7,6 +7,7 @@ import { createPool, type Pool } from '../../server/db.ts';
 import { migrate } from '../../server/migrate.ts';
 import { createApp } from '../../server/app.ts';
 import { loadConfig } from '../../server/config.ts';
+import { can } from '../../server/permissions.ts';
 
 const connection = process.env.TEST_DATABASE_URL;
 let root: Pool, pool: Pool, app: Express;
@@ -33,6 +34,14 @@ async function browser() {
 async function active(name: string) {
   const { agent, state } = await browser();
   const draft = (await agent.post('/api/register').send({ displayName: name, invite: state.demoInvite, adult: true, terms: true, locale: 'en' }).expect(200)).body.draft;
+  await agent.put('/api/discovery').send({ revision: 0, locationIds: ['online'], languageCodes: ['en'] }).expect(200);
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
+  await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
+  return { agent, id: state.user.id };
+}
+async function activeWithInvite(name: string, invite: string) {
+  const { agent, state } = await browser();
+  const draft = (await agent.post('/api/register').send({ displayName: name, invite, adult: true, terms: true, locale: 'en' }).expect(200)).body.draft;
   await agent.put('/api/discovery').send({ revision: 0, locationIds: ['online'], languageCodes: ['en'] }).expect(200);
   const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
   await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
@@ -103,4 +112,59 @@ integration('single-use redemption and revocation update status without revealin
   assert.equal(list.find((invite: any) => invite.id === revokedId).status, 'revoked');
   assert.ok(!JSON.stringify(list).includes(used.code));
   assert.ok(!JSON.stringify(list).includes(revoked.code));
+});
+
+integration('invite grants become roles, depth shrinks each generation, and issuers cannot escalate rights', async () => {
+  const owner = await active('Role Admin');
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Test admin')", [owner.id]);
+  const firstCode = code();
+  const firstRequest = { ...issue(firstCode), eventCreator: false, inviteDepth: 2 };
+  const first = (await owner.agent.post('/api/invites').send(firstRequest).expect(201)).body;
+  assert.equal((await owner.agent.post('/api/invites').send(firstRequest).expect(201)).body.id, first.id);
+  await owner.agent.post('/api/invites').send({ ...firstRequest, inviteDepth: 1 }).expect(409);
+  const firstUser = await activeWithInvite('First Inviter', firstCode);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM role_assignments WHERE user_id=$1 AND role_code='event_creator'", [firstUser.id])).rows[0].n, 0);
+  assert.equal(await can(pool, firstUser.id, 'events.create', { type: 'location', id: 'online' }), false);
+  assert.equal((await pool.query("SELECT invite_depth FROM role_assignments WHERE user_id=$1 AND role_code='inviter'", [firstUser.id])).rows[0].invite_depth, 2);
+  const firstList = (await firstUser.agent.get('/api/invites').expect(200)).body;
+  assert.deepEqual(firstList.grantOptions, { eventCreator: false, maxInviteDepth: 1 });
+  await firstUser.agent.post('/api/invites').send({ ...issue(), eventCreator: true }).expect(403);
+  await firstUser.agent.post('/api/invites').send({ ...issue(), inviteDepth: 2 }).expect(403);
+  const childCode = code();
+  await firstUser.agent.post('/api/invites').send({ ...issue(childCode), eventCreator: false, inviteDepth: 1 }).expect(201);
+  const child = await activeWithInvite('Second Inviter', childCode);
+  assert.deepEqual((await child.agent.get('/api/invites').expect(200)).body.grantOptions, { eventCreator: false, maxInviteDepth: 0 });
+  const lastCode = code();
+  await child.agent.post('/api/invites').send({ ...issue(lastCode), eventCreator: false, inviteDepth: 0 }).expect(201);
+  const last = await activeWithInvite('Final Member', lastCode);
+  await last.agent.get('/api/invites').expect(403);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM role_assignments WHERE user_id=$1 AND role_code='inviter'", [last.id])).rows[0].n, 0);
+});
+
+integration('admins grant and revoke global roles and budgets without resetting usage', async () => {
+  const owner = await active('Grant Admin');
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Test admin')", [owner.id]);
+  const target = await active('Grant Target');
+  const settings = { eventCreator: false, eventMaxUses: 0, eventWindowDays: 7, inviter: true, inviteDepth: 2,
+    inviteMaxUses: 1, inviteWindowDays: 30, admin: false };
+  await target.agent.put(`/api/invites/admin/roles/${target.id}`).send(settings).expect(403);
+  await owner.agent.put(`/api/invites/admin/roles/${target.id}`).send(settings).expect(200);
+  assert.equal(await can(pool, target.id, 'events.create', { type: 'location', id: 'online' }), false);
+  const users = (await owner.agent.get('/api/invites/admin/inviters?q=Grant%20Target').expect(200)).body.users;
+  assert.equal(users.length, 1);
+  assert.equal(users[0].isEventCreator, false);
+  assert.equal(users[0].isInviter, true);
+  assert.equal(users[0].inviteDepth, 2);
+  assert.equal(users[0].budget.maxUses, 1);
+  assert.equal(users[0].eventBudget.maxUses, 0);
+  await owner.agent.put(`/api/invites/admin/roles/${target.id}`).send({ ...settings, eventCreator: true, eventMaxUses: 1 }).expect(200);
+  assert.equal(await can(pool, target.id, 'events.create', { type: 'location', id: 'online' }), true);
+  await target.agent.post('/api/invites').send(issue()).expect(201);
+  await target.agent.post('/api/invites').send(issue()).expect(429);
+  await owner.agent.put(`/api/invites/admin/roles/${target.id}`).send({ ...settings, inviter: false, admin: true }).expect(200);
+  assert.equal((await target.agent.get('/api/me')).body.permissions.admin, true);
+  await owner.agent.put(`/api/invites/admin/roles/${target.id}`).send({ ...settings, inviter: false, admin: false }).expect(200);
+  assert.equal((await target.agent.get('/api/me')).body.permissions.inviteCreate, false);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM capability_usage WHERE user_id=$1 AND capability='invite.create'", [target.id])).rows[0].n, 1);
+  await owner.agent.put(`/api/invites/admin/roles/${owner.id}`).send({ ...settings, admin: false }).expect(400);
 });

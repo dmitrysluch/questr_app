@@ -184,7 +184,7 @@ export function App() {
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
             <p className="form-privacy"><LockKeyhole size={13} />{t('footer.private')}</p>
           </form>
-        </section> : invitesOpen ? <Invites admin={state.permissions.admin} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
+        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} busy={busy} onRomanceToggle={() => void run(async () => {
             await flush();

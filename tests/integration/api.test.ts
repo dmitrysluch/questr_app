@@ -448,7 +448,7 @@ integration('permissions enforce ownership, location/event scopes, expiry, revoc
   assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'online' }), false); // onboarding
   const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
   await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
-  // Restrict the test account's member grant to Israel to exercise ancestry.
+  // Restrict both global grants to Israel to exercise ancestry.
   await pool.query("UPDATE role_assignments SET location_id='country:IL' WHERE user_id=$1", [id]);
   assert.equal(await can(pool, id, 'profile.edit', { type: 'profile', id }), true);
   assert.equal(await can(pool, id, 'events.create', { type: 'location', id: 'city:294801' }), true);
@@ -486,7 +486,7 @@ integration('budgets are atomic, rolling, retry-safe, rollback-safe and survive 
   const id = state.user.id;
   const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;
   await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
-  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'member','Overlapping grant')", [id]);
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'event_creator','Overlapping grant')", [id]);
   await pool.query("UPDATE capability_budgets SET max_uses=1 WHERE user_id=$1 AND capability='events.create'", [id]);
   const consume = (requestId: string, location = 'online') => transaction(pool, db => consumeCapability(db, id, 'events.create', { type: 'location', id: location }, requestId));
   const key = randomUUID();
@@ -497,7 +497,7 @@ integration('budgets are atomic, rolling, retry-safe, rollback-safe and survive 
   assert.equal(await consume(usedKey), 'replay');
   await assert.rejects(consume(usedKey, 'city:294801'), (error: any) => error.code === 'REQUEST_CONFLICT');
   await pool.query("DELETE FROM role_assignments WHERE user_id=$1", [id]);
-  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'member','Replacement grant')", [id]);
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'event_creator','Replacement grant')", [id]);
   await assert.rejects(consume(randomUUID()), (error: any) => error.code === 'BUDGET_EXHAUSTED');
   await pool.query("UPDATE capability_budgets SET max_uses=2 WHERE user_id=$1 AND capability='events.create'", [id]);
   assert.equal(await consume(randomUUID()), 'new');
