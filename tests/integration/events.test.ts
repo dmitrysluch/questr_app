@@ -17,19 +17,68 @@ before(async () => { if (!connection) return; admin = createPool(connection); aw
 after(async () => { if (!connection) return; await pool?.end(); await admin.query(`DROP DATABASE IF EXISTS "${database}"`); await admin.end(); });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
 async function person(name = 'Moss') {
-  const agent = request.agent(app);
-  await agent.post('/api/auth/demo').send({}).expect(200);
+  const agent = request.agent(createApp(pool, config));
+  const auth = await agent.post('/api/auth/demo').send({}).expect(200);
   const state = (await agent.get('/api/me').expect(200)).body;
   const { body } = await agent.post('/api/register').send({ displayName: name, invite: state.demoInvite, adult: true, terms: true, locale: 'en' }).expect(200);
   const draft = (await agent.put('/api/draft').send({ ...body.draft, avatarId: 'moss', introMarkdown: 'I like coffee, music and long walks.', spokenLanguages: ['en', 'ru'] }).expect(200)).body.draft;
   await agent.put('/api/discovery').send({ revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] }).expect(200);
   await agent.post('/api/profile/publish').send({ revision: draft.revision }).expect(200);
-  return { agent, id: state.user.id as string };
+  return { agent, id: state.user.id as string, cookie: auth.headers['set-cookie'][0].split(';')[0] as string };
 }
 function fields(extra = {}) { return { title: 'Coffee and records', activitySummary: 'Bring a record and listen over coffee.', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', district: 'Downtown', costEstimate: 'About ₪25', experienceNotes: 'No experience needed', onlinePlatform: 'Zoom', startsAt: new Date(Date.now() + 86400000).toISOString(), endsAt: new Date(Date.now() + 86400000 + 7200000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
 const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (await who.agent.post('/api/events').send(fields(extra)).expect(201)).body.event;
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
+
+integration('Telegram Mini App submits applications directly; organizer buttons decide only live applications', async () => {
+  const host = await person('Host'), guest = await person('Jazz guest'), other = await person('Other');
+  const event = await create(host, { capacity: 3 });
+  await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id,bot_started_at) VALUES($1,4101,now()),($2,4102,now())', [host.id, other.id]);
+  const telegramApp = createApp(pool, { ...config, authMode: 'telegram' });
+  const applicationText = 'I can bring my Bill Evans record.';
+  const applied = await request(telegramApp).post(`/api/events/${event.id}/applications`).set('Cookie', guest.cookie).send({ message: applicationText }).expect(200);
+  assert.equal(applied.body.event.myStatus, 'pending');
+  assert.equal((await pool.query('SELECT 1 FROM telegram_accounts WHERE user_id=$1', [guest.id])).rowCount, 0);
+  const notification = (await pool.query("SELECT id,kind,body FROM bot_outbox WHERE event_id=$1 AND kind='application' AND application_user_id=$2", [event.id, guest.id])).rows[0];
+  assert.match(notification.body, /Jazz guest/); assert.match(notification.body, /Bill Evans/);
+  assert.ok(!notification.body.includes(event.meetingDetails));
+  const calls: { method: string; body: any }[] = []; let messageId = 0;
+  const fakeFetch = (async (url: string | URL | Request, options?: RequestInit) => {
+    const method = String(url).split('/').at(-1)!; const body = JSON.parse(String(options?.body)); calls.push({ method, body });
+    return Response.json({ ok: true, result: method === 'sendMessage' ? { message_id: ++messageId } : true });
+  }) as typeof fetch;
+  const bot = new EventBot(pool, config, fakeFetch);
+  while (await bot.outbox()) { /* Drain any prior notifications. */ }
+  const sent = calls.find(c => c.method === 'sendMessage' && c.body.text.includes(applicationText));
+  assert.ok(sent); assert.equal(String(sent.body.chat_id), '4101');
+  const buttons = sent.body.reply_markup.inline_keyboard[0];
+  assert.deepEqual(buttons.map((b: any) => b.text), ['Accept', 'Decline']);
+  assert.equal(buttons[0].callback_data, `application:accept:${notification.id}`);
+  const sentId = (await pool.query('SELECT telegram_message_id FROM bot_outbox WHERE id=$1', [notification.id])).rows[0].telegram_message_id;
+  const webhook = (update_id: number, telegramId: number, data: string, messageId = Number(sentId)) => request(telegramApp).post('/api/telegram/webhook')
+    .set('X-Telegram-Bot-Api-Secret-Token', 'test-secret').send({ update_id, callback_query: { id: `callback-${update_id}`,
+      from: { id: telegramId }, data, message: { message_id: messageId, chat: { id: telegramId, type: 'private' } } } }).expect(200);
+  await webhook(41001, 4102, buttons[0].callback_data); await bot.inbox();
+  assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, guest.id])).rows[0].status, 'pending');
+  await webhook(41002, 4101, buttons[0].callback_data); await webhook(41002, 4101, buttons[0].callback_data); await bot.inbox();
+  assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, guest.id])).rows[0].status, 'accepted');
+  assert.ok(calls.some(c => c.method === 'answerCallbackQuery' && c.body.callback_query_id === 'callback-41002' && c.body.text === 'Accepted.'));
+  assert.ok(calls.some(c => c.method === 'editMessageReplyMarkup' && Number(c.body.message_id) === Number(sentId)));
+  await webhook(41003, 4101, buttons[1].callback_data); await bot.inbox();
+  assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, guest.id])).rows[0].status, 'accepted');
+  assert.ok(calls.some(c => c.method === 'answerCallbackQuery' && c.body.callback_query_id === 'callback-41003' && c.body.text.includes('no longer pending')));
+  const declinedGuest = await person('Declined guest');
+  await request(telegramApp).post(`/api/events/${event.id}/applications`).set('Cookie', declinedGuest.cookie).send({ message: 'I can bring some pastries.' }).expect(200);
+  while (await bot.outbox()) { /* Deliver the next application. */ }
+  const declinedNotice = calls.find(c => c.method === 'sendMessage' && c.body.text.includes('pastries'));
+  assert.ok(declinedNotice);
+  const declineButton = declinedNotice.body.reply_markup.inline_keyboard[0][1].callback_data;
+  const declinedMessageId = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE kind='application' AND application_user_id=$1", [declinedGuest.id])).rows[0].telegram_message_id;
+  await webhook(41004, 4101, declineButton, Number(declinedMessageId)); await bot.inbox();
+  assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, declinedGuest.id])).rows[0].status, 'declined');
+  assert.ok(calls.some(c => c.method === 'answerCallbackQuery' && c.body.callback_query_id === 'callback-41004' && c.body.text === 'Declined.'));
+});
 
 integration('creation is atomic, idempotent, budgeted and validates geography, time and content', async () => {
   const host = await person(); const body = fields();

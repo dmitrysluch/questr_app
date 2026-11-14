@@ -171,7 +171,6 @@ export const en = {
   "error.APPLICATION_CHANGED": "This application has already changed. Refresh to see its status.",
   "error.EVENT_CONTENT_REQUIRES_CHANGES": "Please remove explicit sexual content before sharing.",
   "error.PROFILE_REQUIRED": "Finish your character before joining or creating an adventure.",
-  "error.USE_BOT_TO_APPLY": "Open the bot to send your application.",
   "error.NOT_FOUND": "This adventure or character is no longer available to you.",
 
   'languages.spoken': 'Languages I speak',

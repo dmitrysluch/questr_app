@@ -1,12 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { Adventures } from './events.ts';
-import type { Config } from './config.ts';
-import { AppError } from './errors.ts';
 import { eventCalendar } from './event-calendar.ts';
 import { preferredLocale } from '../shared/locale.ts';
 
-export function eventRoutes(events: Adventures, config: Config) {
+export function eventRoutes(events: Adventures) {
   const router = Router();
   const id = (value: unknown) => z.uuid().parse(value);
   router.get('/', async (req, res) => {
@@ -22,10 +20,7 @@ export function eventRoutes(events: Adventures, config: Config) {
     res.send(calendar);
   });
   router.put('/:id', async (req, res) => res.json({ event: await events.edit(res.locals.user.id, id(req.params.id), req.body) }));
-  router.post('/:id/applications', async (req, res) => {
-    if (config.authMode !== 'demo') throw new AppError(403, 'USE_BOT_TO_APPLY');
-    res.json({ event: await events.apply(res.locals.user.id, id(req.params.id), req.body) });
-  });
+  router.post('/:id/applications', async (req, res) => res.json({ event: await events.apply(res.locals.user.id, id(req.params.id), req.body) }));
   router.post('/:id/members/:userId', async (req, res) => {
     const { action } = z.object({ action: z.enum(['accept', 'decline', 'remove']) }).strict().parse(req.body);
     res.json({ event: await events.membership(res.locals.user.id, id(req.params.id), id(req.params.userId), action) });

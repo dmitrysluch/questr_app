@@ -161,7 +161,7 @@ integration('signed Telegram login and retried bot starts share one private iden
   const botToken = '123456:test-only-token';
   const telegramApp = createApp(pool, { ...loadConfig(), authMode: 'telegram', botToken, webhookSecret: 'test-webhook-secret' });
   const telegramId = 123456789;
-  const update = { update_id: 123, message: { text: '/start', from: { id: telegramId } } };
+  const update = { update_id: 123, message: { text: '/start', from: { id: telegramId }, chat: { id: telegramId, type: 'private' } } };
   await request(telegramApp).post('/api/auth/demo').send({}).expect(404);
   await request(telegramApp).post('/api/telegram/webhook').send(update).expect(401);
   for (let i = 0; i < 2; i++) {

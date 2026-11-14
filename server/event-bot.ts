@@ -167,6 +167,39 @@ export class EventBot {
     }
     return true;
   }
+  private async applicationCallback(db: PoolClient, row: any, locale: string) {
+    const match = /^application:(accept|decline):(\d{1,20})$/.exec(row.callback_data ?? '');
+    let answer = botText(locale, 'unavailable');
+    let clearButtons = false;
+    let eventId: string | null = null;
+    if (match) {
+      const application = (await db.query(`SELECT o.event_id,o.application_user_id,o.user_id,m.status
+        FROM bot_outbox o LEFT JOIN event_memberships m ON m.event_id=o.event_id AND m.user_id=o.application_user_id
+        WHERE o.id=$1 AND o.kind='application' AND o.telegram_message_id=$2`, [match[2], row.callback_message_id])).rows[0];
+      if (application?.user_id === row.user_id) {
+        eventId = application.event_id;
+        if (application.status === 'pending') {
+          try {
+            await this.adventures.membership(row.user_id, application.event_id, application.application_user_id, match[1] as 'accept' | 'decline');
+            answer = botText(locale, match[1] === 'accept' ? 'applicationAccepted' : 'applicationDeclined');
+            clearButtons = true;
+          } catch (error) {
+            if (!(error instanceof AppError) || error.status >= 500) throw error;
+            answer = botText(locale, ['APPLICATION_CHANGED', 'EVENT_FULL', 'EVENT_CLOSED'].includes(error.code) ? 'applicationChanged' : 'unavailable');
+            clearButtons = error.code === 'APPLICATION_CHANGED';
+          }
+        } else { answer = botText(locale, 'applicationChanged'); clearButtons = true; }
+      }
+    }
+    // Telegram keeps the button spinner open until answerCallbackQuery is called.
+    try { await this.call('answerCallbackQuery', { callback_query_id: row.callback_query_id, text: answer }); } catch { /* The decision is durable even if the transient answer fails. */ }
+    if (clearButtons && eventId) {
+      const url = this.config.publicAppUrl;
+      const open = url.startsWith('https://') ? [{ text: botText(locale, 'openButton'), web_app: { url: `${url.split('#')[0]}#adventures/${eventId}` } }] : [];
+      try { await this.call('editMessageReplyMarkup', { chat_id: (await db.query('SELECT telegram_user_id FROM telegram_accounts WHERE user_id=$1', [row.user_id])).rows[0].telegram_user_id,
+        message_id: row.callback_message_id, reply_markup: { inline_keyboard: open.length ? [open] : [] } }); } catch { /* A stale button is harmless: every press rechecks membership. */ }
+    }
+  }
   async inbox(): Promise<boolean> {
     return transaction(this.pool, async db => {
       const row = (await db.query("SELECT * FROM bot_inbox WHERE state='pending' AND available_at<=now() ORDER BY update_id LIMIT 1 FOR UPDATE SKIP LOCKED")).rows[0];
@@ -177,7 +210,8 @@ export class EventBot {
       try {
         const user = (await db.query("SELECT status,locale FROM users WHERE id=$1", [row.user_id])).rows[0];
         locale = user?.locale ?? 'en';
-        if (user?.status !== 'active') { await reply(botText(locale, 'finishCharacter')); }
+        if (row.callback_query_id) await this.applicationCallback(db, row, locale);
+        else if (user?.status !== 'active') { await reply(botText(locale, 'finishCharacter')); }
         else if (/^\/start(?:@questr_game)? quest_[a-f0-9]{32}$/.test(row.text)) {
           const raw = row.text.split('quest_')[1];
           const eventId = `${raw.slice(0,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}-${raw.slice(16,20)}-${raw.slice(20)}`;
@@ -264,6 +298,10 @@ export class EventBot {
         allowed = !!message && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id }) && await can(db, message.sender_id, 'events.group_chat', { type: 'event', id: row.event_id });
       }
       if (allowed && row.kind === 'reminder') allowed = await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id });
+      if (allowed && row.kind === 'application') {
+        const application = (await db.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [row.event_id, row.application_user_id])).rows[0];
+        allowed = application?.status === 'pending' && await can(db, row.user_id, 'events.accept', { type: 'event', id: row.event_id });
+      }
       let dmEventId: string | null = null;
       if (allowed && row.dm_id) {
         const dm = (await db.query('SELECT * FROM dm_conversations WHERE id=$1', [row.dm_id])).rows[0];
@@ -292,7 +330,11 @@ export class EventBot {
         const thread = row.in_topic && row.dm_id ? await this.dmTopic(db, row.user_id, row.dm_id, account.telegram_user_id)
           : row.in_topic && row.event_id ? await this.topic(db, row.user_id, row.event_id, account.telegram_user_id) : undefined;
         const url = this.config.publicAppUrl;
-        const keyboard = url && url.startsWith('https://') ? { inline_keyboard: [[{ text: botText(account.locale, 'openButton'), web_app: { url: `${url.split('#')[0]}${row.event_id || dmEventId ? `#adventures/${row.event_id || dmEventId}` : ''}` } }]] } : undefined;
+        const openButton = url && url.startsWith('https://') ? { text: botText(account.locale, 'openButton'), web_app: { url: `${url.split('#')[0]}${row.event_id || dmEventId ? `#adventures/${row.event_id || dmEventId}` : ''}` } } : null;
+        const keyboard = row.kind === 'application' ? { inline_keyboard: [
+          [{ text: botText(account.locale, 'acceptButton'), callback_data: `application:accept:${row.id}` }, { text: botText(account.locale, 'declineButton'), callback_data: `application:decline:${row.id}` }],
+          ...(openButton ? [[openButton]] : []),
+        ] } : openButton ? { inline_keyboard: [[openButton]] } : undefined;
         const sent = await this.call('sendMessage', { chat_id: account.telegram_user_id, message_thread_id: thread, text: row.body, link_preview_options: { is_disabled: true }, reply_markup: keyboard });
         await db.query("UPDATE bot_outbox SET state='sent',attempts=attempts+1,telegram_message_id=$2 WHERE id=$1", [row.id, sent.message_id]);
       } catch (error) {

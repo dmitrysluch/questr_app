@@ -15,8 +15,10 @@ An empty language selection includes every language in the chosen locations.
 My adventures includes hosted adventures, applications and accessible history,
 regardless of discovery filters. To try an application, open a separate browser
 profile/incognito session, save a second character and open the same adventure URL.
-In demo authentication mode the application form is in the Mini App. Accept it
-from the host's browser; the applicant can then see the meeting details. Refresh
+The application form is in the Mini App in both demo and Telegram modes. The
+applicant does not need to start the bot to submit. The host can accept in the
+Mini App or from the Telegram notification buttons; the applicant can then see
+the meeting details. Refresh
 reloads immediately; visible pages also refresh every 20 seconds and on focus.
 
 An adventure has a Markdown description, one city or Online, one language, start
@@ -99,14 +101,17 @@ it does not relax the existing explicit-sexual-content policy.
 2. Enable **topics in private chats** for `@questr_game` using BotFather. Verify
    `getMe.has_topics_enabled`. Regular Telegram groups are not used.
 3. Register `/api/telegram/webhook` with the matching Bot API `secret_token` and
-   message updates. The bot worker starts only in Telegram mode with a configured
+   `message` and `callback_query` updates. The bot worker starts only in Telegram mode with a configured
    webhook secret. The existing invitation and signed Mini App login still apply.
-4. As two real test users, start the bot and finish registration. Apply from
+4. As two real test users, start the host's bot and finish registration. Apply from
    the adventure page in the Mini App: write the first message in the form and
-   submit it there. The typed first contact is reviewed before delivery.
+   submit it there. The applicant does not need to start the bot. The typed first
+   contact is reviewed before delivery. The host notification contains the
+   application and Accept/Decline buttons; every press rechecks live permissions,
+   event capacity and application status.
    Existing `/start quest_<id>` links still open an adventure topic in the bot,
    but opening a bot link alone does not submit an application.
-5. Accept in QUESTR, then use “Open party chat”. Text in that topic is delivered
+5. Accept in QUESTR or from the notification, then use “Open party chat”. Text in that topic is delivered
    to accepted members' own topics under the sender's QUESTR display name. Raw
    Telegram messages are not forwarded; IDs/usernames are not shared. Only text
    messages are supported in v1 (up to 3000 characters). Use `/chats` to list

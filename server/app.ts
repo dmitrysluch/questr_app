@@ -109,24 +109,38 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   app.post('/api/telegram/webhook', async (req, res) => {
     const provided = req.get('X-Telegram-Bot-Api-Secret-Token') ?? '';
     if (!config.webhookSecret || Buffer.byteLength(provided) !== Buffer.byteLength(config.webhookSecret) || !timingSafeEqual(Buffer.from(provided), Buffer.from(config.webhookSecret))) throw new AppError(401, 'INVALID_TELEGRAM_AUTH');
-    const update = z.object({ update_id: z.number().int(), message: z.object({ text: z.string().max(20000).optional(), message_thread_id: z.number().int().optional(), chat: z.object({ id: z.number().int(), type: z.string() }).optional(), from: z.object({ id: z.number().int(), language_code: z.string().max(64).optional() }).optional() }).optional() }).parse(req.body);
+    const telegramUser = z.object({ id: z.number().int(), language_code: z.string().max(64).optional() }).passthrough();
+    const telegramChat = z.object({ id: z.number().int(), type: z.string() }).passthrough();
+    const update = z.object({ update_id: z.number().int(),
+      message: z.object({ text: z.string().max(20000).optional(), message_thread_id: z.number().int().optional(), chat: telegramChat.optional(), from: telegramUser.optional() }).optional(),
+      callback_query: z.object({ id: z.string().max(128), from: telegramUser, data: z.string().max(64).optional(), message: z.object({ message_id: z.number().int(), chat: telegramChat }).optional() }).optional(),
+    }).parse(req.body);
     await transaction(pool, async client => {
       const inserted = await client.query('INSERT INTO bot_updates(update_id) VALUES($1) ON CONFLICT DO NOTHING RETURNING update_id', [update.update_id]);
-      if (!inserted.rowCount || !update.message?.from || (update.message.chat && (update.message.chat.type !== 'private' || update.message.chat.id !== update.message.from.id))) return;
-      if (/^\/start(?:@questr_game)?(?: |$)/.test(update.message.text ?? '')) {
-        const telegramId = update.message.from.id;
-        await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [telegramId]);
-        const account = await client.query('SELECT user_id FROM telegram_accounts WHERE telegram_user_id=$1', [telegramId]);
-        if (!account.rowCount) {
-          const { rows } = await client.query('INSERT INTO users(locale) VALUES($1) RETURNING id', [preferredLocale(update.message.from.language_code)]);
-          await client.query('INSERT INTO telegram_accounts(user_id,telegram_user_id) VALUES($1,$2)', [rows[0].id, telegramId]);
+      if (!inserted.rowCount) return;
+      const message = update.message;
+      if (message?.from && message.chat?.type === 'private' && message.chat.id === message.from.id) {
+        if (/^\/start(?:@questr_game)?(?: |$)/.test(message.text ?? '')) {
+          const telegramId = message.from.id;
+          await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [telegramId]);
+          const account = await client.query('SELECT user_id FROM telegram_accounts WHERE telegram_user_id=$1', [telegramId]);
+          if (!account.rowCount) {
+            const { rows } = await client.query('INSERT INTO users(locale) VALUES($1) RETURNING id', [preferredLocale(message.from.language_code)]);
+            await client.query('INSERT INTO telegram_accounts(user_id,telegram_user_id) VALUES($1,$2)', [rows[0].id, telegramId]);
+          }
+          if (message.from.language_code) await client.query("UPDATE users SET locale=$2 WHERE id=(SELECT user_id FROM telegram_accounts WHERE telegram_user_id=$1) AND locale_source='auto'", [telegramId, preferredLocale(message.from.language_code)]);
+          await client.query('UPDATE telegram_accounts SET bot_started_at=COALESCE(bot_started_at,now()) WHERE telegram_user_id=$1', [message.from.id]);
         }
-        if (update.message.from.language_code) await client.query("UPDATE users SET locale=$2 WHERE id=(SELECT user_id FROM telegram_accounts WHERE telegram_user_id=$1) AND locale_source='auto'", [telegramId, preferredLocale(update.message.from.language_code)]);
-        await client.query('UPDATE telegram_accounts SET bot_started_at=COALESCE(bot_started_at,now()) WHERE telegram_user_id=$1', [update.message.from.id]);
+        if (message.text) {
+          await client.query(`INSERT INTO bot_inbox(update_id,user_id,text,thread_id)
+            SELECT $1,user_id,$3,$4 FROM telegram_accounts WHERE telegram_user_id=$2`, [update.update_id, message.from.id, message.text, message.message_thread_id ?? null]);
+        }
       }
-      if (update.message.chat && update.message.text) {
-        await client.query(`INSERT INTO bot_inbox(update_id,user_id,text,thread_id)
-          SELECT $1,user_id,$3,$4 FROM telegram_accounts WHERE telegram_user_id=$2`, [update.update_id, update.message.from.id, update.message.text, update.message.message_thread_id ?? null]);
+      const callback = update.callback_query;
+      if (callback?.data && callback.message?.chat.type === 'private' && callback.message.chat.id === callback.from.id) {
+        await client.query(`INSERT INTO bot_inbox(update_id,user_id,text,callback_query_id,callback_data,callback_message_id)
+          SELECT $1,user_id,'',$3,$4,$5 FROM telegram_accounts WHERE telegram_user_id=$2`,
+        [update.update_id, callback.from.id, callback.id, callback.data, callback.message.message_id]);
       }
     });
     res.json({ ok: true });
@@ -185,7 +199,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     next();
   });
   app.use('/api/events', (req, res, next) => { if (req.method !== 'GET') throttle(`events:${currentUser(res).id}`, 20); next(); });
-  app.use('/api/events', eventRoutes(new Adventures(pool, reviewer), config));
+  app.use('/api/events', eventRoutes(new Adventures(pool, reviewer)));
   app.use('/api/invites', (req, res, next) => { if (req.method !== 'GET') throttle(`invites:${currentUser(res).id}`, 30); next(); });
   app.use('/api/invites', inviteRoutes(pool));
   app.put('/api/draft', async (req, res) => {

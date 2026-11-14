@@ -196,7 +196,9 @@ export class Adventures {
       await db.query("INSERT INTO event_memberships(event_id,user_id,status,application_text) VALUES($1,$2,'pending',$3)", [eventId, userId, input.message]);
       await grantEventRole(db, eventId, userId, 'applicant', userId);
       await audit(db, eventId, userId, 'applied');
-      await queueBot(db, { key: `event:${eventId}:apply:${userId}`, userId: row.created_by, eventId, body: botText(await recipientLocale(db, row.created_by), 'newApplication', { title: row.title }) });
+      const applicant = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [userId])).rows[0];
+      await queueBot(db, { key: `event:${eventId}:apply:${userId}`, userId: row.created_by, eventId, applicationUserId: userId,
+        kind: 'application', body: botText(await recipientLocale(db, row.created_by), 'newApplication', { title: row.title, name: applicant.display_name, message: input.message }) });
     });
     return this.detail(userId, eventId);
   }

@@ -173,7 +173,6 @@ export const ru: Record<keyof typeof en, string> = {
   'error.APPLICATION_CHANGED': 'Статус заявки уже изменился. Обнови данные.',
   'error.EVENT_CONTENT_REQUIRES_CHANGES': 'Убери откровенно сексуальный текст перед публикацией.',
   'error.PROFILE_REQUIRED': 'Сначала закончи персонажа.',
-  'error.USE_BOT_TO_APPLY': 'Открой бот, чтобы отправить заявку.',
   'error.NOT_FOUND': 'Эта вылазка или персонаж больше тебе недоступны.',
   'languages.spoken': 'Языки, на которых я говорю',
   'languages.search': 'Поиск языков…',

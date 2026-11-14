@@ -5,12 +5,14 @@ type Key = 'updated' | 'newApplication' | 'accepted' | 'declined' | 'removed' | 
   | 'notAccepting' | 'chooseTopic' | 'applicationSent' | 'alreadyPending' | 'chatClosed' | 'botHelp'
   | 'applicationLength' | 'explicitContent' | 'noLinks' | 'messageLength' | 'unavailable' | 'processingFailed'
   | 'reminder' | 'openButton' | 'chatsEmpty' | 'chatsList' | 'peopleList' | 'peopleEmpty'
-  | 'chatNotFound' | 'dmStart' | 'dmWaiting' | 'dmRequested' | 'dmAccepted' | 'dmDeclined' | 'dmBlocked' | 'dmUnavailable' | 'dmNoRequest' | 'dmList';
+  | 'chatNotFound' | 'dmStart' | 'dmWaiting' | 'dmRequested' | 'dmAccepted' | 'dmDeclined' | 'dmBlocked' | 'dmUnavailable' | 'dmNoRequest' | 'dmList'
+  | 'acceptButton' | 'declineButton' | 'applicationAccepted' | 'applicationDeclined' | 'applicationChanged';
 
 const copy: Record<Locale, Record<Key, string>> = {
   en: {
     updated: 'Adventure updated: {title}. Open QUESTR to check the latest time and meeting details.',
-    newApplication: 'New application for {title}. Open QUESTR to read it and choose your party.',
+    newApplication: 'New application for {title} from {name}:\n\n{message}',
+    acceptButton: 'Accept', declineButton: 'Decline', applicationAccepted: 'Accepted.', applicationDeclined: 'Declined.', applicationChanged: 'This application is no longer pending. Open QUESTR for the current party.',
     accepted: '{title}: you are in the party. Open QUESTR for meeting details and the party chat.',
     declined: '{title}: your application was declined.', removed: '{title}: you are no longer in this party.',
     left: 'A questr left {title}. Open QUESTR for the current party.',
@@ -52,7 +54,8 @@ const copy: Record<Locale, Record<Key, string>> = {
   },
   ru: {
     updated: 'Вылазка «{title}» обновлена. Открой QUESTR, чтобы проверить время и детали встречи.',
-    newApplication: 'Новая заявка на вылазку «{title}». Открой QUESTR, чтобы прочитать её и выбрать участников.',
+    newApplication: 'Новая заявка на вылазку «{title}» от {name}:\n\n{message}',
+    acceptButton: 'Принять', declineButton: 'Отклонить', applicationAccepted: 'Принято.', applicationDeclined: 'Отклонено.', applicationChanged: 'Статус заявки уже изменился. Открой QUESTR, чтобы увидеть состав группы.',
     accepted: '«{title}»: ты принят(а) в группу. Детали встречи и чат доступны в QUESTR.',
     declined: '«{title}»: твоя заявка отклонена.', removed: '«{title}»: ты больше не в группе.',
     left: 'Квестер покинул вылазку «{title}». Открой QUESTR, чтобы увидеть состав группы.',
