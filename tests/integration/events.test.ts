@@ -86,6 +86,7 @@ integration('Telegram Mini App submits applications directly; organizer buttons 
   assert.ok(sent); assert.equal(String(sent.body.chat_id), '4101');
   const buttons = sent.body.reply_markup.inline_keyboard[0];
   assert.deepEqual(buttons.map((b: any) => b.text), ['Accept', 'Decline']);
+  assert.equal(sent.body.reply_markup.inline_keyboard.length, 1);
   assert.equal(buttons[0].callback_data, `application:accept:${notification.id}`);
   const sentId = (await pool.query('SELECT telegram_message_id FROM bot_outbox WHERE id=$1', [notification.id])).rows[0].telegram_message_id;
   const webhook = (update_id: number, telegramId: number, data: string, messageId = Number(sentId)) => request(telegramApp).post('/api/telegram/webhook')
@@ -96,7 +97,7 @@ integration('Telegram Mini App submits applications directly; organizer buttons 
   await webhook(41002, 4101, buttons[0].callback_data); await webhook(41002, 4101, buttons[0].callback_data); await bot.inbox();
   assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, guest.id])).rows[0].status, 'accepted');
   assert.ok(calls.some(c => c.method === 'answerCallbackQuery' && c.body.callback_query_id === 'callback-41002' && c.body.text === 'Accepted.'));
-  assert.ok(calls.some(c => c.method === 'editMessageReplyMarkup' && Number(c.body.message_id) === Number(sentId)));
+  assert.ok(calls.some(c => c.method === 'editMessageReplyMarkup' && Number(c.body.message_id) === Number(sentId) && c.body.reply_markup.inline_keyboard.length === 0));
   await webhook(41003, 4101, buttons[1].callback_data); await bot.inbox();
   assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, guest.id])).rows[0].status, 'accepted');
   assert.ok(calls.some(c => c.method === 'answerCallbackQuery' && c.body.callback_query_id === 'callback-41003' && c.body.text.includes('no longer pending')));
@@ -352,7 +353,10 @@ integration('starting the bot wakes a queued party topic and keeps the command i
   while (await bot.outbox()) { /* Deliver both the party intro and the main-chat reply. */ }
   assert.equal(calls.filter(call => call.method === 'createForumTopic').length, 1);
   assert.equal((await pool.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, host.id])).rows[0].thread_id, '221');
-  assert.ok(calls.some(call => call.method === 'sendMessage' && call.body.message_thread_id === undefined && call.body.text.includes('party topics are being created automatically')));
+  const startReply = calls.find(call => call.method === 'sendMessage' && call.body.message_thread_id === undefined && call.body.text.includes('party topics are being created automatically'));
+  assert.ok(startReply);
+  assert.ok(startReply.body.reply_markup.inline_keyboard.flat().some((button: any) => button.web_app?.url === 'https://questr.example'));
+  assert.ok(calls.filter(call => call.method === 'sendMessage' && call !== startReply).every(call => !call.body.reply_markup));
 });
 integration('bot commands select party and private topics; consent and live roles gate DM delivery', async () => {
   const host = await person('Host'), guest = await person('Guest'), other = await person('Other');
@@ -381,6 +385,7 @@ integration('bot commands select party and private topics; consent and live role
   await send(9001, 3002, '/chats');
   const chats = (await pool.query("SELECT body,reply_markup FROM bot_outbox WHERE dedupe_key='update:9001:reply'")).rows[0];
   assert.match(chats.body, /topics are being created automatically/);
+  assert.ok(chats.reply_markup.inline_keyboard.flat().every((button: any) => !button.web_app));
   const eventButton = chats.reply_markup.inline_keyboard.flat().find((button: any) => button.callback_data?.startsWith('menu:event:'));
   assert.equal(eventButton.callback_data, `menu:event:${event.id.replaceAll('-', '')}`);
   await drain();
@@ -411,6 +416,7 @@ integration('bot commands select party and private topics; consent and live role
   const requestCall = calls.find(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.text.includes('jazz records'));
   assert.ok(requestCall);
   assert.equal(requestCall?.body.reply_markup.inline_keyboard[0][0].callback_data, `dm:accept:${dm.id.replaceAll('-', '')}`);
+  assert.equal(requestCall?.body.reply_markup.inline_keyboard.length, 1);
   assert.ok(!calls.some(c => String(c.body.chat_id) === '3003' && c.body.text?.includes('jazz records')));
   await send(9005, 3002, 'Another message before consent.', thread);
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [dm.id])).rows[0].n, 1);

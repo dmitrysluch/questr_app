@@ -5,7 +5,7 @@ import { Adventures } from './events.ts';
 import { ContentReviewer } from './moderation.ts';
 import { AppError } from './errors.ts';
 import { can, consumeCapability } from './permissions.ts';
-import { queueBot, queuePartyTopic, type BotKeyboard } from './event-notifications.ts';
+import { queueBot, queuePartyTopic, type BotButton, type BotKeyboard } from './event-notifications.ts';
 import { botText } from './bot-copy.ts';
 import { relayMarkdown } from './telegram-markdown.ts';
 import { hasPublicLink } from '../shared/events.ts';
@@ -24,6 +24,14 @@ export class EventBot {
   private adventures: Adventures;
   constructor(private pool: Pool, private config: Config, private fetcher: typeof fetch = fetch) {
     this.adventures = new Adventures(pool, new ContentReviewer(config));
+  }
+  private appButton(locale: string, eventId?: string): BotButton | null {
+    const url = this.config.publicAppUrl;
+    return url.startsWith('https://') ? { text: botText(locale, 'openButton'), web_app: { url: `${url.split('#')[0]}${eventId ? `#adventures/${eventId}` : ''}` } } : null;
+  }
+  private appKeyboard(locale: string, eventId?: string): BotKeyboard | undefined {
+    const button = this.appButton(locale, eventId);
+    return button ? { inline_keyboard: [[button]] } : undefined;
   }
   private async call(method: string, body: object): Promise<any> {
     let response: Response;
@@ -120,9 +128,11 @@ export class EventBot {
       }
     }
     if (wake) await db.query("UPDATE bot_outbox SET available_at=now() WHERE user_id=$1 AND kind='topic_init' AND state='pending'", [row.user_id]);
+    const appButton = wake ? this.appButton(locale) : null;
     const keyboard: BotKeyboard = { inline_keyboard: [
       ...available.map(event => [{ text: buttonLabel(event.title), callback_data: `menu:event:${hex(event.id)}` }]),
       [{ text: botText(locale, 'allPeopleButton'), callback_data: 'menu:people' }],
+      ...(appButton ? [[appButton]] : []),
     ] };
     await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply',
       body: botText(locale, available.length ? preparing ? 'chatsPreparing' : 'chatsList' : 'chatsEmpty'), keyboard });
@@ -150,7 +160,8 @@ export class EventBot {
     const deepLink = command === '/start' && parts.length === 2 ? /^(dm|contact)_([a-f0-9]{8,16})_([a-f0-9]{8,32})$/i.exec(parts[1]) : null;
     if (deepLink) { command = '/dm'; parts.splice(1, 1, deepLink[2], deepLink[3]); }
     const purpose = deepLink?.[1] === 'contact' ? 'contact' : 'chat';
-    const reply = (body: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, body, kind: 'reply' });
+    const reply = (body: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, body, kind: 'reply',
+      keyboard: /^\/start(?:@questr_game)?(?:\s|$)/i.test(row.text) ? this.appKeyboard(locale) : undefined });
     if (command === '/chats' || command === '/start' && parts.length === 1) {
       await this.menuChats(db, row, locale, command === '/start');
       return true;
@@ -316,17 +327,16 @@ export class EventBot {
     // Telegram keeps the button spinner open until answerCallbackQuery is called.
     try { await this.call('answerCallbackQuery', { callback_query_id: row.callback_query_id, text: answer }); } catch { /* The decision is durable even if the transient answer fails. */ }
     if (clearButtons && eventId) {
-      const url = this.config.publicAppUrl;
-      const open = url.startsWith('https://') ? [{ text: botText(locale, 'openButton'), web_app: { url: `${url.split('#')[0]}#adventures/${eventId}` } }] : [];
       try { await this.call('editMessageReplyMarkup', { chat_id: (await db.query('SELECT telegram_user_id FROM telegram_accounts WHERE user_id=$1', [row.user_id])).rows[0].telegram_user_id,
-        message_id: row.callback_message_id, reply_markup: { inline_keyboard: open.length ? [open] : [] } }); } catch { /* A stale button is harmless: every press rechecks membership. */ }
+        message_id: row.callback_message_id, reply_markup: { inline_keyboard: [] } }); } catch { /* A stale button is harmless: every press rechecks membership. */ }
     }
   }
   async inbox(): Promise<boolean> {
     return transaction(this.pool, async db => {
       const row = (await db.query("SELECT * FROM bot_inbox WHERE state='pending' AND available_at<=now() ORDER BY update_id LIMIT 1 FOR UPDATE SKIP LOCKED")).rows[0];
       if (!row) return false;
-      const reply = (body: string, eventId?: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, eventId, body, kind: 'reply', inTopic: !!eventId });
+      const reply = (body: string, eventId?: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, eventId, body, kind: 'reply', inTopic: !!eventId,
+        keyboard: /^\/start(?:@questr_game)?(?:\s|$)/i.test(row.text) ? this.appKeyboard(locale, eventId) : undefined });
       const replyInOrigin = async (body: string) => {
         if (row.thread_id) {
           const dm = (await db.query('SELECT conversation_id FROM dm_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
@@ -453,13 +463,11 @@ export class EventBot {
         const application = (await db.query('SELECT status,application_attempt_id FROM event_memberships WHERE event_id=$1 AND user_id=$2', [row.event_id, row.application_user_id])).rows[0];
         allowed = application?.status === 'pending' && application.application_attempt_id === row.application_attempt_id && await can(db, row.user_id, 'events.accept', { type: 'event', id: row.event_id });
       }
-      let dmEventId: string | null = null;
       if (allowed && row.dm_id) {
         const dm = (await db.query('SELECT * FROM dm_conversations WHERE id=$1', [row.dm_id])).rows[0];
         allowed = !!dm && [dm.first_user_id, dm.second_user_id].includes(row.user_id);
         if (allowed) {
           await db.query('SELECT id FROM events WHERE id=$1 FOR SHARE', [dm.event_id]);
-          dmEventId = dm.event_id;
           const other = dm.first_user_id === row.user_id ? dm.second_user_id : dm.first_user_id;
           if (row.kind === 'dm_request') allowed = dm.status === 'pending' && dm.requested_by !== row.user_id
             && await can(db, dm.requested_by, 'events.group_chat', { type: 'event', id: dm.event_id })
@@ -481,15 +489,11 @@ export class EventBot {
       try {
         const thread = row.in_topic && row.dm_id ? await this.dmTopic(db, row.user_id, row.dm_id, account.telegram_user_id)
           : row.in_topic && row.event_id ? await this.topic(db, row.user_id, row.event_id, account.telegram_user_id) : undefined;
-        const url = this.config.publicAppUrl;
-        const openButton = url && url.startsWith('https://') ? { text: botText(account.locale, 'openButton'), web_app: { url: `${url.split('#')[0]}${row.event_id || dmEventId ? `#adventures/${row.event_id || dmEventId}` : ''}` } } : null;
         const keyboard = row.reply_markup ?? (row.kind === 'application' ? { inline_keyboard: [
           [{ text: botText(account.locale, 'acceptButton'), callback_data: `application:accept:${row.id}` }, { text: botText(account.locale, 'declineButton'), callback_data: `application:decline:${row.id}` }],
-          ...(openButton ? [[openButton]] : []),
         ] } : row.kind === 'dm_request' ? { inline_keyboard: [
           [{ text: botText(account.locale, 'acceptButton'), callback_data: `dm:accept:${hex(row.dm_id)}` }, { text: botText(account.locale, 'declineButton'), callback_data: `dm:decline:${hex(row.dm_id)}` }],
-          ...(openButton ? [[openButton]] : []),
-        ] } : openButton ? { inline_keyboard: [[openButton]] } : undefined);
+        ] } : undefined);
         const suffix = relayBody === null ? null : `:\n${relayBody}`;
         const author = suffix && row.body.endsWith(suffix) ? row.body.slice(0, -suffix.length) : null;
         const markdown = author && relayBody !== null ? relayMarkdown(author, relayBody) : null;

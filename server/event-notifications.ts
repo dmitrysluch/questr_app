@@ -6,7 +6,7 @@ export async function recipientLocale(db: PoolClient, userId: string): Promise<L
   const row = (await db.query('SELECT locale FROM users WHERE id=$1', [userId])).rows[0];
   return preferredLocale(row?.locale);
 }
-export type BotButton = { text: string; callback_data: string } | { text: string; url: string };
+export type BotButton = { text: string; callback_data: string } | { text: string; url: string } | { text: string; web_app: { url: string } };
 export type BotKeyboard = { inline_keyboard: BotButton[][] };
 export async function queueBot(db: PoolClient, input: { key: string; userId: string; eventId?: string; messageId?: string; dmId?: string; dmMessageId?: string; applicationUserId?: string; applicationAttemptId?: string; body: string; kind?: 'notification' | 'reply' | 'relay' | 'reminder' | 'dm_request' | 'dm_relay' | 'dm_accept' | 'application' | 'topic_init'; inTopic?: boolean; keyboard?: BotKeyboard }) {
   await db.query(`INSERT INTO bot_outbox(dedupe_key,user_id,event_id,message_id,dm_id,dm_message_id,application_user_id,application_attempt_id,body,kind,in_topic,reply_markup)
