@@ -4,7 +4,7 @@ type Key = 'updated' | 'newApplication' | 'accepted' | 'declined' | 'removed' | 
   | 'finishCharacter' | 'topicChatLive' | 'topicChatDemo' | 'topicPending' | 'topicApplyLive' | 'topicApplyDemo'
   | 'topicReady' | 'topicPreparing' | 'applyInApp' | 'dmTopicReady' | 'dmTopicPreparing'
   | 'notAccepting' | 'chooseTopic' | 'applicationSent' | 'alreadyPending' | 'chatClosed' | 'botHelp'
-  | 'applicationLength' | 'explicitContent' | 'noLinks' | 'messageLength' | 'unavailable' | 'processingFailed'
+  | 'applicationLength' | 'explicitContent' | 'noLinks' | 'messageLength' | 'photoCaptionLength' | 'photoOpenerTextOnly' | 'unavailable' | 'processingFailed'
   | 'reminder' | 'openButton' | 'chatsEmpty' | 'chatsList' | 'chatsPreparing' | 'peopleList' | 'peopleEmpty'
   | 'peopleGlobalList' | 'partyTopicButton' | 'peopleButton' | 'allChatsButton' | 'allPeopleButton'
   | 'chatNotFound' | 'dmStart' | 'dmWaiting' | 'dmRequested' | 'dmRequestedContact' | 'dmAccepted' | 'dmAcceptedContact' | 'dmDeclined' | 'dmBlocked' | 'dmUnavailable' | 'dmNoRequest' | 'dmList'
@@ -21,8 +21,8 @@ const copy: Record<Locale, Record<Key, string>> = {
     cancelled: '{title} was cancelled. The party chat is now closed; previous messages remain in your bot topic.',
     completed: '{title} was completed. The party chat is now closed; previous messages remain in your bot topic.',
     finishCharacter: 'Open QUESTR and finish your character before joining an adventure.',
-    topicChatLive: '{title}\n\nMessages in this topic go to the accepted party under your QUESTR name. Your messages are sent through OpenRouter to check for explicit sexual content before delivery. Open QUESTR for meeting details.',
-    topicChatDemo: '{title}\n\nMessages in this topic go to the accepted party under your QUESTR name. This local demo uses a limited content check. Open QUESTR for meeting details.',
+    topicChatLive: '{title}\n\nText and photo captions in this topic go through OpenRouter to check for explicit sexual content before delivery. Photos themselves are not checked yet. Open QUESTR for meeting details.',
+    topicChatDemo: '{title}\n\nText and photo captions in this topic use a limited local content check. Photos themselves are not checked yet. Open QUESTR for meeting details.',
     topicPending: '{title}\n\nYour application is waiting for the host.',
     topicReady: '{title} — party topic: {link}',
     topicPreparing: '{title} — your party topic is opening. Check this bot in a moment.',
@@ -40,6 +40,8 @@ const copy: Record<Locale, Record<Key, string>> = {
     explicitContent: 'Please keep explicit sexual content out of QUESTR messages. Try a message about the adventure instead.',
     noLinks: 'Please write your first message without links. You can ask the host about the adventure instead.',
     messageLength: 'Please keep each message under 3000 characters.',
+    photoCaptionLength: 'Please keep photo captions to 900 characters or fewer.',
+    photoOpenerTextOnly: 'The first private message must be text. You can send photos after the other person accepts.',
     unavailable: 'This action is unavailable. Open QUESTR to check the adventure and your application.',
     processingFailed: 'Your message could not be processed. Please try again in a moment.',
     reminder: 'Reminder: {title} starts {time} ({zone}). Open QUESTR for the latest meeting details.',
@@ -74,8 +76,8 @@ const copy: Record<Locale, Record<Key, string>> = {
     cancelled: 'Вылазка «{title}» отменена. Чат группы закрыт, но прежние сообщения остаются в теме бота.',
     completed: 'Вылазка «{title}» завершена. Чат группы закрыт, но прежние сообщения остаются в теме бота.',
     finishCharacter: 'Открой QUESTR и закончи персонажа, прежде чем присоединяться к вылазке.',
-    topicChatLive: '«{title}»\n\nСообщения в этой теме видят принятые участники под твоим именем в QUESTR. Перед отправкой они проходят проверку через OpenRouter на откровенно сексуальный контент. Детали встречи — в QUESTR.',
-    topicChatDemo: '«{title}»\n\nСообщения в этой теме видят принятые участники под твоим именем в QUESTR. В локальном демо действует ограниченная проверка текста. Детали встречи — в QUESTR.',
+    topicChatLive: '«{title}»\n\nТекст и подписи к фото проходят проверку через OpenRouter на откровенно сексуальный контент. Сами фото пока не проверяются. Детали встречи — в QUESTR.',
+    topicChatDemo: '«{title}»\n\nТекст и подписи к фото проходят ограниченную локальную проверку. Сами фото пока не проверяются. Детали встречи — в QUESTR.',
     topicPending: '«{title}»\n\nТвоя заявка ждёт ответа организатора.',
     topicReady: '«{title}» — тема группы: {link}',
     topicPreparing: '«{title}» — тема группы создаётся. Загляни в этого бота через минуту.',
@@ -93,6 +95,8 @@ const copy: Record<Locale, Record<Key, string>> = {
     explicitContent: 'Пожалуйста, не добавляй откровенно сексуальный текст в сообщения QUESTR. Лучше напиши о самой вылазке.',
     noLinks: 'Первое сообщение должно быть без ссылок. Ты можешь спросить организатора о вылазке.',
     messageLength: 'Сообщение должно быть короче 3000 символов.',
+    photoCaptionLength: 'Подпись к фото должна быть не длиннее 900 символов.',
+    photoOpenerTextOnly: 'Первое личное сообщение должно быть текстовым. Фото можно отправить после согласия собеседника.',
     unavailable: 'Это действие недоступно. Проверь вылазку и заявку в QUESTR.',
     processingFailed: 'Не удалось обработать сообщение. Попробуй чуть позже.',
     reminder: 'Напоминание: «{title}» начинается {time} ({zone}). Проверь актуальные детали встречи в QUESTR.',

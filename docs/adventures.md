@@ -122,18 +122,20 @@ it does not relax the existing explicit-sexual-content policy.
 5. Creating an adventure queues a party topic for its host. Accepting an application
    queues a party topic for that participant. If they have not started the bot,
    the topic is created after their first `/start`. Then use “Open party chat”
-   or the bot's topic link. Text in that topic is delivered
+   or the bot's topic link. Text and Telegram photos in that topic are delivered
    to accepted members' own topics under the sender's QUESTR display name. Raw
-   Telegram messages are not forwarded; IDs/usernames are not shared. Only text
-   messages are supported in v1 (up to 3000 characters). Bot commands and
+   Telegram messages are not forwarded; IDs/usernames are not shared. Text is
+   limited to 3000 characters and photo captions to 900 characters. Captions
+   use the existing text review; photo pixels are not reviewed in this invite-only
+   POC. Photos sent as documents and album grouping are not supported. Bot commands and
    their replies stay in the main chat. `/chats` shows adventure buttons: choose
    one to open the automatically created party topic or see its members.
    `/people` lists people once each, labelled with the latest shared adventure.
 6. Choose a person from either menu to open a private topic, then write the
-   first message in that Telegram topic. The bot confirms that it is waiting
+   first text message in that Telegram topic. The bot confirms that it is waiting
    for the recipient's decision. The recipient gets the reviewed opener with
    **Accept** and **Decline** buttons. They must accept before either side can
-   exchange more messages. Either side can later use `/block <chat code>`.
+   exchange more messages, including photos. Either side can later use `/block <chat code>`.
    A declined/blocked conversation cannot be restarted from the same adventure.
    Opening a private chat requires an accepted membership and an event-scoped
    `dm.send_opener` role grant. The default budget is three first contacts per
@@ -142,6 +144,10 @@ it does not relax the existing explicit-sexual-content policy.
    the relevant bot topic; the first-message form remains available in the
    browser version. Party and private messages stop when a participant leaves or the adventure
    closes, including messages queued but not yet delivered.
+
+Before a public release, add image-content review before relaying photos. The
+current text reviewer does not inspect image pixels. The review-model choice
+can be revisited separately; the current model and text policy remain in place.
 
 The Mini App button uses Telegram's `openTelegramLink` when available. Once a
 topic exists, its `https://t.me/questr_game/<thread_id>` link opens that topic.

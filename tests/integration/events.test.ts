@@ -334,6 +334,50 @@ integration('party topics appear on acceptance and relay messages without a bot 
   await text(8006, 'This cannot be relayed.'); await bot.inbox();
   assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8006')).rowCount, 0);
 });
+integration('Telegram photos relay in party and accepted private topics while captions keep text checks', async () => {
+  const host = await person('Host'), guest = await person('Guest');
+  const event = await create(host);
+  await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200);
+  await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id,bot_started_at) VALUES($1,7101,now()),($2,7102,now())', [host.id, guest.id]);
+  await pool.query('INSERT INTO event_bot_topics(event_id,user_id,thread_id) VALUES($1,$2,7201),($1,$3,7202)', [event.id, host.id, guest.id]);
+  const pair = [host.id, guest.id].sort();
+  const dm = (await pool.query('INSERT INTO dm_conversations(event_id,first_user_id,second_user_id,requested_by) VALUES($1,$2,$3,$4) RETURNING id', [event.id, ...pair, guest.id])).rows[0];
+  await pool.query('INSERT INTO dm_bot_topics(conversation_id,user_id,thread_id) VALUES($1,$2,7301),($1,$3,7302)', [dm.id, host.id, guest.id]);
+  const calls: { method: string; body: any }[] = []; let messageId = 0;
+  const bot = new EventBot(pool, config, (async (url: string | URL | Request, options?: RequestInit) => {
+    const method = String(url).split('/').at(-1)!; const body = JSON.parse(String(options?.body)); calls.push({ method, body });
+    return Response.json({ ok: true, result: { message_id: ++messageId } });
+  }) as typeof fetch);
+  const photo = async (updateId: number, threadId: number, caption = '') => request(app).post('/api/telegram/webhook')
+    .set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+    .send({ update_id: updateId, message: { from: { id: 7102, username: 'PRIVATE_HANDLE' }, chat: { id: 7102, type: 'private' },
+      message_thread_id: threadId, photo: [{ file_id: 'small-photo' }, { file_id: 'large-photo' }], caption } }).expect(200);
+
+  await photo(9701, 7302, 'Photo before approval'); await bot.inbox();
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [dm.id])).rows[0].n, 0);
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9701:reply'")).rows[0].body, /first private message must be text/i);
+
+  await photo(9702, 7202, 'Look at *vinyl*.'); await bot.inbox();
+  const stored = (await pool.query('SELECT body,photo_file_id FROM event_messages WHERE telegram_update_id=9702')).rows[0];
+  assert.deepEqual(stored, { body: 'Look at *vinyl*.', photo_file_id: 'large-photo' });
+  await photo(9703, 7202, 'I want to have sex with you.'); await bot.inbox();
+  assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=9703')).rowCount, 0);
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9703:reply'")).rows[0].body, /explicit sexual content/);
+  await photo(9704, 7202, 'x'.repeat(901)); await bot.inbox();
+  assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=9704')).rowCount, 0);
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9704:reply'")).rows[0].body, /900 characters/);
+
+  await pool.query("UPDATE dm_conversations SET status='accepted' WHERE id=$1", [dm.id]);
+  await photo(9705, 7302); await bot.inbox();
+  assert.deepEqual((await pool.query('SELECT body,photo_file_id FROM dm_messages WHERE telegram_update_id=9705')).rows[0], { body: '', photo_file_id: 'large-photo' });
+  while (await bot.outbox()) { /* Deliver permitted photos and other pending notices. */ }
+  const delivered = calls.filter(call => call.method === 'sendPhoto' && String(call.body.chat_id) === '7101');
+  assert.equal(delivered.length, 2);
+  assert.ok(delivered.some(call => call.body.message_thread_id === 7201 && call.body.photo === 'large-photo' && call.body.caption === '*Guest*:\nLook at \\*vinyl\\*\\.'));
+  assert.ok(delivered.some(call => call.body.message_thread_id === 7301 && call.body.photo === 'large-photo' && call.body.caption === '*Guest*:\n'));
+  assert.ok(!JSON.stringify(calls).includes('PRIVATE_HANDLE'));
+  assert.ok(calls.every(call => call.method !== 'getFile'));
+});
 integration('starting the bot wakes a queued party topic and keeps the command in the main chat', async () => {
   const host = await person('Host');
   const event = await create(host);

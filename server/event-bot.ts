@@ -236,10 +236,12 @@ export class EventBot {
     if (dm.status === 'pending') { await reply(botText(locale, 'dmWaiting')); return true; }
     if (dm.status !== 'draft' && dm.status !== 'accepted') { await reply(botText(locale, 'dmUnavailable')); return true; }
     if (dm.status === 'draft' && (dm.requested_by !== row.user_id || !await can(db, row.user_id, 'dm.send_opener', { type: 'profile', id: other, eventId: dm.event_id })) || dm.status === 'accepted' && !await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })) { await reply(botText(locale, 'dmUnavailable')); return true; }
+    if (dm.status === 'draft' && row.photo_file_id) { await reply(botText(locale, 'photoOpenerTextOnly')); return true; }
+    if (row.photo_file_id && row.text.length > 900) throw new AppError(400, 'PHOTO_CAPTION_TOO_LONG');
     if (dm.status === 'draft' && hasPublicLink(row.text)) throw new AppError(400, 'APPLICATION_LINK_NOT_ALLOWED');
     await this.adventures.review(row.text);
     if (dm.status === 'draft') await consumeCapability(db, row.user_id, 'dm.send_opener', { type: 'profile', id: other, eventId: dm.event_id }, dm.id);
-    const message = (await db.query('INSERT INTO dm_messages(conversation_id,sender_id,telegram_update_id,body) VALUES($1,$2,$3,$4) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [dm.id, row.user_id, row.update_id, row.text])).rows[0];
+    const message = (await db.query('INSERT INTO dm_messages(conversation_id,sender_id,telegram_update_id,body,photo_file_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [dm.id, row.user_id, row.update_id, row.text, row.photo_file_id])).rows[0];
     if (!message) return true;
     const name = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [row.user_id])).rows[0].display_name;
     if (dm.status === 'draft') {
@@ -370,9 +372,9 @@ export class EventBot {
           else if (event.myStatus === 'pending') await reply(botText(locale, 'topicPending', { title: event.title }));
           else if (event.canApply) await reply(botText(locale, 'applyInApp', { title: event.title }));
           else await reply(botText(locale, 'notAccepting'));
-        } else if (await this.command(db, row, locale)) {
+        } else if (!row.photo_file_id && await this.command(db, row, locale)) {
           // Command replies are queued by the command handler.
-        } else if (row.thread_id && !row.text.startsWith('/')) {
+        } else if (row.thread_id && (row.photo_file_id || !row.text.startsWith('/'))) {
           if (await this.dmText(db, row, locale)) {
             // A private topic has its own consent and delivery rules.
           } else {
@@ -382,11 +384,12 @@ export class EventBot {
             const event = await this.adventures.detail(row.user_id, mapping.event_id);
             if (event.canChat) {
               if (row.text.length > 3000) throw new AppError(400, 'MESSAGE_TOO_LONG');
+              if (row.photo_file_id && row.text.length > 900) throw new AppError(400, 'PHOTO_CAPTION_TOO_LONG');
               await this.adventures.review(row.text);
               await transaction(this.pool, async sendDb => {
                 await sendDb.query('SELECT id FROM events WHERE id=$1 FOR SHARE', [event.id]);
                 if (!await can(sendDb, row.user_id, 'events.group_chat', { type: 'event', id: event.id })) throw new AppError(403, 'PERMISSION_DENIED');
-                const message = (await sendDb.query('INSERT INTO event_messages(event_id,sender_id,telegram_update_id,body) VALUES($1,$2,$3,$4) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [event.id, row.user_id, row.update_id, row.text])).rows[0];
+                const message = (await sendDb.query('INSERT INTO event_messages(event_id,sender_id,telegram_update_id,body,photo_file_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [event.id, row.user_id, row.update_id, row.text, row.photo_file_id])).rows[0];
                 if (!message) return;
                 const name = (await sendDb.query('SELECT display_name FROM profiles WHERE user_id=$1', [row.user_id])).rows[0].display_name;
                 const recipients = (await sendDb.query("SELECT user_id FROM event_memberships WHERE event_id=$1 AND status='accepted' AND user_id<>$2", [event.id, row.user_id])).rows;
@@ -395,12 +398,12 @@ export class EventBot {
             } else await reply(botText(locale, event.myStatus === 'pending' ? 'alreadyPending' : 'chatClosed'), event.id);
           }
           }
-        } else await reply(botText(locale, 'botHelp'));
+        } else await reply(botText(locale, row.photo_file_id ? 'chooseTopic' : 'botHelp'));
         await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
       } catch (error) {
         await db.query('ROLLBACK TO SAVEPOINT process_bot_update');
         if (error instanceof ZodError || (error instanceof AppError && error.status < 500)) {
-          const message = botText(locale, error instanceof ZodError ? 'applicationLength' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'explicitContent' : error.code === 'APPLICATION_LINK_NOT_ALLOWED' ? 'noLinks' : error.code === 'MESSAGE_TOO_LONG' ? 'messageLength' : 'unavailable');
+          const message = botText(locale, error instanceof ZodError ? 'applicationLength' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'explicitContent' : error.code === 'APPLICATION_LINK_NOT_ALLOWED' ? 'noLinks' : error.code === 'MESSAGE_TOO_LONG' ? 'messageLength' : error.code === 'PHOTO_CAPTION_TOO_LONG' ? 'photoCaptionLength' : 'unavailable');
           await replyInOrigin(message);
           await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
         } else {
@@ -442,10 +445,11 @@ export class EventBot {
         allowed = allowed && !!owner;
       }
       let relayBody: string | null = null;
+      let relayPhotoId: string | null = null;
       if (allowed && row.kind === 'relay') {
-        const message = (await db.query('SELECT sender_id,body FROM event_messages WHERE id=$1', [row.message_id])).rows[0];
+        const message = (await db.query('SELECT sender_id,body,photo_file_id FROM event_messages WHERE id=$1', [row.message_id])).rows[0];
         allowed = !!message && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id }) && await can(db, message.sender_id, 'events.group_chat', { type: 'event', id: row.event_id });
-        if (allowed) relayBody = message.body;
+        if (allowed) { relayBody = message.body; relayPhotoId = message.photo_file_id; }
       }
       if (allowed && row.kind === 'reminder') allowed = await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id });
       if (row.kind === 'topic_init') {
@@ -476,11 +480,11 @@ export class EventBot {
             && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })
             && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id, eventId: dm.event_id });
           if (row.kind === 'dm_relay') {
-            const message = (await db.query('SELECT sender_id,body FROM dm_messages WHERE id=$1 AND conversation_id=$2', [row.dm_message_id, row.dm_id])).rows[0];
+            const message = (await db.query('SELECT sender_id,body,photo_file_id FROM dm_messages WHERE id=$1 AND conversation_id=$2', [row.dm_message_id, row.dm_id])).rows[0];
             allowed = dm.status === 'accepted' && !!message && message.sender_id === other
               && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })
               && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id, eventId: dm.event_id });
-            if (allowed) relayBody = message.body;
+            if (allowed) { relayBody = message.body; relayPhotoId = message.photo_file_id; }
           }
           // A reply may explain why a closed topic no longer accepts messages.
         }
@@ -497,10 +501,11 @@ export class EventBot {
         const suffix = relayBody === null ? null : `:\n${relayBody}`;
         const author = suffix && row.body.endsWith(suffix) ? row.body.slice(0, -suffix.length) : null;
         const markdown = author && relayBody !== null ? relayMarkdown(author, relayBody) : null;
-        const sent = await this.call('sendMessage', { chat_id: account.telegram_user_id, message_thread_id: thread,
-          text: markdown ?? row.body,
-          parse_mode: markdown ? 'MarkdownV2' : undefined,
-          link_preview_options: { is_disabled: true }, reply_markup: keyboard });
+        const sent = relayPhotoId ? await this.call('sendPhoto', { chat_id: account.telegram_user_id, message_thread_id: thread,
+          photo: relayPhotoId, caption: markdown ?? row.body, parse_mode: markdown ? 'MarkdownV2' : undefined, reply_markup: keyboard })
+          : await this.call('sendMessage', { chat_id: account.telegram_user_id, message_thread_id: thread,
+            text: markdown ?? row.body, parse_mode: markdown ? 'MarkdownV2' : undefined,
+            link_preview_options: { is_disabled: true }, reply_markup: keyboard });
         await db.query("UPDATE bot_outbox SET state='sent',attempts=attempts+1,telegram_message_id=$2 WHERE id=$1", [row.id, sent.message_id]);
       } catch (error) {
         const delay = error instanceof TelegramError ? error.retryAfter : null;

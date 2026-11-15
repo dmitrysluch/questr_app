@@ -112,7 +112,9 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const telegramUser = z.object({ id: z.number().int(), language_code: z.string().max(64).optional() }).passthrough();
     const telegramChat = z.object({ id: z.number().int(), type: z.string() }).passthrough();
     const update = z.object({ update_id: z.number().int(),
-      message: z.object({ text: z.string().max(20000).optional(), message_thread_id: z.number().int().optional(), chat: telegramChat.optional(), from: telegramUser.optional() }).optional(),
+      message: z.object({ text: z.string().max(20000).optional(), caption: z.string().max(2000).optional(),
+        photo: z.array(z.object({ file_id: z.string().min(1).max(1024) }).passthrough()).min(1).max(20).optional(),
+        message_thread_id: z.number().int().optional(), chat: telegramChat.optional(), from: telegramUser.optional() }).optional(),
       callback_query: z.object({ id: z.string().max(128), from: telegramUser, data: z.string().max(64).optional(), message: z.object({ message_id: z.number().int(), chat: telegramChat }).optional() }).optional(),
     }).parse(req.body);
     await transaction(pool, async client => {
@@ -131,9 +133,10 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
           if (message.from.language_code) await client.query("UPDATE users SET locale=$2 WHERE id=(SELECT user_id FROM telegram_accounts WHERE telegram_user_id=$1) AND locale_source='auto'", [telegramId, preferredLocale(message.from.language_code)]);
           await client.query('UPDATE telegram_accounts SET bot_started_at=COALESCE(bot_started_at,now()) WHERE telegram_user_id=$1', [message.from.id]);
         }
-        if (message.text) {
-          await client.query(`INSERT INTO bot_inbox(update_id,user_id,text,thread_id)
-            SELECT $1,user_id,$3,$4 FROM telegram_accounts WHERE telegram_user_id=$2`, [update.update_id, message.from.id, message.text, message.message_thread_id ?? null]);
+        if (message.text || message.photo?.length) {
+          await client.query(`INSERT INTO bot_inbox(update_id,user_id,text,thread_id,photo_file_id)
+            SELECT $1,user_id,$3,$4,$5 FROM telegram_accounts WHERE telegram_user_id=$2`,
+          [update.update_id, message.from.id, message.photo?.length ? message.caption ?? '' : message.text, message.message_thread_id ?? null, message.photo?.at(-1)?.file_id ?? null]);
         }
       }
       const callback = update.callback_query;
