@@ -32,8 +32,11 @@ function Sprite({ appearance: a, alt }: { appearance: AvatarAppearance; alt: str
   const [shirt, shirtShade, shirtLight] = clothes[a.top];
   const isFeminine = a.silhouette === 'feminine';
   const isMasculine = a.silhouette === 'masculine';
-  const left = isMasculine ? 5 : isFeminine ? 9 : 7;
-  const right = 48 - left;
+  // The original portraits occupy roughly 32 of the 48 pixels at the
+  // shoulders. Keep the three silhouettes close to that shared frame so
+  // clothes and headwear still read as parts of the same character.
+  const bodyLeft = isMasculine ? 7 : isFeminine ? 10 : 8;
+  const bodyRight = 48 - bodyLeft;
   const headLeft = isFeminine ? 14 : 13;
   const headRight = 48 - headLeft;
   const longHair = ['long', 'bob', 'ponytail'].includes(a.hairStyle);
@@ -42,16 +45,16 @@ function Sprite({ appearance: a, alt }: { appearance: AvatarAppearance; alt: str
     {/* Hair behind face and shoulders. */}
     {longHair && <><path d={`M${headLeft - 2} 12h${headRight - headLeft + 4}v24h-5v-6h-${headRight - headLeft - 6}v6h-5z`} fill={hairShade} />
       <path d={`M${headLeft - 1} 12h${headRight - headLeft + 2}v20h-3v-12h-${headRight - headLeft - 4}v12h-3z`} fill={hairBase} /></>}
-    {a.hairStyle === 'ponytail' && <><rect x="35" y="15" width="7" height="19" fill={hairShade} /><rect x="37" y="17" width="5" height="14" fill={hairBase} /><rect x="35" y="17" width="5" height="2" fill="#c97865" /></>}
+    {a.hairStyle === 'ponytail' && <><rect x="35" y="15" width="5" height="19" fill={hairShade} /><rect x="37" y="17" width="3" height="14" fill={hairBase} /><rect x="35" y="17" width="5" height="2" fill="#c97865" /></>}
     {/* Torso and arms. */}
-    <path d={`M${left + 5} 31h${right - left - 10}v2h5v2h4v13H${left - 4}V35h4v-2h5z`} fill="#37343b" />
-    <path d={`M${left + 5} 32h${right - left - 10}v2h5v2h3v12H${left - 3}V36h3v-2h5z`} fill={shirt} />
-    <rect x={left - 3} y="41" width="5" height="6" fill={faceShade} /><rect x={right - 2} y="41" width="5" height="6" fill={faceShade} />
-    <path d={`M${left + 5} 34h${right - left - 10}v2h5v2h-5v10H${left + 5}V38h-5v-2h5z`} fill={shirtLight} opacity=".45" />
-    <path d={`M${left + 4} 45h${right - left - 8}v3H${left + 4}z`} fill={shirtShade} />
+    <path d={`M18 31h12v2h${bodyRight - 35}v2h3v4h2v9H${bodyLeft}v-9h2v-4h3v-2h${13 - bodyLeft}z`} fill="#37343b" />
+    <path d={`M18 33h12v2h${bodyRight - 36}v2h3v3h1v8H${bodyLeft + 1}v-8h1v-3h3v-2h${13 - bodyLeft}z`} fill={shirt} />
+    {a.top.endsWith('_tee') && <><rect x={bodyLeft + 1} y="41" width="4" height="6" fill={faceShade} /><rect x={bodyRight - 5} y="41" width="4" height="6" fill={faceShade} /></>}
+    <path d={`M${bodyLeft + 5} 35h${bodyRight - bodyLeft - 10}v2h-3v11H${bodyLeft + 8}V37h-3z`} fill={shirtLight} opacity=".45" />
+    <rect x={bodyLeft + 5} y="45" width={bodyRight - bodyLeft - 10} height="3" fill={shirtShade} />
     {a.top === 'plum_hoodie' && <><path d="M14 32h4v5h12v-5h4v8h-5v-3H19v3h-5z" fill={shirtShade} /><rect x="20" y="38" width="2" height="5" fill="#e5c9ad" /><rect x="26" y="38" width="2" height="5" fill="#e5c9ad" /></>}
     {a.top === 'dark_jacket' && <><path d="M17 33h4l3 5-5 10h-3zM31 33h-4l-3 5 5 10h3z" fill={shirtShade} /><rect x="23" y="38" width="2" height="10" fill="#d5ad85" /></>}
-    {sweater && <><rect x={left - 3} y="43" width="6" height="2" fill={shirtShade} /><rect x={right - 3} y="43" width="6" height="2" fill={shirtShade} /></>}
+    {sweater && <><rect x={bodyLeft + 1} y="43" width="5" height="2" fill={shirtShade} /><rect x={bodyRight - 6} y="43" width="5" height="2" fill={shirtShade} /></>}
     {/* Neck, ears, face and its small features. */}
     <rect x="20" y="27" width="8" height="8" fill={faceShade} /><rect x="21" y="27" width="6" height="6" fill={face} />
     <rect x={headLeft - 3} y="19" width="4" height="7" fill={faceShade} /><rect x={headRight - 1} y="19" width="4" height="7" fill={faceShade} />
@@ -64,8 +67,8 @@ function Sprite({ appearance: a, alt }: { appearance: AvatarAppearance; alt: str
     {isFeminine && <><rect x="17" y="21" width="1" height="1" fill="#292930" /><rect x="30" y="21" width="1" height="1" fill="#292930" /></>}
     {/* Hair on top and around the face. */}
     {a.hairStyle !== 'shaved' && <>
-      <path d={`M${headLeft - 1} 14v-4h3V8h4V6h${headRight - headLeft - 8}v2h4v2h3v4h2v7h-3v-4h-2v-3h-${headRight - headLeft - 4}v3h-2v4h-3v-7z`} fill={hairShade} />
-      <path d={`M${headLeft} 13v-3h4V8h${headRight - headLeft - 8}v2h4v3h2v3h-4v-3h-${headRight - headLeft - 4}v3h-2v3h-2v-6z`} fill={hairBase} />
+      <path d="M12 20v-7h2V9h3V7h4V5h6v2h4v2h3v4h2v7h-3v-5h-2v-3H17v3h-2v5z" fill={hairShade} />
+      <path d="M14 13v-3h3V8h4V6h6v2h4v2h3v3h1v4h-3v-4h-2v-2H18v2h-2v4h-2z" fill={hairBase} />
       <rect x={headLeft + 4} y="8" width="8" height="2" fill={hairLight} />
     </>}
     {a.hairStyle === 'buzz' && <><rect x={headLeft} y="14" width="3" height="4" fill={hairBase} /><rect x={headRight - 3} y="14" width="3" height="4" fill={hairBase} /></>}
@@ -73,11 +76,11 @@ function Sprite({ appearance: a, alt }: { appearance: AvatarAppearance; alt: str
     {a.hairStyle === 'bob' && <><rect x={headLeft - 2} y="17" width="4" height="15" fill={hairBase} /><rect x={headRight - 2} y="17" width="4" height="15" fill={hairBase} /><rect x={headLeft - 2} y="30" width="5" height="2" fill={hairShade} /><rect x={headRight - 3} y="30" width="5" height="2" fill={hairShade} /></>}
     {a.hairStyle === 'long' && <><rect x={headLeft - 2} y="17" width="4" height="22" fill={hairBase} /><rect x={headRight - 2} y="17" width="4" height="22" fill={hairBase} /><rect x={headLeft - 2} y="37" width="6" height="2" fill={hairShade} /><rect x={headRight - 4} y="37" width="6" height="2" fill={hairShade} /></>}
     {a.hairStyle === 'bangs' && <><rect x="16" y="13" width="16" height="5" fill={hairBase} /><rect x="17" y="17" width="5" height="4" fill={hairShade} /><rect x="26" y="17" width="5" height="3" fill={hairShade} /></>}
-    {a.hairStyle === 'curly' && <>{[[13,12],[17,8],[22,7],[27,8],[32,12],[12,17],[34,17],[15,16],[29,15]].map(([x,y]) => <g key={`${x}-${y}`}><rect x={x} y={y} width="5" height="5" fill={hairShade} /><rect x={x + 1} y={y} width="3" height="3" fill={hairBase} /><rect x={x + 1} y={y} width="1" height="1" fill={hairLight} /></g>)}</>}
+    {a.hairStyle === 'curly' && <>{[[14,12],[17,8],[22,7],[27,8],[29,12],[13,17],[30,17],[16,15],[27,15]].map(([x,y]) => <g key={`${x}-${y}`}><rect x={x} y={y} width="5" height="5" fill={hairShade} /><rect x={x + 1} y={y} width="3" height="3" fill={hairBase} /><rect x={x + 1} y={y} width="1" height="1" fill={hairLight} /></g>)}</>}
     {/* Accessories. */}
-    {a.headwear === 'beanie' && <><path d="M13 16v-5h3V8h3V6h10v2h3v3h3v5z" fill="#7d594e" /><path d="M16 12v-3h3V7h10v2h3v3z" fill="#a7755d" /><rect x="12" y="15" width="24" height="4" fill="#694b44" /><rect x="15" y="15" width="18" height="2" fill="#b68368" /></>}
-    {a.headwear === 'headband' && <><rect x="13" y="14" width="22" height="3" fill="#c57974" /><rect x="13" y="17" width="3" height="4" fill="#c57974" /><rect x="32" y="17" width="3" height="4" fill="#c57974" /><rect x="17" y="14" width="5" height="1" fill="#ecaca0" /></>}
-    {a.headwear === 'headphones' && <><path d="M12 22v-7h3V9h4V7h10v2h4v6h3v7h-2v-7h-3v-5H17v5h-3v7z" fill="#373742" /><rect x="11" y="19" width="5" height="10" fill="#3e4854" /><rect x="32" y="19" width="5" height="10" fill="#3e4854" /><rect x="12" y="21" width="2" height="6" fill="#8aa2af" /><rect x="34" y="21" width="2" height="6" fill="#8aa2af" /></>}
+    {a.headwear === 'beanie' && <><path d="M13 17v-6h3V8h3V6h10v2h3v3h3v6z" fill="#40574b" /><path d="M16 12V9h3V7h10v2h3v3z" fill="#78916f" /><rect x="12" y="15" width="24" height="4" fill="#40574b" /><rect x="15" y="15" width="18" height="2" fill="#a6b796" /></>}
+    {a.headwear === 'headband' && <><rect x="13" y="12" width="22" height="4" fill="#d7ac70" /><rect x="13" y="16" width="3" height="5" fill="#a77255" /><rect x="32" y="16" width="3" height="5" fill="#a77255" /><rect x="17" y="13" width="14" height="1" fill="#f4d6a7" /></>}
+    {a.headwear === 'headphones' && <><path d="M10 21v-6h2v-5h3V7h4V5h10v2h4v3h3v5h2v6h-3v-6h-2v-5h-4V8H19v2h-4v5h-2v6z" fill="#373742" /><rect x="10" y="19" width="5" height="11" fill="#3e4854" /><rect x="33" y="19" width="5" height="11" fill="#3e4854" /><rect x="11" y="21" width="2" height="7" fill="#8aa2af" /><rect x="35" y="21" width="2" height="7" fill="#8aa2af" /></>}
     {a.earrings && <><rect x={headLeft - 2} y="26" width="2" height="4" fill="#d8b25e" /><rect x={headRight} y="26" width="2" height="4" fill="#d8b25e" /><rect x={headLeft - 2} y="30" width="2" height="1" fill="#fff0b4" /><rect x={headRight} y="30" width="2" height="1" fill="#fff0b4" /></>}
   </svg>;
 }
