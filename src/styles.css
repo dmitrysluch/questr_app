@@ -103,6 +103,9 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .avatar-choice.selected > span { color: #85462d; }
 .avatar-check { position: absolute; right: -4px; top: -5px; width: 18px; height: 18px; display: grid; place-items: center; background: var(--accent); color: #fff8e9 !important; }
 .avatar-builder { min-width: 0; }
+.avatar-gallery-header { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+.avatar-gallery-header .outline-button { min-height: 40px; }
+.avatar-back-to-presets { margin-bottom: 13px; }
 .avatar-builder-tabs { display: flex; overflow-x: auto; gap: 3px; border-bottom: 1px solid #d5c9b6; margin-bottom: 18px; scrollbar-width: thin; }
 .avatar-builder-tabs button { flex: 0 0 auto; min-height: 38px; padding: 8px 9px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #786b5e; font-size: 11px; }
 .avatar-builder-tabs button[aria-selected="true"] { color: #8e452e; border-bottom-color: #ad6342; background: #f2e7d8; }

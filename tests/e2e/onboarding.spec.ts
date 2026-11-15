@@ -8,7 +8,6 @@ async function register(page: Page, withDiscovery = true) {
   await page.getByLabel('I am 18 or older.').check();
   await page.getByLabel('I agree to the community guidelines.').check();
   await page.getByRole('button', { name: 'Create my character' }).click();
-  await page.getByRole('tab', { name: 'Presets' }).click();
   await page.getByRole('button', { name: 'Choose Moss', exact: true }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('tab', { name: 'Write' })).toBeVisible();
@@ -45,7 +44,10 @@ async function highlightedText(page: Page) {
 test('character builder saves skin, presentation, hair, clothing and accessories', async ({ page }, info) => {
   await register(page);
   await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Character', exact: true }).click();
-  await page.getByRole('tab', { name: 'Face' }).click();
+  await expect(page.getByRole('button', { name: 'Choose Moss', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: `.artifacts/${info.project.name}-avatar-presets.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Customize character' }).click();
+  await expect(page.getByRole('tab', { name: 'Face' })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('button', { name: 'Femme · Deep' }).click();
   await page.getByRole('tab', { name: 'Hair' }).click();
   await page.getByRole('button', { name: 'Curly' }).click();
@@ -56,6 +58,11 @@ test('character builder saves skin, presentation, hair, clothing and accessories
   await page.getByRole('button', { name: 'Headphones' }).click();
   await page.getByLabel('Earrings').check();
   await expect(page.locator('.stage-subtitle')).toHaveText('Custom look');
+  await page.getByRole('button', { name: 'Back to characters' }).click();
+  await expect(page.getByRole('button', { name: 'Choose Moss', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.stage-subtitle')).toHaveText('Custom look');
+  await page.getByRole('button', { name: 'Customize character' }).click();
+  await expect(page.getByRole('button', { name: 'Headphones' })).toHaveAttribute('aria-pressed', 'true');
   await noOverflow(page);
   await page.screenshot({ path: `.artifacts/${info.project.name}-avatar-builder.png`, fullPage: true });
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -180,7 +187,6 @@ test('registration, avatar, custom tags, Markdown, profile editing and reload', 
   await page.getByRole('button', { name: 'Your display name', exact: true }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Alex Coffee');
   await page.getByRole('button', { name: 'Save name' }).click();
-  await page.getByRole('tab', { name: 'Presets' }).click();
   await page.getByRole('button', { name: 'Choose Ember', exact: true }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await preview(page);
