@@ -2,6 +2,7 @@ import { preferredLocale, type Locale } from '../shared/locale.ts';
 
 type Key = 'updated' | 'newApplication' | 'accepted' | 'declined' | 'removed' | 'left' | 'cancelled' | 'completed'
   | 'finishCharacter' | 'topicChatLive' | 'topicChatDemo' | 'topicPending' | 'topicApplyLive' | 'topicApplyDemo'
+  | 'topicReady' | 'topicPreparing' | 'applyInApp' | 'dmTopicReady' | 'dmTopicPreparing'
   | 'notAccepting' | 'chooseTopic' | 'applicationSent' | 'alreadyPending' | 'chatClosed' | 'botHelp'
   | 'applicationLength' | 'explicitContent' | 'noLinks' | 'messageLength' | 'unavailable' | 'processingFailed'
   | 'reminder' | 'openButton' | 'chatsEmpty' | 'chatsList' | 'peopleList' | 'peopleEmpty'
@@ -22,6 +23,11 @@ const copy: Record<Locale, Record<Key, string>> = {
     topicChatLive: '{title}\n\nMessages in this topic go to the accepted party under your QUESTR name. Your messages are sent through OpenRouter to check for explicit sexual content before delivery. Open QUESTR for meeting details.',
     topicChatDemo: '{title}\n\nMessages in this topic go to the accepted party under your QUESTR name. This local demo uses a limited content check. Open QUESTR for meeting details.',
     topicPending: '{title}\n\nYour application is waiting for the host.',
+    topicReady: '{title} — party topic: {link}',
+    topicPreparing: '{title} — your party topic is opening. Check this bot in a moment.',
+    applyInApp: '{title} — open QUESTR to apply. The party topic appears after you are accepted.',
+    dmTopicReady: 'Private topic with {name}: {link}',
+    dmTopicPreparing: 'Private topic with {name} is opening. Write your first message there.',
     topicApplyLive: '{title}\n\nWrite one short text message about this adventure to apply (3–2000 characters, no links or attachments). Your application is sent through OpenRouter to check for explicit sexual content before the host can read it.',
     topicApplyDemo: '{title}\n\nWrite one short text message about this adventure to apply (3–2000 characters, no links or attachments). This local demo uses a limited content check without an AI provider.',
     notAccepting: 'This adventure is not accepting applications.',
@@ -67,6 +73,11 @@ const copy: Record<Locale, Record<Key, string>> = {
     topicChatLive: '«{title}»\n\nСообщения в этой теме видят принятые участники под твоим именем в QUESTR. Перед отправкой они проходят проверку через OpenRouter на откровенно сексуальный контент. Детали встречи — в QUESTR.',
     topicChatDemo: '«{title}»\n\nСообщения в этой теме видят принятые участники под твоим именем в QUESTR. В локальном демо действует ограниченная проверка текста. Детали встречи — в QUESTR.',
     topicPending: '«{title}»\n\nТвоя заявка ждёт ответа организатора.',
+    topicReady: '«{title}» — тема группы: {link}',
+    topicPreparing: '«{title}» — тема группы создаётся. Загляни в этого бота через минуту.',
+    applyInApp: '«{title}» — подай заявку в QUESTR. Тема группы появится после принятия.',
+    dmTopicReady: 'Личная тема с {name}: {link}',
+    dmTopicPreparing: 'Личная тема с {name} создаётся. Первое сообщение напиши там.',
     topicApplyLive: '«{title}»\n\nНапиши короткое сообщение о вылазке для заявки (3–2000 символов, без ссылок и вложений). Перед отправкой организатору оно пройдёт проверку через OpenRouter на откровенно сексуальный контент.',
     topicApplyDemo: '«{title}»\n\nНапиши короткое сообщение о вылазке для заявки (3–2000 символов, без ссылок и вложений). В локальном демо действует ограниченная проверка без ИИ-провайдера.',
     notAccepting: 'На эту вылазку больше не принимают заявки.',

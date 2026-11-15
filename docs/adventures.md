@@ -103,8 +103,11 @@ it does not relax the existing explicit-sexual-content policy.
 
 1. Deploy behind HTTPS; set `AUTH_MODE=telegram`, `TELEGRAM_BOT_TOKEN`,
    `TELEGRAM_WEBHOOK_SECRET`, `PUBLIC_APP_URL`, `APP_ORIGIN`, and secure cookies.
-2. Enable **topics in private chats** for `@questr_game` using BotFather. Verify
-   `getMe.has_topics_enabled`. Regular Telegram groups are not used.
+2. Enable **topics in private chats** for `@questr_game` using BotFather, then
+   disallow users to create new topics there. Verify `getMe.has_topics_enabled`
+   is `true` and `getMe.allows_users_to_create_topics` is `false`. This keeps
+   commands in the bot's main chat; only QUESTR creates party and private topics.
+   Regular Telegram groups are not used.
 3. Register `/api/telegram/webhook` with the matching Bot API `secret_token` and
    `message` and `callback_query` updates. The bot worker starts only in Telegram mode with a configured
    webhook secret. The existing invitation and signed Mini App login still apply.
@@ -114,13 +117,17 @@ it does not relax the existing explicit-sexual-content policy.
    contact is reviewed before delivery. The host notification contains the
    application and Accept/Decline buttons; every press rechecks live permissions,
    event capacity and application status.
-   Existing `/start quest_<id>` links still open an adventure topic in the bot,
-   but opening a bot link alone does not submit an application.
-5. Accept in QUESTR or from the notification, then use “Open party chat”. Text in that topic is delivered
+   Existing `/start quest_<id>` links show the adventure's chat status in the
+   bot; opening a bot link alone does not submit an application.
+5. Creating an adventure queues a party topic for its host. Accepting an application
+   queues a party topic for that participant. If they have not started the bot,
+   the topic is created after their first `/start`. Then use “Open party chat”
+   or the bot's topic link. Text in that topic is delivered
    to accepted members' own topics under the sender's QUESTR display name. Raw
    Telegram messages are not forwarded; IDs/usernames are not shared. Only text
-   messages are supported in v1 (up to 3000 characters). Use `/chats` to list
-   accessible adventures, `/chat <code>` to open a party topic, and
+   messages are supported in v1 (up to 3000 characters). Bot commands and
+   their replies stay in the main chat. Use `/chats` to list
+   accessible adventures, `/chat <code>` to get its party-topic link, and
    `/people <code>` to see accepted participants who have started the bot.
 6. Use `/dm <adventure code> <person code>` to open a private topic and write an
    opener. The other person receives the reviewed opener and must use
@@ -133,10 +140,11 @@ it does not relax the existing explicit-sexual-content policy.
    Party and private messages stop when a participant leaves or the adventure
    closes, including messages queued but not yet delivered.
 
-The Mini App button uses Telegram's `openTelegramLink` when available. A bot
-deep link may still show Telegram's **Start** button before it sends `/start`;
-the Bot API cannot force the client to open a specific private topic directly.
-The bot posts in that topic so it is easy to open from the chat list.
+The Mini App button uses Telegram's `openTelegramLink` when available. Once a
+topic exists, its `https://t.me/questr_game/<thread_id>` link opens that topic.
+Before the user starts the bot, the button uses a `/start` deep link; Telegram
+may show its **Start** button first. The bot posts in the new topic so it is also
+visible in the chat list.
 
 Official references: [private bot topics](https://core.telegram.org/bots/api#createforumtopic),
 [bot account fields](https://core.telegram.org/bots/api#getme), and

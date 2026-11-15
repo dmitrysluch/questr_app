@@ -5,12 +5,12 @@ import { Adventures } from './events.ts';
 import { ContentReviewer } from './moderation.ts';
 import { AppError } from './errors.ts';
 import { can, consumeCapability } from './permissions.ts';
-import { queueBot } from './event-notifications.ts';
+import { queueBot, queuePartyTopic } from './event-notifications.ts';
 import { botText } from './bot-copy.ts';
 import { ZodError } from 'zod';
 
 class TelegramError extends Error {
-  constructor(public retryAfter: number | null) { super('TELEGRAM_DELIVERY_FAILED'); }
+  constructor(public retryAfter: number | null, description = 'TELEGRAM_DELIVERY_FAILED') { super(description); }
 }
 /** Durable, at-most-one active processor per inbox/outbox row. The Bot API has
  * no idempotency keys: ambiguous network failures are kept as failed for review,
@@ -26,7 +26,8 @@ export class EventBot {
     catch { throw new TelegramError(null); }
     let result: any;
     try { result = await response.json(); } catch { throw new TelegramError(null); }
-    if (!response.ok || !result.ok) throw new TelegramError(result.error_code === 429 ? Math.max(1, Math.min(3600, Number(result.parameters?.retry_after) || 30)) : null);
+    if (!response.ok || !result.ok) throw new TelegramError(result.error_code === 429 ? Math.max(1, Math.min(3600, Number(result.parameters?.retry_after) || 30)) : null,
+      `${method}: ${result.error_code ?? response.status} ${String(result.description ?? 'Telegram request failed').slice(0, 200)}`);
     return result.result;
   }
   private async topic(db: PoolClient, userId: string, eventId: string, chatId: string) {
@@ -69,15 +70,19 @@ export class EventBot {
     let command = parts[0].toLowerCase().replace(/@questr_game$/, '');
     const deepLink = command === '/start' && parts.length === 2 ? /^dm_([a-f0-9]{8})_([a-f0-9]{8})$/i.exec(parts[1]) : null;
     if (deepLink) { command = '/dm'; parts.splice(1, 1, deepLink[1], deepLink[2]); }
-    const reply = (body: string, options: { eventId?: string; dmId?: string } = {}) => queueBot(db, {
-      key: `update:${row.update_id}:reply`, userId: row.user_id, body, kind: 'reply',
-      eventId: options.eventId, dmId: options.dmId, inTopic: !!(options.eventId || options.dmId),
-    });
+    const reply = (body: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, body, kind: 'reply' });
     if (command === '/chats' || command === '/start' && parts.length === 1) {
       const events = (await db.query(`SELECT e.id,e.title FROM event_memberships m JOIN events e ON e.id=m.event_id
         WHERE m.user_id=$1 AND m.status='accepted' AND e.status='published' ORDER BY e.starts_at LIMIT 15`, [row.user_id])).rows;
       const available = [];
       for (const event of events) if (await can(db, row.user_id, 'events.group_chat', { type: 'event', id: event.id })) available.push(event);
+      if (command === '/start') {
+        for (const event of available) {
+          if (!(await db.query('SELECT 1 FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, row.user_id])).rowCount)
+            await queuePartyTopic(db, event.id, row.user_id, event.title, this.config.aiMode);
+        }
+        await db.query("UPDATE bot_outbox SET available_at=now() WHERE user_id=$1 AND kind='topic_init' AND state='pending'", [row.user_id]);
+      }
       const eventList = available.map(e => `${e.title.slice(0, 80)} — ${e.id.replaceAll('-', '').slice(0, 8)}`).join('\n');
       const dms = (await db.query(`SELECT c.id,c.event_id,p.display_name,p.user_id AS other_id FROM dm_conversations c
         JOIN profiles p ON p.user_id=CASE WHEN c.first_user_id=$1 THEN c.second_user_id ELSE c.first_user_id END
@@ -89,7 +94,10 @@ export class EventBot {
     }
     if (command === '/chat' && parts.length === 2) {
       const event = await this.eventByCode(db, row.user_id, parts[1]);
-      await reply(event ? botText(locale, this.config.aiMode === 'openrouter' ? 'topicChatLive' : 'topicChatDemo', { title: event.title }) : botText(locale, 'chatNotFound'), event ? { eventId: event.id } : {});
+      if (!event) { await reply(botText(locale, 'chatNotFound')); return true; }
+      const topic = (await db.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, row.user_id])).rows[0];
+      if (!topic) await queuePartyTopic(db, event.id, row.user_id, event.title, this.config.aiMode);
+      await reply(botText(locale, topic ? 'topicReady' : 'topicPreparing', { title: event.title, link: topic ? `https://t.me/questr_game/${topic.thread_id}` : '' }));
       return true;
     }
     if (command === '/people' && parts.length === 2) {
@@ -118,7 +126,10 @@ export class EventBot {
       if (dm?.status === 'declined' || dm?.status === 'blocked' || dm?.status === 'pending' && dm.requested_by !== row.user_id || dm?.status !== 'pending' && !await can(db, row.user_id, capability, { type: 'profile', id: person.user_id, eventId: event.id })) { await reply(botText(locale, 'dmUnavailable')); return true; }
       if (!dm) dm = (await db.query(`INSERT INTO dm_conversations(event_id,first_user_id,second_user_id,requested_by)
         VALUES($1,$2,$3,$4) ON CONFLICT(event_id,first_user_id,second_user_id) DO UPDATE SET updated_at=dm_conversations.updated_at RETURNING *`, [event.id, ...pair, row.user_id])).rows[0];
-      await reply(botText(locale, dm.status === 'accepted' ? 'dmAccepted' : dm.status === 'pending' ? 'dmWaiting' : 'dmStart', { name: person.display_name, title: event.title, code: dm.id.replaceAll('-', '').slice(0, 8) }), { dmId: dm.id });
+      const topic = (await db.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [dm.id, row.user_id])).rows[0];
+      if (!topic && ['draft', 'accepted'].includes(dm.status)) await queueBot(db, { key: `dm:${dm.id}:topic:${row.user_id}`, userId: row.user_id, dmId: dm.id, kind: 'reply', inTopic: true,
+        body: botText(locale, dm.status === 'accepted' ? 'dmAccepted' : 'dmStart', { name: person.display_name, title: event.title, code: dm.id.replaceAll('-', '').slice(0, 8) }) });
+      await reply(botText(locale, dm.status === 'pending' ? 'dmWaiting' : topic ? 'dmTopicReady' : 'dmTopicPreparing', { name: person.display_name, link: topic ? `https://t.me/questr_game/${topic.thread_id}` : '' }));
       return true;
     }
     if (['/accept', '/decline', '/block'].includes(command) && parts.length === 2) {
@@ -207,6 +218,15 @@ export class EventBot {
       const row = (await db.query("SELECT * FROM bot_inbox WHERE state='pending' AND available_at<=now() ORDER BY update_id LIMIT 1 FOR UPDATE SKIP LOCKED")).rows[0];
       if (!row) return false;
       const reply = (body: string, eventId?: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, eventId, body, kind: 'reply', inTopic: !!eventId });
+      const replyInOrigin = async (body: string) => {
+        if (row.thread_id) {
+          const dm = (await db.query('SELECT conversation_id FROM dm_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
+          if (dm) return queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, dmId: dm.conversation_id, body, kind: 'reply', inTopic: true });
+          const event = (await db.query('SELECT event_id FROM event_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
+          if (event) return reply(body, event.event_id);
+        }
+        return reply(body);
+      };
       let locale = 'en';
       await db.query('SAVEPOINT process_bot_update');
       try {
@@ -218,9 +238,13 @@ export class EventBot {
           const raw = row.text.split('quest_')[1];
           const eventId = `${raw.slice(0,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}-${raw.slice(16,20)}-${raw.slice(20)}`;
           const event = await this.adventures.detail(row.user_id, eventId);
-          if (event.canChat) await reply(botText(locale, this.config.aiMode === 'openrouter' ? 'topicChatLive' : 'topicChatDemo', { title: event.title }), eventId);
-          else if (event.myStatus === 'pending') await reply(botText(locale, 'topicPending', { title: event.title }), eventId);
-          else if (event.canApply) await reply(botText(locale, this.config.aiMode === 'openrouter' ? 'topicApplyLive' : 'topicApplyDemo', { title: event.title }), eventId);
+          if (event.canChat) {
+            const topic = (await db.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [eventId, row.user_id])).rows[0];
+            if (!topic) await queuePartyTopic(db, eventId, row.user_id, event.title, this.config.aiMode);
+            await reply(botText(locale, topic ? 'topicReady' : 'topicPreparing', { title: event.title, link: topic ? `https://t.me/questr_game/${topic.thread_id}` : '' }));
+          }
+          else if (event.myStatus === 'pending') await reply(botText(locale, 'topicPending', { title: event.title }));
+          else if (event.canApply) await reply(botText(locale, 'applyInApp', { title: event.title }));
           else await reply(botText(locale, 'notAccepting'));
         } else if (await this.command(db, row, locale)) {
           // Command replies are queued by the command handler.
@@ -244,9 +268,6 @@ export class EventBot {
                 const recipients = (await sendDb.query("SELECT user_id FROM event_memberships WHERE event_id=$1 AND status='accepted' AND user_id<>$2", [event.id, row.user_id])).rows;
                 for (const recipient of recipients) await queueBot(sendDb, { key: `message:${message.id}:${recipient.user_id}`, userId: recipient.user_id, eventId: event.id, messageId: message.id, kind: 'relay', inTopic: true, body: `${name}:\n${row.text}` });
               });
-            } else if (event.canApply) {
-              await this.adventures.apply(row.user_id, event.id, { message: row.text });
-              await reply(botText(locale, 'applicationSent'), event.id);
             } else await reply(botText(locale, event.myStatus === 'pending' ? 'alreadyPending' : 'chatClosed'), event.id);
           }
           }
@@ -256,14 +277,15 @@ export class EventBot {
         await db.query('ROLLBACK TO SAVEPOINT process_bot_update');
         if (error instanceof ZodError || (error instanceof AppError && error.status < 500)) {
           const message = botText(locale, error instanceof ZodError ? 'applicationLength' : error.code === 'EVENT_CONTENT_REQUIRES_CHANGES' ? 'explicitContent' : error.code === 'APPLICATION_LINK_NOT_ALLOWED' ? 'noLinks' : error.code === 'MESSAGE_TOO_LONG' ? 'messageLength' : 'unavailable');
-          const dmTopic = row.thread_id ? (await db.query('SELECT conversation_id FROM dm_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0] : null;
-          if (dmTopic) await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, dmId: dmTopic.conversation_id, body: message, kind: 'reply', inTopic: true });
-          else await reply(message);
+          await replyInOrigin(message);
           await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
         } else {
           const terminal = row.attempts >= 2;
           await db.query("UPDATE bot_inbox SET state=$2,attempts=attempts+1,available_at=now()+interval '30 seconds' WHERE update_id=$1", [row.update_id, terminal ? 'failed' : 'pending']);
-          if (terminal) await reply(botText(locale, 'processingFailed'));
+          if (terminal) {
+            console.error('QUESTR bot inbox failed:', { updateId: row.update_id, error: error instanceof AppError ? error.code : error instanceof Error ? error.name : String(error) });
+            await replyInOrigin(botText(locale, 'processingFailed'));
+          }
         }
       }
       return true;
@@ -300,6 +322,17 @@ export class EventBot {
         allowed = !!message && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id }) && await can(db, message.sender_id, 'events.group_chat', { type: 'event', id: row.event_id });
       }
       if (allowed && row.kind === 'reminder') allowed = await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id });
+      if (row.kind === 'topic_init') {
+        allowed = await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id });
+        if (allowed && (await db.query('SELECT 1 FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [row.event_id, row.user_id])).rowCount) {
+          await db.query("UPDATE bot_outbox SET state='discarded' WHERE id=$1", [row.id]);
+          return true;
+        }
+        if (allowed && !account) {
+          await db.query("UPDATE bot_outbox SET available_at=now()+interval '1 minute' WHERE id=$1", [row.id]);
+          return true;
+        }
+      }
       if (allowed && row.kind === 'application') {
         const application = (await db.query('SELECT status,application_attempt_id FROM event_memberships WHERE event_id=$1 AND user_id=$2', [row.event_id, row.application_user_id])).rows[0];
         allowed = application?.status === 'pending' && application.application_attempt_id === row.application_attempt_id && await can(db, row.user_id, 'events.accept', { type: 'event', id: row.event_id });
@@ -341,12 +374,18 @@ export class EventBot {
         await db.query("UPDATE bot_outbox SET state='sent',attempts=attempts+1,telegram_message_id=$2 WHERE id=$1", [row.id, sent.message_id]);
       } catch (error) {
         const delay = error instanceof TelegramError ? error.retryAfter : null;
-        await db.query("UPDATE bot_outbox SET state=$2,attempts=attempts+1,available_at=now()+($3::int*interval '1 second') WHERE id=$1", [row.id, delay !== null && row.attempts < 5 ? 'pending' : 'failed', delay ?? 30]);
+        const retry = delay !== null && row.attempts < 5;
+        await db.query("UPDATE bot_outbox SET state=$2,attempts=attempts+1,available_at=now()+($3::int*interval '1 second') WHERE id=$1", [row.id, retry ? 'pending' : 'failed', delay ?? 30]);
+        if (!retry) console.error('QUESTR bot delivery failed:', { outboxId: row.id, kind: row.kind, error: error instanceof Error ? error.message : String(error) });
       }
       return true;
     });
   }
   start() {
+    void this.call('getMe', {}).then(me => {
+      if (!me.has_topics_enabled) console.warn('QUESTR bot: enable private-chat topics in BotFather.');
+      if (me.allows_users_to_create_topics) console.warn('QUESTR bot: disallow users to create topics in BotFather so commands stay in the main chat.');
+    }).catch(() => console.warn('QUESTR bot: could not verify BotFather topic settings.'));
     let running: Promise<void> | undefined;
     let stopping = false;
     const timer = setInterval(() => {

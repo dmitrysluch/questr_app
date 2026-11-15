@@ -291,7 +291,7 @@ integration('editing uses revisions, preserves accepted seats and never puts a p
   assert.equal(await can(pool, guest.id, 'events.group_chat', { type: 'event', id: event.id }), false);
   await guest.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
 });
-integration('bot topics, retries, moderated applications and delivery-time revocation use real SQL and a fake Telegram API', async () => {
+integration('party topics appear on acceptance and relay messages without a bot command', async () => {
   const host = await person('Host'), guest = await person('Guest'), other = await person('Other');
   const event = await create(host, { capacity: 3 });
   for (const [who, telegramId] of [[host,1001],[guest,1002],[other,1003]] as const) await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id,bot_started_at) VALUES($1,$2,now())', [who.id,telegramId]);
@@ -301,20 +301,25 @@ integration('bot topics, retries, moderated applications and delivery-time revoc
   const webhook = (update: any) => request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret').send(update).expect(200);
   const start = { update_id: 8001, message: { from: { id: 1002, username: 'PRIVATE_USERNAME' }, chat: { id: 1002, type: 'private' }, text: `/start quest_${event.id.replaceAll('-','')}` } };
   await webhook(start); await webhook(start); await bot.inbox();
+  assert.equal((await pool.query("SELECT in_topic FROM bot_outbox WHERE dedupe_key='update:8001:reply'")).rows[0].in_topic, false);
+  assert.equal((await pool.query('SELECT 1 FROM event_bot_topics WHERE user_id=$1 AND event_id=$2', [guest.id,event.id])).rowCount, 0);
+  await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200);
+  await apply(other, event.id); await decide(host, event.id, other.id, 'accept').expect(200);
   while (await bot.outbox()) { /* drain notifications too */ }
   const topic = (await pool.query('SELECT thread_id FROM event_bot_topics WHERE user_id=$1 AND event_id=$2', [guest.id,event.id])).rows[0].thread_id;
-  assert.equal(calls.filter(c => c.method === 'createForumTopic').length, 1);
+  assert.equal(calls.filter(c => c.method === 'createForumTopic').length, 3);
+  assert.match((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.botUrl, new RegExp(`/${topic}$`));
+  await webhook({ update_id: 8008, message: { from: { id: 1002 }, chat: { id: 1002, type: 'private' }, text: `/chat ${event.id.replaceAll('-', '').slice(0, 8)}` } });
+  await bot.inbox();
+  const chatReply = (await pool.query("SELECT body,in_topic FROM bot_outbox WHERE dedupe_key='update:8008:reply'")).rows[0];
+  assert.equal(chatReply.in_topic, false); assert.match(chatReply.body, new RegExp(`/${topic}$`));
+  assert.equal(calls.filter(c => c.method === 'createForumTopic').length, 3);
   await webhook({ update_id: 8002, message: { from: { id: 1002 }, chat: { id: -123, type: 'group' }, message_thread_id: Number(topic), text: 'Group text must not apply' } });
   assert.equal(await bot.inbox(), false);
   const text = (update_id: number, body: string) => webhook({ update_id, message: { from: { id: 1002, username: 'PRIVATE_USERNAME' }, chat: { id: 1002, type: 'private' }, message_thread_id: Number(topic), text: body } });
   await text(8003, 'I want to have sex with you.'); await bot.inbox();
-  assert.equal((await pool.query('SELECT 1 FROM event_memberships WHERE user_id=$1 AND event_id=$2', [guest.id,event.id])).rowCount, 0);
-  await text(8004, 'I will bring my jazz records.'); await bot.inbox();
-  assert.equal((await pool.query('SELECT status FROM event_memberships WHERE user_id=$1 AND event_id=$2', [guest.id,event.id])).rows[0].status, 'pending');
-  await decide(host, event.id, guest.id, 'accept').expect(200); await apply(other, event.id); await decide(host, event.id, other.id, 'accept').expect(200);
-  await text(8007, 'I want to have sex with you.'); await bot.inbox();
-  assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8007')).rowCount, 0);
-  assert.ok((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:8007:reply'")).rows[0].body.includes('QUESTR messages'));
+  assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8003')).rowCount, 0);
+  assert.ok((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:8003:reply'")).rows[0].body.includes('QUESTR messages'));
   await text(8005, 'See you at seven!'); await text(8005, 'See you at seven!'); await bot.inbox();
   assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8005')).rowCount, 1);
   await other.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
@@ -326,6 +331,27 @@ integration('bot topics, retries, moderated applications and delivery-time revoc
   await host.agent.post(`/api/events/${event.id}/status`).send({ status: 'cancelled', revision: 0 }).expect(200);
   await text(8006, 'This cannot be relayed.'); await bot.inbox();
   assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8006')).rowCount, 0);
+});
+integration('starting the bot wakes a queued party topic and keeps the command in the main chat', async () => {
+  const host = await person('Host');
+  const event = await create(host);
+  await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id) VALUES($1,2201)', [host.id]);
+  await pool.query("UPDATE bot_outbox SET available_at=now()+interval '1 hour' WHERE state='pending' AND user_id<>$1", [host.id]);
+  const calls: { method: string; body: any }[] = [];
+  const bot = new EventBot(pool, config, (async (url: string | URL | Request, options?: RequestInit) => {
+    const method = String(url).split('/').at(-1)!; const body = JSON.parse(String(options?.body)); calls.push({ method, body });
+    return Response.json({ ok: true, result: method === 'createForumTopic' ? { message_thread_id: 221 } : { message_id: calls.length } });
+  }) as typeof fetch);
+  assert.equal(await bot.outbox(), true);
+  assert.equal((await pool.query("SELECT state FROM bot_outbox WHERE user_id=$1 AND kind='topic_init'", [host.id])).rows[0].state, 'pending');
+  assert.equal(calls.length, 0);
+  await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret').send({ update_id: 8201, message: { from: { id: 2201 }, chat: { id: 2201, type: 'private' }, text: '/start' } }).expect(200);
+  assert.equal(await bot.inbox(), true);
+  assert.equal((await pool.query("SELECT in_topic FROM bot_outbox WHERE dedupe_key='update:8201:reply'")).rows[0].in_topic, false);
+  while (await bot.outbox()) { /* Deliver both the party intro and the main-chat reply. */ }
+  assert.equal(calls.filter(call => call.method === 'createForumTopic').length, 1);
+  assert.equal((await pool.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, host.id])).rows[0].thread_id, '221');
+  assert.ok(calls.some(call => call.method === 'sendMessage' && call.body.message_thread_id === undefined && call.body.text.includes('Party chats')));
 });
 integration('bot commands select party and private topics; consent and live roles gate DM delivery', async () => {
   const host = await person('Host'), guest = await person('Guest'), other = await person('Other');
@@ -420,9 +446,11 @@ integration('character page starts consent-based private chat and Telegram conta
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [contact.id])).rows[0].status, 'accepted');
   assert.match((await pool.query("SELECT body FROM bot_outbox WHERE kind='dm_accept' AND user_id=$1 AND dm_id=$2", [other.id, contact.id])).rows[0].body, /does not reveal it automatically/);
   assert.equal((await guest.agent.get(`/api/events/${event.id}/profiles/${other.id}`).expect(200)).body.connection.status, 'accepted');
+  while (await bot.outbox()) { /* Create the accepted private topics before following the deep link. */ }
   await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret').send({ update_id: 9502, message: { from: { id: 5102 }, chat: { id: 5102, type: 'private' }, text: `/start dm_${event.id.replaceAll('-', '').slice(0, 8)}_${other.id.replaceAll('-', '').slice(0, 8)}` } }).expect(200);
   assert.equal(await bot.inbox(), true);
-  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9502:reply'")).rows[0].body, /Private chat with Other is open/);
+  const deepLinkReply = (await pool.query("SELECT body,in_topic FROM bot_outbox WHERE dedupe_key='update:9502:reply'")).rows[0];
+  assert.equal(deepLinkReply.in_topic, false); assert.match(deepLinkReply.body, /Private topic with Other: https:\/\/t.me\/questr_game\//);
 });
 integration('blocked accounts cannot chat or expose their character, while hosts can release their occupied seat', async () => {
   const host = await person(), guest = await person(); const event = await create(host);

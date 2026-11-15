@@ -8,7 +8,7 @@ import { can, consumeCapability, requireCapability } from './permissions.ts';
 import { ContentReviewer, reviewContent } from './moderation.ts';
 import { getProfile } from './store.ts';
 import { tagKey, type ProfileTag } from '../shared/schema.ts';
-import { queueBot, notifyMembers, recipientLocale } from './event-notifications.ts';
+import { queueBot, queuePartyTopic, notifyMembers, recipientLocale } from './event-notifications.ts';
 import { botText } from './bot-copy.ts';
 
 type Db = Pool | PoolClient;
@@ -138,7 +138,13 @@ export class Adventures {
         participants: members.filter(member => member.status === 'accepted'), applications: manage ? members.filter(member => member.status === 'pending') : [],
         canApply: (!event.myStatus || event.myStatus === 'withdrawn') && !event.isHost && row.status === 'published' && row.recruitment_open && row.starts_at.getTime() > Date.now() && event.participantCount < event.capacity,
         canEdit: editable && row.status === 'published' && row.starts_at.getTime() > Date.now(), canManage: manage, canChat: chat,
-        botUrl: `https://t.me/questr_game?start=quest_${eventId.replaceAll('-', '')}` };
+        botUrl: await (async () => {
+          if (chat) {
+            const topic = (await db.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [eventId, userId])).rows[0];
+            if (topic) return `https://t.me/questr_game/${topic.thread_id}`;
+          }
+          return `https://t.me/questr_game?start=quest_${eventId.replaceAll('-', '')}`;
+        })() };
     });
   }
   async create(userId: string, body: unknown) {
@@ -163,6 +169,7 @@ export class Adventures {
       await db.query("INSERT INTO event_memberships(event_id,user_id,role,status) VALUES($1,$2,'host','accepted')", [row.id, userId]);
       await grantEventRole(db, row.id, userId, 'organizer', userId);
       await audit(db, row.id, userId, 'created');
+      await queuePartyTopic(db, row.id, userId, fields.title, this.reviewer.mode);
       return row.id;
     });
     return this.detail(userId, eventId);
@@ -246,6 +253,7 @@ export class Adventures {
       await db.query('UPDATE event_memberships SET status=$3,updated_at=now() WHERE event_id=$1 AND user_id=$2', [eventId, targetId, status]);
       await audit(db, eventId, userId, status);
       await queueBot(db, { key: `event:${eventId}:${status}:${targetId}:${member.application_attempt_id ?? 'legacy'}`, userId: targetId, eventId, body: botText(await recipientLocale(db, targetId), status === 'accepted' ? 'accepted' : status === 'declined' ? 'declined' : 'removed', { title: row.title }) });
+      if (action === 'accept') await queuePartyTopic(db, eventId, targetId, row.title, this.reviewer.mode);
       if (action === 'leave') await queueBot(db, { key: `event:${eventId}:left:${targetId}:${member.application_attempt_id ?? 'legacy'}`, userId: row.created_by, eventId, body: botText(await recipientLocale(db, row.created_by), 'left', { title: row.title }) });
     });
     return action === 'leave' ? null : this.detail(userId, eventId);
