@@ -7,6 +7,7 @@ import { AppError } from './errors.ts';
 import { can, consumeCapability } from './permissions.ts';
 import { queueBot, queuePartyTopic } from './event-notifications.ts';
 import { botText } from './bot-copy.ts';
+import { relayMarkdown } from './telegram-markdown.ts';
 import { ZodError } from 'zod';
 
 class TelegramError extends Error {
@@ -317,9 +318,11 @@ export class EventBot {
         const owner = (await db.query("SELECT 1 FROM events e JOIN users u ON u.id=e.created_by WHERE e.id=$1 AND u.status='active'", [row.event_id])).rowCount;
         allowed = allowed && !!owner;
       }
+      let relayBody: string | null = null;
       if (allowed && row.kind === 'relay') {
-        const message = (await db.query('SELECT sender_id FROM event_messages WHERE id=$1', [row.message_id])).rows[0];
+        const message = (await db.query('SELECT sender_id,body FROM event_messages WHERE id=$1', [row.message_id])).rows[0];
         allowed = !!message && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id }) && await can(db, message.sender_id, 'events.group_chat', { type: 'event', id: row.event_id });
+        if (allowed) relayBody = message.body;
       }
       if (allowed && row.kind === 'reminder') allowed = await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id });
       if (row.kind === 'topic_init') {
@@ -352,10 +355,11 @@ export class EventBot {
             && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })
             && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id, eventId: dm.event_id });
           if (row.kind === 'dm_relay') {
-            const message = (await db.query('SELECT sender_id FROM dm_messages WHERE id=$1 AND conversation_id=$2', [row.dm_message_id, row.dm_id])).rows[0];
+            const message = (await db.query('SELECT sender_id,body FROM dm_messages WHERE id=$1 AND conversation_id=$2', [row.dm_message_id, row.dm_id])).rows[0];
             allowed = dm.status === 'accepted' && !!message && message.sender_id === other
               && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })
               && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id, eventId: dm.event_id });
+            if (allowed) relayBody = message.body;
           }
           // A reply may explain why a closed topic no longer accepts messages.
         }
@@ -370,7 +374,13 @@ export class EventBot {
           [{ text: botText(account.locale, 'acceptButton'), callback_data: `application:accept:${row.id}` }, { text: botText(account.locale, 'declineButton'), callback_data: `application:decline:${row.id}` }],
           ...(openButton ? [[openButton]] : []),
         ] } : openButton ? { inline_keyboard: [[openButton]] } : undefined;
-        const sent = await this.call('sendMessage', { chat_id: account.telegram_user_id, message_thread_id: thread, text: row.body, link_preview_options: { is_disabled: true }, reply_markup: keyboard });
+        const suffix = relayBody === null ? null : `:\n${relayBody}`;
+        const author = suffix && row.body.endsWith(suffix) ? row.body.slice(0, -suffix.length) : null;
+        const markdown = author && relayBody !== null ? relayMarkdown(author, relayBody) : null;
+        const sent = await this.call('sendMessage', { chat_id: account.telegram_user_id, message_thread_id: thread,
+          text: markdown ?? row.body,
+          parse_mode: markdown ? 'MarkdownV2' : undefined,
+          link_preview_options: { is_disabled: true }, reply_markup: keyboard });
         await db.query("UPDATE bot_outbox SET state='sent',attempts=attempts+1,telegram_message_id=$2 WHERE id=$1", [row.id, sent.message_id]);
       } catch (error) {
         const delay = error instanceof TelegramError ? error.retryAfter : null;

@@ -292,7 +292,7 @@ integration('editing uses revisions, preserves accepted seats and never puts a p
   await guest.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
 });
 integration('party topics appear on acceptance and relay messages without a bot command', async () => {
-  const host = await person('Host'), guest = await person('Guest'), other = await person('Other');
+  const host = await person('Host'), guest = await person('Guest [jazz]'), other = await person('Other');
   const event = await create(host, { capacity: 3 });
   for (const [who, telegramId] of [[host,1001],[guest,1002],[other,1003]] as const) await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id,bot_started_at) VALUES($1,$2,now())', [who.id,telegramId]);
   const calls: { method: string; body: any }[] = []; let thread = 100; let message = 0;
@@ -320,12 +320,13 @@ integration('party topics appear on acceptance and relay messages without a bot 
   await text(8003, 'I want to have sex with you.'); await bot.inbox();
   assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8003')).rowCount, 0);
   assert.ok((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:8003:reply'")).rows[0].body.includes('QUESTR messages'));
-  await text(8005, 'See you at seven!'); await text(8005, 'See you at seven!'); await bot.inbox();
+  await text(8005, 'See you at seven! (bring *vinyl*).'); await text(8005, 'See you at seven! (bring *vinyl*).'); await bot.inbox();
   assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8005')).rowCount, 1);
   await other.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
   while (await bot.outbox()) { /* dispatch with live permissions */ }
-  const relays = calls.filter(c => c.method === 'sendMessage' && c.body.text.includes('See you at seven!'));
-  assert.equal(relays.length, 1); assert.equal(String(relays[0].body.chat_id), '1001'); assert.equal(relays[0].body.text, 'Guest:\nSee you at seven!');
+  const relays = calls.filter(c => c.method === 'sendMessage' && c.body.parse_mode === 'MarkdownV2' && String(c.body.chat_id) === '1001');
+  assert.equal(relays.length, 1);
+  assert.equal(relays[0].body.text, '*Guest \\[jazz\\]*:\nSee you at seven\\! \\(bring \\*vinyl\\*\\)\\.');
   assert.ok(!JSON.stringify(calls).includes('PRIVATE_USERNAME')); assert.ok(!JSON.stringify(calls).includes(event.meetingDetails));
   assert.equal((await pool.query("SELECT state FROM bot_outbox WHERE kind='relay' AND user_id=$1", [other.id])).rows[0].state, 'discarded');
   await host.agent.post(`/api/events/${event.id}/status`).send({ status: 'cancelled', revision: 0 }).expect(200);
@@ -390,7 +391,7 @@ integration('bot commands select party and private topics; consent and live role
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [dm.id])).rows[0].n, 1);
   await send(9006, 3001, `/accept ${dm.id.replaceAll('-', '').slice(0, 8)}`); await drain();
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'accepted');
-  assert.ok(calls.some(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.text.includes('Guest:\nI can bring my jazz records.')));
+  assert.ok(calls.some(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.parse_mode === 'MarkdownV2' && c.body.text === '*Guest*:\nI can bring my jazz records\\.'));
   const otherCode = other.id.replaceAll('-', '').slice(0, 8);
   await send(9008, 3002, `/dm ${eventCode} ${otherCode}`); await drain();
   const second = (await pool.query('SELECT id,status FROM dm_conversations WHERE event_id=$1 AND requested_by=$2 AND id<>$3', [event.id, guest.id, dm.id])).rows[0];
