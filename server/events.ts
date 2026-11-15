@@ -12,7 +12,7 @@ import { botText } from './bot-copy.ts';
 
 type Db = Pool | PoolClient;
 const eventProjection = `SELECT e.*,l.name AS location_name,l.kind AS location_kind,l.parent_id,p.name AS country_name,
-  h.display_name AS host_name,h.avatar_preset_id AS host_avatar,
+  h.display_name AS host_name,h.avatar_preset_id AS host_avatar,h.avatar_appearance AS host_appearance,
   (SELECT count(*)::int FROM event_memberships m WHERE m.event_id=e.id AND m.status='accepted') AS participant_count,
   (SELECT status FROM event_memberships WHERE event_id=e.id AND user_id=$1) AS my_status
   FROM events e JOIN locations l ON l.id=e.location_id LEFT JOIN locations p ON p.id=l.parent_id
@@ -24,7 +24,7 @@ function mapEvent(row: any, userId: string): Adventure {
     location: { id: row.location_id, name: row.location_name, kind: row.location_kind, parentId: row.parent_id, countryName: row.country_name },
     languageCode: row.language_code, startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), timeZone: row.time_zone,
     capacity: row.capacity, participantCount: row.participant_count, revision: row.revision, status: row.status,
-    host: { id: row.created_by, displayName: row.host_name, avatarId: row.host_avatar }, myStatus: row.my_status ?? null, isHost: row.created_by === userId };
+    host: { id: row.created_by, displayName: row.host_name, avatarId: row.host_avatar, avatarAppearance: row.host_appearance }, myStatus: row.my_status ?? null, isHost: row.created_by === userId };
 }
 async function activeUser(db: Db, userId: string) {
   if (!(await db.query("SELECT 1 FROM users WHERE id=$1 AND status='active'", [userId])).rowCount) throw new AppError(403, 'PROFILE_REQUIRED');
@@ -107,7 +107,7 @@ export class Adventures {
       const editable = await can(db, userId, 'events.edit', { type: 'event', id: eventId });
       const manage = row.status === 'published' && await can(db, userId, 'events.accept', { type: 'event', id: eventId });
       const chat = await can(db, userId, 'events.group_chat', { type: 'event', id: eventId });
-      const rawMembers = (chat || editable) ? (await db.query(`SELECT m.user_id AS id,p.display_name AS "displayName",p.avatar_preset_id AS "avatarId",m.role,m.status,(u.status<>'active') AS unavailable,
+      const rawMembers = (chat || editable) ? (await db.query(`SELECT m.user_id AS id,p.display_name AS "displayName",p.avatar_preset_id AS "avatarId",p.avatar_appearance AS "avatarAppearance",m.role,m.status,(u.status<>'active') AS unavailable,
         p.ask_me_topics AS "askMeTopics",(p.open_to_romance AND (SELECT open_to_romance FROM profiles WHERE user_id=$3) AND m.user_id<>$3) AS "romanceMatch",
         CASE WHEN $2 THEN m.application_text ELSE NULL END AS "applicationText"
         FROM event_memberships m JOIN profiles p ON p.user_id=m.user_id JOIN users u ON u.id=m.user_id

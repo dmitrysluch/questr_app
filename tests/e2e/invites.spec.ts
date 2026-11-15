@@ -10,6 +10,7 @@ async function character(page: Page, name: string) {
   await page.getByLabel('I agree to the community guidelines.').check();
   await page.getByRole('button', { name: 'Create my character' }).click();
   const state = await (await page.request.get('/api/me')).json();
+  await page.getByRole('tab', { name: 'Presets' }).click();
   await page.getByRole('button', { name: 'Choose Moss', exact: true }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Languages & filters' }).click();

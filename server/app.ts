@@ -206,8 +206,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     await requireCapability(pool, currentUser(res).id, 'profile.edit', { type: 'profile', id: currentUser(res).id });
     const input = draftInputSchema.parse(req.body);
     const { rows } = await pool.query(`UPDATE profile_drafts SET display_name=$2,avatar_preset_id=$3,intro_markdown=$4,tags=$5,
-      mode=$6,current_step=$7,spoken_languages=$9,open_to_romance=$10,ask_me_topics=$11,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
-    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages, input.openToRomance, JSON.stringify(input.askMeTopics)]);
+      mode=$6,current_step=$7,spoken_languages=$9,open_to_romance=$10,ask_me_topics=$11,avatar_appearance=$12,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
+    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages, input.openToRomance, JSON.stringify(input.askMeTopics), input.avatarAppearance ? JSON.stringify(input.avatarAppearance) : null]);
     if (!rows[0]) throw new AppError(409, 'DRAFT_CONFLICT');
     res.json({ draft: mapDraft(rows[0]) });
   });
@@ -232,9 +232,9 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
         const discovery = await getDiscovery(client, userId);
         if (!discovery.locationIds.length || !discovery.languageCodes.length) throw new AppError(422, 'DISCOVERY_REQUIRED');
       }
-      await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown,open_to_romance,ask_me_topics) VALUES($1,$2,$3,$4,$5,$6)
+      await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown,open_to_romance,ask_me_topics,avatar_appearance) VALUES($1,$2,$3,$4,$5,$6,$7)
         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,avatar_preset_id=EXCLUDED.avatar_preset_id,
-        intro_markdown=EXCLUDED.intro_markdown,open_to_romance=EXCLUDED.open_to_romance,ask_me_topics=EXCLUDED.ask_me_topics,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown, draft.openToRomance, JSON.stringify(draft.askMeTopics)]);
+        intro_markdown=EXCLUDED.intro_markdown,open_to_romance=EXCLUDED.open_to_romance,ask_me_topics=EXCLUDED.ask_me_topics,avatar_appearance=EXCLUDED.avatar_appearance,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown, draft.openToRomance, JSON.stringify(draft.askMeTopics), draft.avatarAppearance ? JSON.stringify(draft.avatarAppearance) : null]);
       await client.query('DELETE FROM profile_tags WHERE user_id=$1', [userId]);
       await client.query('DELETE FROM profile_languages WHERE user_id=$1', [userId]);
       await client.query('INSERT INTO profile_languages(user_id,language_code,position) SELECT $1,code,ordinality-1 FROM unnest($2::text[]) WITH ORDINALITY AS x(code,ordinality)', [userId, draft.spokenLanguages]);

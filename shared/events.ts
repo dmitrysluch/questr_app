@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { languageCodeSchema, locationIdSchema, type Location } from './discovery.ts';
 import type { Profile, ProfileTag } from './schema.ts';
+import type { AvatarAppearance } from './avatar.ts';
 
 export const timeZoneSchema = z.string().max(100).refine(zone => {
   try { new Intl.DateTimeFormat('en', { timeZone: zone }); return true; } catch { return false; }
@@ -31,7 +32,7 @@ export function hasPublicLink(text: string): boolean {
 }
 export type MemberStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'removed';
 export interface EventPerson {
-  id: string; displayName: string; avatarId: string; role: 'host' | 'participant'; status: MemberStatus;
+  id: string; displayName: string; avatarId: string; avatarAppearance: AvatarAppearance | null; role: 'host' | 'participant'; status: MemberStatus;
   unavailable?: boolean; applicationText?: string; matchingTags: ProfileTag[]; romanceMatch: boolean; askMeTopics: string[];
 }
 export interface Adventure {
@@ -39,7 +40,7 @@ export interface Adventure {
   experienceNotes: string; onlinePlatform: string; recruitmentOpen: boolean; location: Location; languageCode: string;
   startsAt: string; endsAt: string; timeZone: string; capacity: number; participantCount: number; revision: number;
   status: 'draft' | 'published' | 'cancelled' | 'completed';
-  host: Pick<EventPerson, 'id' | 'displayName' | 'avatarId'>;
+  host: Pick<EventPerson, 'id' | 'displayName' | 'avatarId' | 'avatarAppearance'>;
   myStatus: MemberStatus | null; isHost: boolean;
 }
 export interface AdventureDetail extends Adventure {

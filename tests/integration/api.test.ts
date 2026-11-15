@@ -10,6 +10,7 @@ import { loadConfig } from '../../server/config.ts';
 import { hash } from '../../server/auth.ts';
 import { Interviewer } from '../../server/assistant.ts';
 import { ContentReviewer } from '../../server/moderation.ts';
+import { appearanceForPreset } from '../../shared/avatar.ts';
 
 const connection = process.env.TEST_DATABASE_URL;
 let admin: Pool, pool: Pool, app: Express;
@@ -53,6 +54,17 @@ async function registered(target: Express = app, withDiscovery = true) {
   if (withDiscovery) await agent.put('/api/discovery').send({ revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] }).expect(200);
   return { agent, state, cookie, draft: result.body.draft };
 }
+integration('custom appearance survives draft save and profile publication', async () => {
+  const { agent, draft, state } = await registered();
+  const avatarAppearance = { ...appearanceForPreset('moss'), skinTone: 'deep', silhouette: 'feminine', hairStyle: 'curly', hairColor: 'pink', top: 'plum_hoodie', headwear: 'headphones', earrings: true };
+  const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss', avatarAppearance }).expect(200)).body.draft;
+  assert.deepEqual(saved.avatarAppearance, avatarAppearance);
+  assert.deepEqual((await agent.get('/api/me').expect(200)).body.draft.avatarAppearance, avatarAppearance);
+  await agent.post('/api/profile/publish').send({ revision: saved.revision }).expect(200);
+  assert.deepEqual((await agent.get('/api/me').expect(200)).body.profile.avatarAppearance, avatarAppearance);
+  assert.deepEqual((await pool.query('SELECT avatar_appearance FROM profiles WHERE user_id=$1', [state.user.id])).rows[0].avatar_appearance, avatarAppearance);
+  await agent.put('/api/draft').send({ ...saved, avatarAppearance: { ...avatarAppearance, hairColor: 'invalid' } }).expect(400);
+});
 integration('first publication requires saved adventure locations and languages', async () => {
   const { agent, draft } = await registered(app, false);
   const saved = (await agent.put('/api/draft').send({ ...draft, avatarId: 'moss' }).expect(200)).body.draft;

@@ -9,6 +9,7 @@ import { loadConfig } from '../../server/config.ts';
 import { can } from '../../server/permissions.ts';
 import { EventBot } from '../../server/event-bot.ts';
 import type { ProfileTag } from '../../shared/schema.ts';
+import { appearanceForPreset, type AvatarAppearance } from '../../shared/avatar.ts';
 const connection = process.env.TEST_DATABASE_URL;
 const database = `questr_events_${randomUUID().replaceAll('-', '')}`;
 const config = { ...loadConfig(), authMode: 'demo' as const, aiMode: 'demo' as const, botToken: 'fake-token', webhookSecret: 'test-secret', publicAppUrl: 'https://questr.example' };
@@ -17,7 +18,7 @@ let app: ReturnType<typeof createApp>;
 before(async () => { if (!connection) return; admin = createPool(connection); await admin.query(`CREATE DATABASE "${database}"`); const url = new URL(connection); url.pathname = `/${database}`; pool = createPool(url.toString()); await migrate(pool); app = createApp(pool, config); });
 after(async () => { if (!connection) return; await pool?.end(); await admin.query(`DROP DATABASE IF EXISTS "${database}"`); await admin.end(); });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
-async function person(name = 'Moss', profile: { tags?: ProfileTag[]; askMeTopics?: string[]; openToRomance?: boolean } = {}) {
+async function person(name = 'Moss', profile: { tags?: ProfileTag[]; askMeTopics?: string[]; openToRomance?: boolean; avatarAppearance?: AvatarAppearance } = {}) {
   const agent = request.agent(createApp(pool, config));
   const auth = await agent.post('/api/auth/demo').send({}).expect(200);
   const state = (await agent.get('/api/me').expect(200)).body;
@@ -34,20 +35,25 @@ const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: str
 
 integration('party view shows shared tags, mutual romance and conversation topics only to the accepted party', async () => {
   const custom = (label: string): ProfileTag => ({ kind: 'custom', label, emoji: '💿', locale: 'en' });
-  const host = await person('Host', { tags: [{ kind: 'catalog', code: 'coffee' }, custom('Record hunting')], askMeTopics: ['Ask me about my first record hunt.'], openToRomance: true });
-  const guest = await person('Guest', { tags: [custom('record HUNTING'), { kind: 'catalog', code: 'coffee' }], askMeTopics: ['Ask me which album I would bring.'], openToRomance: true });
+  const hostLook = { ...appearanceForPreset('moss'), hairColor: 'blue' as const, headwear: 'headphones' as const };
+  const guestLook = { ...appearanceForPreset('moss'), skinTone: 'deep' as const, top: 'plum_hoodie' as const };
+  const host = await person('Host', { tags: [{ kind: 'catalog', code: 'coffee' }, custom('Record hunting')], askMeTopics: ['Ask me about my first record hunt.'], openToRomance: true, avatarAppearance: hostLook });
+  const guest = await person('Guest', { tags: [custom('record HUNTING'), { kind: 'catalog', code: 'coffee' }], askMeTopics: ['Ask me which album I would bring.'], openToRomance: true, avatarAppearance: guestLook });
   const outsider = await person('Outsider');
   const event = await create(host);
+  assert.deepEqual(event.host.avatarAppearance, hostLook);
   assert.deepEqual((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants, []);
   await apply(guest, event.id);
   assert.deepEqual((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants, []);
   await decide(host, event.id, guest.id, 'accept').expect(200);
   const guestView = (await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event;
   const hostCard = guestView.participants.find((person: any) => person.id === host.id);
+  assert.deepEqual(hostCard.avatarAppearance, hostLook);
   assert.deepEqual(hostCard.matchingTags, [{ kind: 'catalog', code: 'coffee' }, custom('Record hunting')]);
   assert.equal(hostCard.romanceMatch, true);
   assert.deepEqual(hostCard.askMeTopics, ['Ask me about my first record hunt.']);
   const selfCard = guestView.participants.find((person: any) => person.id === guest.id);
+  assert.deepEqual(selfCard.avatarAppearance, guestLook);
   assert.deepEqual(selfCard.matchingTags, []); assert.equal(selfCard.romanceMatch, false);
   const hostView = (await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event;
   assert.deepEqual(hostView.participants.find((person: any) => person.id === guest.id).matchingTags, [custom('record HUNTING'), { kind: 'catalog', code: 'coffee' }]);

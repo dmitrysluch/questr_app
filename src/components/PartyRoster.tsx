@@ -24,7 +24,7 @@ export function PartyRoster({ people, busy, canManage, onProfile, onRemove }: {
           {person.romanceMatch && <span className="party-match" role="img" aria-label={t('events.romanceMatch')} title={t('events.romanceMatch')} tabIndex={0}><PixelEmoji emoji="💗" /></span>}
         </div>
         <button className="person-button" disabled={busy || person.unavailable} aria-label={t('events.viewCharacter', { name: person.displayName })} onClick={() => onProfile(person.id)}>
-          <Character id={person.avatarId} />
+          <Character id={person.avatarId} appearance={person.avatarAppearance} />
           <span className="party-name" dir="auto">{person.displayName}</span>
         </button>
         {person.role === 'host' && <span className="party-role">{t('events.hostBadge')}</span>}

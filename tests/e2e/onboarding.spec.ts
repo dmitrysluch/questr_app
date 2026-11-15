@@ -8,6 +8,7 @@ async function register(page: Page, withDiscovery = true) {
   await page.getByLabel('I am 18 or older.').check();
   await page.getByLabel('I agree to the community guidelines.').check();
   await page.getByRole('button', { name: 'Create my character' }).click();
+  await page.getByRole('tab', { name: 'Presets' }).click();
   await page.getByRole('button', { name: 'Choose Moss', exact: true }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('tab', { name: 'Write' })).toBeVisible();
@@ -40,6 +41,33 @@ async function noOverflow(page: Page) {
 async function highlightedText(page: Page) {
   return page.evaluate(() => [...(CSS.highlights.get('questr-explicit') ?? [])].map(range => range.toString()).join('\n'));
 }
+
+test('character builder saves skin, presentation, hair, clothing and accessories', async ({ page }, info) => {
+  await register(page);
+  await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Character', exact: true }).click();
+  await page.getByRole('tab', { name: 'Face' }).click();
+  await page.getByRole('button', { name: 'Femme · Deep' }).click();
+  await page.getByRole('tab', { name: 'Hair' }).click();
+  await page.getByRole('button', { name: 'Curly' }).click();
+  await page.getByRole('button', { name: 'Pink' }).click();
+  await page.getByRole('tab', { name: 'Outfit' }).click();
+  await page.getByRole('button', { name: 'Plum hoodie' }).click();
+  await page.getByRole('tab', { name: 'Extras' }).click();
+  await page.getByRole('button', { name: 'Headphones' }).click();
+  await page.getByLabel('Earrings').check();
+  await expect(page.locator('.stage-subtitle')).toHaveText('Custom look');
+  await noOverflow(page);
+  await page.screenshot({ path: `.artifacts/${info.project.name}-avatar-builder.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Continue' }).click();
+  const appearance = { skinTone: 'deep', silhouette: 'feminine', hairStyle: 'curly', hairColor: 'pink', top: 'plum_hoodie', headwear: 'headphones', earrings: true };
+  await expect.poll(async () => (await (await page.request.get('/api/me')).json()).draft.avatarAppearance).toEqual(appearance);
+  await preview(page);
+  await page.getByRole('button', { name: 'Save character' }).click();
+  await page.reload();
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character', exact: true }).click();
+  await expect(page.locator('.profile-identity .character svg')).toBeVisible();
+  expect((await (await page.request.get('/api/me')).json()).profile.avatarAppearance).toEqual(appearance);
+});
 
 test('Ask me topics are optional, capped at three and appear only after saving the character', async ({ page }) => {
   await register(page);
@@ -152,6 +180,7 @@ test('registration, avatar, custom tags, Markdown, profile editing and reload', 
   await page.getByRole('button', { name: 'Your display name', exact: true }).click();
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Alex Coffee');
   await page.getByRole('button', { name: 'Save name' }).click();
+  await page.getByRole('tab', { name: 'Presets' }).click();
   await page.getByRole('button', { name: 'Choose Ember', exact: true }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await preview(page);

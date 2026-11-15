@@ -2,11 +2,13 @@ import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent } from
 import { ArrowLeft, ArrowRight, Check, CheckCheck, LoaderCircle, LockKeyhole, MessageCircle, PenLine, Shuffle } from 'lucide-react';
 import type { AppConfig, AppState, Draft, Profile } from '../shared/schema.ts';
 import { avatars } from '../shared/catalog.ts';
+import { appearanceForPreset, isPresetAppearance } from '../shared/avatar.ts';
 import { preferredLocale, type Locale } from '../shared/locale.ts';
 import { api, ApiError } from './api.ts';
 import { errorText, getLocale, setLocale, t, type TranslationKey } from './i18n.ts';
 import { useDraft } from './useDraft.ts';
 import { Character } from './components/Character.tsx';
+import { AvatarBuilder } from './components/AvatarBuilder.tsx';
 import { TagPicker } from './components/Tags.tsx';
 import { ProfileCard } from './components/ProfileCard.tsx';
 import { Adventures } from './components/Adventures.tsx';
@@ -194,19 +196,15 @@ export function App() {
           })} />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
 
-          <div className="page-actions"><span className="privacy-note"><LockKeyhole size={14} />{t('review.private')}</span><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
+          <div className="page-actions"><button className="outline-button" onClick={() => void go('avatar')} disabled={busy}>{t('avatar.customize')}</button><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
         </section> : currentStep === 'avatar' ? <section>
           <PageHeading title="avatar.title" />
           <div className="avatar-layout">
-            <div className="character-stage"><span className="stage-star star-one">✦</span><span className="stage-star star-two">✧</span><Character id={draft.avatarId} className="hero-character" /><span className="character-shadow" />
-              <button className="character-name" onClick={() => { setNextName(draft.displayName); setEditingName(true); }} aria-label={t('avatar.changeName')}><h2>{draft.displayName}</h2><PenLine size={13} /></button><span className="stage-subtitle">{selectedAvatar?.name ?? avatars[0].name}</span>
-              <button className="text-button" onClick={() => edit({ avatarId: avatars.filter(a => a.id !== draft.avatarId)[Math.floor(Math.random() * 11)].id })}><Shuffle size={14} />{t('avatar.random')}</button>
+            <div className="character-stage"><span className="stage-star star-one">✦</span><span className="stage-star star-two">✧</span><Character id={draft.avatarId} appearance={draft.avatarAppearance} className="hero-character" /><span className="character-shadow" />
+              <button className="character-name" onClick={() => { setNextName(draft.displayName); setEditingName(true); }} aria-label={t('avatar.changeName')}><h2>{draft.displayName}</h2><PenLine size={13} /></button><span className="stage-subtitle">{isPresetAppearance(draft.avatarId, draft.avatarAppearance) ? selectedAvatar?.name ?? avatars[0].name : t('avatar.customLook')}</span>
+              <button className="text-button" onClick={() => { const other = avatars.filter(a => a.id !== draft.avatarId); const next = other[Math.floor(Math.random() * other.length)]; edit({ avatarId: next.id, avatarAppearance: appearanceForPreset(next.id) }); }}><Shuffle size={14} />{t('avatar.random')}</button>
             </div>
-            <div className="avatar-selection"><h2>{t('avatar.galleryTitle')}</h2><div className="avatar-grid" role="group" aria-label={t('avatar.galleryTitle')}>
-              {avatars.map(avatar => <button key={avatar.id} className={`avatar-choice ${draft.avatarId === avatar.id ? 'selected' : ''}`} aria-label={t('avatar.choose', { name: avatar.name })} aria-pressed={draft.avatarId === avatar.id} onClick={() => edit({ avatarId: avatar.id })}>
-                <Character id={avatar.id} /><span>{avatar.name}</span>{draft.avatarId === avatar.id && <span className="avatar-check"><Check size={12} strokeWidth={3} /></span>}
-              </button>)}
-            </div></div>
+            <AvatarBuilder id={draft.avatarId} appearance={draft.avatarAppearance} onChange={(avatarAppearance, avatarId) => edit({ avatarAppearance, avatarId: avatarId ?? draft.avatarId ?? avatars[0].id })} />
           </div>
           <div className="page-actions"><SaveStatus state={saveState} /><button className="pixel-button" disabled={!draft.avatarId || busy} onClick={() => void go('bio')}>{t('avatar.next')}<ArrowRight size={17} /></button></div>
         </section> : currentStep === 'bio' || currentStep === 'discovery' ? <>

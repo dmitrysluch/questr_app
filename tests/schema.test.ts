@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { askMeTopicsSchema, draftInputSchema, selectedTagsSchema, tagSchema } from '../shared/schema.ts';
+import { appearanceForPreset, avatarAppearanceSchema, isPresetAppearance } from '../shared/avatar.ts';
+
+test('avatar appearance has stable selectable values and rejects unknown equipment', () => {
+  const appearance = appearanceForPreset('moss');
+  assert.deepEqual(avatarAppearanceSchema.parse(appearance), appearance);
+  assert.equal(isPresetAppearance('moss', appearance), true);
+  assert.equal(isPresetAppearance('moss', { ...appearance, hairColor: 'pink' }), false);
+  assert.equal(avatarAppearanceSchema.safeParse({ ...appearance, hairColor: 'neon-green' }).success, false);
+  assert.equal(avatarAppearanceSchema.safeParse({ ...appearance, crown: 'paid' }).success, false);
+  assert.equal(draftInputSchema.parse({ displayName: 'Alex', avatarId: 'moss', avatarAppearance: appearance, introMarkdown: '', tags: [], revision: 0, mode: 'manual', currentStep: 'avatar' }).avatarAppearance?.hairStyle, appearance.hairStyle);
+});
 
 test('long Markdown and multilingual text have no short-bio length constraint', () => {
   const markdown = '# My story\n\n**Привет. שלום. Hello.**\n\n'.repeat(10000);

@@ -3,6 +3,7 @@ import { avatars, tags } from './catalog.ts';
 import type { BioReview, ContentReview } from './content-policy.ts';
 import { spokenLanguagesSchema, type DiscoveryPreferences } from './discovery.ts';
 import { supportedLocales } from './locale.ts';
+import { avatarAppearanceSchema, type AvatarAppearance } from './avatar.ts';
 
 export const localeSchema = z.enum(supportedLocales);
 const emojiSchema = z.string().min(1).max(32).refine(value => {
@@ -24,6 +25,7 @@ export const draftInputSchema = z.object({
   revision: z.number().int().nonnegative(),
   displayName: z.string().trim().min(2).max(40),
   avatarId: z.string().refine(id => avatars.some(a => a.id === id)).nullable(),
+  avatarAppearance: avatarAppearanceSchema.nullable().default(null),
   introMarkdown: z.string(),
   tags: selectedTagsSchema,
   askMeTopics: askMeTopicsSchema.default([]),
@@ -67,7 +69,7 @@ export interface Proposal {
   status: 'pending' | 'accepted' | 'rejected';
 }
 export interface Profile {
-  displayName: string; avatarId: string; introMarkdown: string;
+  displayName: string; avatarId: string; avatarAppearance: AvatarAppearance | null; introMarkdown: string;
   tags: ProfileTag[]; askMeTopics: string[]; spokenLanguages: string[]; openToRomance: boolean; revision: number; completedAt: string;
 }
 export interface AppState {
