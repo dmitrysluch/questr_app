@@ -173,14 +173,14 @@ export class EventBot {
     let clearButtons = false;
     let eventId: string | null = null;
     if (match) {
-      const application = (await db.query(`SELECT o.event_id,o.application_user_id,o.user_id,m.status
+      const application = (await db.query(`SELECT o.event_id,o.application_user_id,o.user_id,o.application_attempt_id AS notification_attempt_id,m.application_attempt_id AS member_attempt_id,m.status
         FROM bot_outbox o LEFT JOIN event_memberships m ON m.event_id=o.event_id AND m.user_id=o.application_user_id
         WHERE o.id=$1 AND o.kind='application' AND o.telegram_message_id=$2`, [match[2], row.callback_message_id])).rows[0];
       if (application?.user_id === row.user_id) {
         eventId = application.event_id;
-        if (application.status === 'pending') {
+        if (application.status === 'pending' && application.notification_attempt_id === application.member_attempt_id) {
           try {
-            await this.adventures.membership(row.user_id, application.event_id, application.application_user_id, match[1] as 'accept' | 'decline');
+            await this.adventures.membership(row.user_id, application.event_id, application.application_user_id, match[1] as 'accept' | 'decline', application.notification_attempt_id);
             answer = botText(locale, match[1] === 'accept' ? 'applicationAccepted' : 'applicationDeclined');
             clearButtons = true;
           } catch (error) {
@@ -299,8 +299,8 @@ export class EventBot {
       }
       if (allowed && row.kind === 'reminder') allowed = await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id });
       if (allowed && row.kind === 'application') {
-        const application = (await db.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [row.event_id, row.application_user_id])).rows[0];
-        allowed = application?.status === 'pending' && await can(db, row.user_id, 'events.accept', { type: 'event', id: row.event_id });
+        const application = (await db.query('SELECT status,application_attempt_id FROM event_memberships WHERE event_id=$1 AND user_id=$2', [row.event_id, row.application_user_id])).rows[0];
+        allowed = application?.status === 'pending' && application.application_attempt_id === row.application_attempt_id && await can(db, row.user_id, 'events.accept', { type: 'event', id: row.event_id });
       }
       let dmEventId: string | null = null;
       if (allowed && row.dm_id) {

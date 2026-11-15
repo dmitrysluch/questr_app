@@ -129,6 +129,7 @@ export const en = {
   "events.accessEnds": "Access to the meeting details and new party messages will end. Messages already received stay in the bot.",
   "events.cancelHint": "Everyone who applied or joined will be notified. The party chat will close.",
   "events.apply": "Apply",
+  "events.reapply": "Apply again",
   "events.chat": "Open party chat",
   "events.demoChat": "Party chat is available through @questr_game when signed in with Telegram.",
   "events.message": "Message to the host",

@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
 import { createEventSchema, editEventSchema, applicationSchema, eventFieldsSchema, hasPublicLink, type Adventure, type AdventureDetail, type EventFields } from '../shared/events.ts';
 import { AppError } from './errors.ts';
 import { hash } from './auth.ts';
@@ -135,7 +136,7 @@ export class Adventures {
         })(),
         reminderMinutes: (await db.query('SELECT minutes_before FROM event_reminders WHERE event_id=$1 AND user_id=$2', [eventId, userId])).rows[0]?.minutes_before ?? null,
         participants: members.filter(member => member.status === 'accepted'), applications: manage ? members.filter(member => member.status === 'pending') : [],
-        canApply: !event.myStatus && !event.isHost && row.status === 'published' && row.recruitment_open && row.starts_at.getTime() > Date.now() && event.participantCount < event.capacity,
+        canApply: (!event.myStatus || event.myStatus === 'withdrawn') && !event.isHost && row.status === 'published' && row.recruitment_open && row.starts_at.getTime() > Date.now() && event.participantCount < event.capacity,
         canEdit: editable && row.status === 'published' && row.starts_at.getTime() > Date.now(), canManage: manage, canChat: chat,
         botUrl: `https://t.me/questr_game?start=quest_${eventId.replaceAll('-', '')}` };
     });
@@ -200,7 +201,7 @@ export class Adventures {
       const old = (await db.query('SELECT * FROM event_memberships WHERE event_id=$1 AND user_id=$2', [eventId, userId])).rows[0];
       if (old) {
         if (['pending', 'accepted'].includes(old.status) && old.role !== 'host' && old.application_text === input.message) return;
-        throw new AppError(409, 'APPLICATION_EXISTS');
+        if (old.status !== 'withdrawn' || old.role === 'host') throw new AppError(409, 'APPLICATION_EXISTS');
       }
       recruiting(row);
       if (!row.recruitment_open) throw new AppError(409, 'EVENT_RECRUITMENT_CLOSED');
@@ -210,22 +211,25 @@ export class Adventures {
       await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`applications:${userId}`]);
       const recent = (await db.query("SELECT count(*)::int AS count FROM event_memberships WHERE user_id=$1 AND role='participant' AND created_at>now()-interval '1 day'", [userId])).rows[0].count;
       if (recent >= 10) throw new AppError(429, 'BUDGET_EXHAUSTED');
-      await db.query("INSERT INTO event_memberships(event_id,user_id,status,application_text) VALUES($1,$2,'pending',$3)", [eventId, userId, input.message]);
-      await grantEventRole(db, eventId, userId, 'applicant', userId);
+      const attemptId = randomUUID();
+      if (old) await db.query("UPDATE event_memberships SET status='pending',application_text=$3,application_attempt_id=$4,updated_at=now() WHERE event_id=$1 AND user_id=$2", [eventId, userId, input.message, attemptId]);
+      else await db.query("INSERT INTO event_memberships(event_id,user_id,status,application_text,application_attempt_id) VALUES($1,$2,'pending',$3,$4)", [eventId, userId, input.message, attemptId]);
+      if (!(await db.query("SELECT 1 FROM role_assignments WHERE user_id=$1 AND event_id=$2 AND role_code='applicant' AND revoked_at IS NULL", [userId, eventId])).rowCount) await grantEventRole(db, eventId, userId, 'applicant', userId);
       await audit(db, eventId, userId, 'applied');
       const applicant = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [userId])).rows[0];
-      await queueBot(db, { key: `event:${eventId}:apply:${userId}`, userId: row.created_by, eventId, applicationUserId: userId,
+      await queueBot(db, { key: `event:${eventId}:apply:${userId}:${attemptId}`, userId: row.created_by, eventId, applicationUserId: userId, applicationAttemptId: attemptId,
         kind: 'application', body: botText(await recipientLocale(db, row.created_by), 'newApplication', { title: row.title, name: applicant.display_name, message: input.message }) });
     });
     return this.detail(userId, eventId);
   }
-  async membership(userId: string, eventId: string, targetId: string, action: 'accept' | 'decline' | 'remove' | 'leave') {
+  async membership(userId: string, eventId: string, targetId: string, action: 'accept' | 'decline' | 'remove' | 'leave', expectedAttemptId?: string | null) {
     await transaction(this.pool, async db => {
       const row = await lockEvent(db, userId, eventId);
       if (action === 'leave') { if (userId !== targetId) throw new AppError(403, 'PERMISSION_DENIED'); }
       else await requireCapability(db, userId, action === 'remove' ? 'events.group_chat_moderator' : 'events.accept', { type: 'event', id: eventId });
       const member = (await db.query('SELECT * FROM event_memberships WHERE event_id=$1 AND user_id=$2', [eventId, targetId])).rows[0];
       if (!member || member.role === 'host') throw new AppError(400, 'INVALID_INPUT');
+      if (expectedAttemptId !== undefined && member.application_attempt_id !== expectedAttemptId) throw new AppError(409, 'APPLICATION_CHANGED');
       const status = action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : action === 'remove' ? 'removed' : 'withdrawn';
       if (member.status === status) return;
       if (action === 'accept' || action === 'decline') { if (action === 'accept') recruiting(row); else if (row.status !== 'published') throw new AppError(409, 'EVENT_CLOSED'); if (member.status !== 'pending') throw new AppError(409, 'APPLICATION_CHANGED'); }
@@ -241,8 +245,8 @@ export class Adventures {
       }
       await db.query('UPDATE event_memberships SET status=$3,updated_at=now() WHERE event_id=$1 AND user_id=$2', [eventId, targetId, status]);
       await audit(db, eventId, userId, status);
-      await queueBot(db, { key: `event:${eventId}:${status}:${targetId}`, userId: targetId, eventId, body: botText(await recipientLocale(db, targetId), status === 'accepted' ? 'accepted' : status === 'declined' ? 'declined' : 'removed', { title: row.title }) });
-      if (action === 'leave') await queueBot(db, { key: `event:${eventId}:left:${targetId}`, userId: row.created_by, eventId, body: botText(await recipientLocale(db, row.created_by), 'left', { title: row.title }) });
+      await queueBot(db, { key: `event:${eventId}:${status}:${targetId}:${member.application_attempt_id ?? 'legacy'}`, userId: targetId, eventId, body: botText(await recipientLocale(db, targetId), status === 'accepted' ? 'accepted' : status === 'declined' ? 'declined' : 'removed', { title: row.title }) });
+      if (action === 'leave') await queueBot(db, { key: `event:${eventId}:left:${targetId}:${member.application_attempt_id ?? 'legacy'}`, userId: row.created_by, eventId, body: botText(await recipientLocale(db, row.created_by), 'left', { title: row.title }) });
     });
     return action === 'leave' ? null : this.detail(userId, eventId);
   }

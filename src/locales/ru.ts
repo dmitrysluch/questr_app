@@ -131,6 +131,7 @@ export const ru: Record<keyof typeof en, string> = {
   'events.accessEnds': 'Доступ к деталям встречи и новым сообщениям группы закроется. Уже полученные сообщения останутся в боте.',
   'events.cancelHint': 'Все подавшие заявку и участники получат уведомление. Чат группы закроется.',
   'events.apply': 'Подать заявку',
+  'events.reapply': 'Подать заявку снова',
   'events.chat': 'Открыть чат группы',
   'events.demoChat': 'Чат группы доступен через @questr_game при входе через Telegram.',
   'events.message': 'Сообщение организатору',

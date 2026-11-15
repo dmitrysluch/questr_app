@@ -59,8 +59,17 @@ test('create an adventure, apply from another character, accept, edit and withdr
   await guest.getByLabel('Message to the host').fill('I will bring my favourite Bill Evans record.');
   await guest.getByRole('button', { name: 'Send application' }).click();
   await expect(guest.getByRole('status')).toContainText('Waiting for the host');
+  await guest.getByRole('button', { name: 'Withdraw application' }).click();
+  await guest.getByRole('dialog').getByRole('button', { name: 'Confirm' }).click();
+  await expect(guest.getByRole('heading', { name: 'Adventures', exact: true })).toBeVisible();
+  await guest.goto(`${base}/${hash}`);
+  await expect(guest.locator('.membership-status')).toHaveText('Application withdrawn');
+  await guest.getByRole('button', { name: 'Apply again' }).click();
+  await guest.getByLabel('Message to the host').fill('I will bring a different Bill Evans record.');
+  await guest.getByRole('button', { name: 'Send application' }).click();
+  await expect(guest.getByRole('status')).toContainText('Waiting for the host');
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect(page.locator('.application')).toContainText('Bill Evans');
+  await expect(page.locator('.application')).toContainText('different Bill Evans record');
   await page.locator('.application .person-button').click();
   await expect(page.locator('.profile-body')).toContainText('Jazz questr');
   await page.getByRole('button', { name: 'Back to adventure' }).click();

@@ -28,7 +28,7 @@ async function person(name = 'Moss', profile: { tags?: ProfileTag[]; askMeTopics
   await agent.post('/api/profile/publish').send({ revision: draft.revision }).expect(200);
   return { agent, id: state.user.id as string, cookie: auth.headers['set-cookie'][0].split(';')[0] as string };
 }
-function fields(extra = {}) { return { title: 'Coffee and records', activitySummary: 'Bring a record and listen over coffee.', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', district: 'Downtown', costEstimate: 'About ₪25', experienceNotes: 'No experience needed', onlinePlatform: 'Zoom', startsAt: new Date(Date.now() + 86400000).toISOString(), endsAt: new Date(Date.now() + 86400000 + 7200000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
+function fields(extra = {}) { const start = Date.now() + 86400000; return { title: 'Coffee and records', activitySummary: 'Bring a record and listen over coffee.', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', district: 'Downtown', costEstimate: 'About ₪25', experienceNotes: 'No experience needed', onlinePlatform: 'Zoom', startsAt: new Date(start).toISOString(), endsAt: new Date(start + 7200000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
 const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (await who.agent.post('/api/events').send(fields(extra)).expect(201)).body.event;
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
@@ -100,6 +100,17 @@ integration('Telegram Mini App submits applications directly; organizer buttons 
   await webhook(41003, 4101, buttons[1].callback_data); await bot.inbox();
   assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, guest.id])).rows[0].status, 'accepted');
   assert.ok(calls.some(c => c.method === 'answerCallbackQuery' && c.body.callback_query_id === 'callback-41003' && c.body.text.includes('no longer pending')));
+  await guest.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
+  await request(telegramApp).post(`/api/events/${event.id}/applications`).set('Cookie', guest.cookie).send({ message: 'This time I will bring Coltrane.' }).expect(200);
+  const nextNotice = (await pool.query("SELECT id,telegram_message_id FROM bot_outbox WHERE event_id=$1 AND kind='application' AND application_user_id=$2 ORDER BY id DESC LIMIT 1", [event.id, guest.id])).rows[0];
+  assert.notEqual(nextNotice.id, notification.id);
+  await webhook(41005, 4101, buttons[0].callback_data); await bot.inbox();
+  assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, guest.id])).rows[0].status, 'pending');
+  assert.ok(calls.some(c => c.method === 'answerCallbackQuery' && c.body.callback_query_id === 'callback-41005' && c.body.text.includes('no longer pending')));
+  while (await bot.outbox()) { /* Deliver the new application. */ }
+  const currentMessageId = (await pool.query('SELECT telegram_message_id FROM bot_outbox WHERE id=$1', [nextNotice.id])).rows[0].telegram_message_id;
+  await webhook(41006, 4101, `application:accept:${nextNotice.id}`, Number(currentMessageId)); await bot.inbox();
+  assert.equal((await pool.query('SELECT status FROM event_memberships WHERE event_id=$1 AND user_id=$2', [event.id, guest.id])).rows[0].status, 'accepted');
   const declinedGuest = await person('Declined guest');
   await request(telegramApp).post(`/api/events/${event.id}/applications`).set('Cookie', declinedGuest.cookie).send({ message: 'I can bring some pastries.' }).expect(200);
   while (await bot.outbox()) { /* Deliver the next application. */ }
@@ -158,6 +169,37 @@ integration('closing recruitment stops new applications but lets the host decide
   assert.equal(opened.recruitmentOpen, true);
   await apply(next, event.id);
 });
+integration('withdrawn applications can be sent again, but declined ones cannot', async () => {
+  const host = await person('Host'), guest = await person('Guest');
+  const event = await create(host);
+  await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id,bot_started_at) VALUES($1,4201,now())', [host.id]);
+  await apply(guest, event.id);
+  await guest.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
+  const withdrawn = (await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event;
+  assert.equal(withdrawn.myStatus, 'withdrawn'); assert.equal(withdrawn.canApply, true);
+  assert.deepEqual((await host.agent.get(`/api/events/${event.id}`)).body.event.applications, []);
+  const message = 'I can bring a different record this time.';
+  const reapplied = (await guest.agent.post(`/api/events/${event.id}/applications`).send({ message }).expect(200)).body.event;
+  assert.equal(reapplied.myStatus, 'pending'); assert.equal(reapplied.canApply, false);
+  assert.equal((await host.agent.get(`/api/events/${event.id}`)).body.event.applications[0].applicationText, message);
+  await guest.agent.post(`/api/events/${event.id}/applications`).send({ message }).expect(200);
+  const notices = (await pool.query("SELECT id,state FROM bot_outbox WHERE event_id=$1 AND kind='application' AND application_user_id=$2 ORDER BY id", [event.id, guest.id])).rows;
+  assert.equal(notices.length, 2);
+  const sent: string[] = [];
+  const bot = new EventBot(pool, config, (async (url: string | URL | Request, options?: RequestInit) => {
+    if (String(url).endsWith('/sendMessage')) sent.push(JSON.parse(String(options?.body)).text);
+    return Response.json({ ok: true, result: { message_id: sent.length + 1 } });
+  }) as typeof fetch);
+  while (await bot.outbox()) { /* Old application must be discarded; the new one is delivered. */ }
+  const delivery = (await pool.query("SELECT state FROM bot_outbox WHERE id=ANY($1::bigint[]) ORDER BY id", [notices.map(row => row.id)])).rows;
+  assert.deepEqual(delivery.map(row => row.state), ['discarded', 'sent']);
+  assert.ok(sent.some(text => text.includes(message)));
+  assert.ok(sent.every(text => !text.includes('I would love to bring my new jazz record.')));
+  await decide(host, event.id, guest.id, 'decline').expect(200);
+  const declined = (await guest.agent.get(`/api/events/${event.id}`)).body.event;
+  assert.equal(declined.myStatus, 'declined'); assert.equal(declined.canApply, false);
+  await guest.agent.post(`/api/events/${event.id}/applications`).send({ message }).expect(409);
+});
 integration('first contact rejects links before the host can receive them', async () => {
   const host = await person(), guest = await person();
   const event = await create(host);
@@ -182,11 +224,15 @@ integration('last-seat acceptance is serialized; exit revokes private details, c
   await accepted.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
   assert.equal(await can(pool, accepted.id, 'events.group_chat', { type: 'event', id: event.id }), false);
   const after = (await accepted.agent.get(`/api/events/${event.id}`)).body.event;
-  assert.equal(after.meetingDetails, null); assert.deepEqual(after.participants, []); assert.equal(after.canApply, false);
-  await accepted.agent.post(`/api/events/${event.id}/applications`).send({ message: 'Let me join again.' }).expect(409);
+  assert.equal(after.meetingDetails, null); assert.deepEqual(after.participants, []); assert.equal(after.canApply, true);
+  await accepted.agent.post(`/api/events/${event.id}/applications`).send({ message: 'Let me join again.' }).expect(200);
+  assert.equal((await host.agent.get(`/api/events/${event.id}`)).body.event.applications.find((person: any) => person.id === accepted.id).applicationText, 'Let me join again.');
   await decide(host, event.id, pending.id, 'accept').expect(200);
+  await decide(host, event.id, accepted.id, 'accept').expect(409);
   await decide(host, event.id, pending.id, 'remove').expect(200);
   assert.equal((await pending.agent.get(`/api/events/${event.id}`)).body.event.canChat, false);
+  await decide(host, event.id, accepted.id, 'accept').expect(200);
+  assert.equal((await accepted.agent.get(`/api/events/${event.id}`)).body.event.canChat, true);
   await host.agent.post(`/api/events/${event.id}/status`).send({ status: 'cancelled', revision: 0 }).expect(200);
   await stranger.agent.get(`/api/events/${event.id}`).expect(404);
   await accepted.agent.get(`/api/events/${event.id}`).expect(200); // Former applicants retain public history only.
