@@ -4,7 +4,7 @@ import type { AppConfig, AppState, Draft, Profile } from '../shared/schema.ts';
 import { avatars } from '../shared/catalog.ts';
 import { appearanceForPreset, isPresetAppearance } from '../shared/avatar.ts';
 import { preferredLocale, type Locale } from '../shared/locale.ts';
-import { api, ApiError } from './api.ts';
+import { api, ApiError, setTelegramSession } from './api.ts';
 import { errorText, getLocale, setLocale, t, type TranslationKey } from './i18n.ts';
 import { useDraft } from './useDraft.ts';
 import { Character } from './components/Character.tsx';
@@ -72,6 +72,7 @@ export function App() {
         if (!active) return;
         setConfig(next);
         const browserLanguage = navigator.languages?.[0] ?? navigator.language;
+        setTelegramSession(null);
         if (next.authMode === 'demo') await api('/auth/demo', { method: 'POST', body: { browserLanguage } });
         else {
           let telegram = window.Telegram?.WebApp;
@@ -83,7 +84,8 @@ export function App() {
           if (!telegram?.initData) { setTelegramNeeded(true); return; }
           telegram.ready(); telegram.expand();
           telegram.setHeaderColor?.('#f5f0e7'); telegram.setBackgroundColor?.('#f5f0e7');
-          await api('/auth/telegram', { method: 'POST', body: { initData: telegram.initData, browserLanguage } });
+          const auth = await api<{ sessionToken?: string }>('/auth/telegram', { method: 'POST', body: { initData: telegram.initData, browserLanguage } });
+          if (auth.sessionToken) setTelegramSession(auth.sessionToken);
         }
         if (active) await loadState();
       } catch (e) { if (active) setError(e); }

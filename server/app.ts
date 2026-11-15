@@ -6,7 +6,7 @@ import { z, ZodError } from 'zod';
 import type { Pool, PoolClient } from 'pg';
 import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
-import { createSession, demoInvite, findUser, hash, sessionToken, setSession, verifyTelegramUser } from './auth.ts';
+import { clearSession, createSession, demoInvite, findUser, hash, sessionToken, setSession, verifyTelegramUser } from './auth.ts';
 import { transaction, transactionOnClient } from './db.ts';
 import { Interviewer } from './assistant.ts';
 import { ContentReviewer, reviewContent, storedReview } from './moderation.ts';
@@ -104,7 +104,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       return createSession(user.id, client);
     });
     setSession(res, token, config);
-    res.json({ ok: true });
+    res.json({ ok: true, sessionToken: token });
   });
   app.post('/api/telegram/webhook', async (req, res) => {
     const provided = req.get('X-Telegram-Bot-Api-Secret-Token') ?? '';
@@ -154,7 +154,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   });
   app.post('/api/logout', async (req, res) => {
     await pool.query('DELETE FROM sessions WHERE token_hash=$1', [hash(sessionToken(req) ?? '')]);
-    res.clearCookie('questr_session', { path: '/', httpOnly: true, sameSite: 'lax', secure: config.secureCookie });
+    clearSession(res, config);
     res.json({ ok: true });
   });
   app.get('/api/me', async (_req, res) => {

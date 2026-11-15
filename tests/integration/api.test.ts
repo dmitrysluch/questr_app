@@ -183,9 +183,14 @@ integration('signed Telegram login and retried bot starts share one private iden
   const check = [...data.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join('\n');
   const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
   data.set('hash', createHmac('sha256', secret).update(check).digest('hex'));
-  const agent = request.agent(telegramApp);
-  await agent.post('/api/auth/telegram').send({ initData: data.toString(), browserLanguage: 'en-US' }).expect(200);
-  const state = (await agent.get('/api/me').expect(200)).body;
+  const login = await request(telegramApp).post('/api/auth/telegram').send({ initData: data.toString(), browserLanguage: 'en-US' }).expect(200);
+  assert.match(login.headers['set-cookie'][0], /HttpOnly/);
+  assert.match(login.headers['set-cookie'][0], /Secure/);
+  assert.match(login.headers['set-cookie'][0], /SameSite=None/);
+  assert.match(login.body.sessionToken, /^[A-Za-z0-9_-]{43}$/);
+  await request(telegramApp).get('/api/me').expect(401);
+  const bearer = `Bearer ${login.body.sessionToken}`;
+  const state = (await request(telegramApp).get('/api/me').set('Authorization', bearer).expect(200)).body;
   assert.equal(state.user.locale, 'ru');
   const account = (await pool.query('SELECT * FROM telegram_accounts WHERE telegram_user_id=$1', [telegramId])).rows;
   assert.equal(account.length, 1);
@@ -194,11 +199,16 @@ integration('signed Telegram login and retried bot starts share one private iden
   assert.equal((await pool.query('SELECT * FROM bot_updates WHERE update_id=123')).rowCount, 1);
   assert.ok(!JSON.stringify(state).includes(String(telegramId)));
   assert.ok(!JSON.stringify(state).includes('Private Telegram name'));
-  await agent.put('/api/locale').send({ locale: 'en' }).expect(200);
-  await agent.post('/api/auth/telegram').send({ initData: data.toString() }).expect(200);
-  assert.equal((await agent.get('/api/me').expect(200)).body.user.locale, 'en');
+  await request(telegramApp).put('/api/locale').set('Authorization', bearer).send({ locale: 'en' }).expect(200);
+  const secondLogin = await request(telegramApp).post('/api/auth/telegram').send({ initData: data.toString() }).expect(200);
+  assert.equal((await request(telegramApp).get('/api/me').set('Authorization', `Bearer ${secondLogin.body.sessionToken}`).expect(200)).body.user.locale, 'en');
+  await request(telegramApp).put('/api/locale').set('Authorization', bearer).send({ locale: 'ru' }).expect(200);
+  await request(telegramApp).get('/api/me').set('Authorization', bearer).expect(200);
+  await request(telegramApp).get('/api/me').set('Authorization', 'Bearer invalid').set('Cookie', login.headers['set-cookie'][0].split(';')[0]).expect(401);
   data.set('user', JSON.stringify({ id: telegramId + 1 }));
   await request(telegramApp).post('/api/auth/telegram').send({ initData: data.toString() }).expect(401);
+  await request(telegramApp).post('/api/logout').set('Authorization', bearer).send({}).expect(200);
+  await request(telegramApp).get('/api/me').set('Authorization', bearer).expect(401);
 });
 
 integration('OpenRouter uses saved bio at start, retains demo history, and applies a rewritten draft only after approval', async () => {

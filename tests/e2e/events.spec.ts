@@ -43,12 +43,16 @@ test('create an adventure, apply from another character, accept, edit and withdr
   const guest = await guestContext.newPage();
   const base = new URL(page.url()).origin;
   await character(guest, 'Jazz questr', { tags: sharedTags, openToRomance: true });
+  const sessionToken = (await guestContext.cookies()).find(cookie => cookie.name === 'questr_session')?.value;
+  expect(sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  await guestContext.clearCookies();
+  expect((await guest.request.get('/api/me')).status()).toBe(401);
   await guest.route('**/api/config', async route => {
     const response = await route.fetch();
     await route.fulfill({ response, json: { ...await response.json(), authMode: 'telegram' } });
   });
   await guest.route('https://telegram.org/js/telegram-web-app.js', route => route.fulfill({ contentType: 'text/javascript', body: 'window.Telegram = { WebApp: { initData: "test-mini-app", ready() {}, expand() {} } };' }));
-  await guest.route('**/api/auth/telegram', route => route.fulfill({ json: { ok: true } }));
+  await guest.route('**/api/auth/telegram', route => route.fulfill({ json: { ok: true, sessionToken } }));
   await guest.goto(`${base}/${hash}`);
   await expect(guest.getByRole('heading', { name: 'Coffee, records & a slow afternoon', level: 1 })).toBeVisible();
   await expect(guest.locator('.meeting-details')).toHaveCount(0);
@@ -74,8 +78,15 @@ test('create an adventure, apply from another character, accept, edit and withdr
   await expect(page.locator('.profile-body')).toContainText('Jazz questr');
   await page.getByRole('button', { name: 'Back to adventure' }).click();
   await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(page.locator('.application')).toHaveCount(0);
   await guest.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(guest.locator('.meeting-details')).toContainText('Private door 42');
+  const calendarDownload = guest.waitForEvent('download');
+  await guest.getByRole('link', { name: 'Add to calendar (.ics)' }).click();
+  const calendar = await calendarDownload;
+  const calendarChunks: Buffer[] = [];
+  for await (const chunk of (await calendar.createReadStream())!) calendarChunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(calendarChunks).toString()).toContain('Private door 42');
   await expect(guest.locator('.party-person')).toHaveCount(2);
   const hostCard = guest.locator('.party-person').filter({ has: guest.getByRole('button', { name: "View Record keeper's character" }) });
   await expect(hostCard.locator('.party-match')).toHaveCount(3);

@@ -4,7 +4,7 @@ import type { AppConfig, Profile } from '../../shared/schema.ts';
 import { languages, type DiscoveryPreferences } from '../../shared/discovery.ts';
 import { wallTime, wallTimeToInstant, hasPublicLink, type Adventure, type AdventureDetail, type AdventureList, type EventFields } from '../../shared/events.ts';
 import { googleMapsSearch } from '../../shared/event-links.ts';
-import { api, ApiError } from '../api.ts';
+import { api, apiBlob, ApiError, hasTelegramSession } from '../api.ts';
 import { t, errorText, getLocale, languageName, locationName, type TranslationKey } from '../i18n.ts';
 import { DiscoverySettings, LocationPicker } from './Discovery.tsx';
 import { Character } from './Character.tsx';
@@ -97,6 +97,16 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
     try { setDetail((await api<{ event: AdventureDetail }>(`/events/${detail.id}/recruitment`, { method: 'PUT', body: { open, revision: detail.revision } })).event); }
     catch (error) { setError(error); } finally { setBusy(false); }
   }
+  async function downloadCalendar(eventId: string) {
+    setBusy(true); setError(null);
+    try {
+      const file = await apiBlob(`/events/${eventId}/calendar.ics`);
+      const url = URL.createObjectURL(file);
+      const link = document.createElement('a'); link.href = url; link.download = `questr-${eventId}.ics`;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { setError(error); } finally { setBusy(false); }
+  }
   const callLink = detail?.canChat && detail.location.kind === 'online' ? detail.meetingDetails : null;
   return <section className="adventures">
     <div className="adventure-heading">{id ? <button className="text-button" onClick={() => personId ? location.replace(`#adventures/${id}`) : go()}><ArrowLeft size={16} />{t(personId ? 'events.backToAdventure' : 'events.back')}</button> : <h1>{t('nav.adventures')}</h1>}{!personId && <div className="event-actions"><button className="icon-button" disabled={loading || busy} aria-label={t('events.refresh')} onClick={() => void reload()}><RefreshCw size={18} /></button>{!id && <button className="pixel-button small" onClick={() => setEditor('new')}><Plus size={16} />{t('events.create')}</button>}</div>}</div>
@@ -110,7 +120,7 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
         {!detail.isHost && detail.myStatus && <p className="membership-status" role="status">{t(`events.${detail.myStatus}`)}</p>}
         <div className="event-actions">
           {callLink && <a className="pixel-button" href={callLink} target="_blank" rel="noreferrer">{t('events.joinCall')}</a>}
-          <a className="outline-button" href={`/api/events/${detail.id}/calendar.ics`} download>{t('events.calendar')}</a>
+          <a className="outline-button" href={`/api/events/${detail.id}/calendar.ics`} download onClick={event => { if (hasTelegramSession()) { event.preventDefault(); void downloadCalendar(detail.id); } }}>{t('events.calendar')}</a>
           {detail.canApply && <button className="pixel-button" onClick={() => { setError(null); setApplication(true); }}>{t(detail.myStatus === 'withdrawn' ? 'events.reapply' : 'events.apply')}</button>}
           {detail.canChat && config.authMode === 'telegram' && <a className="pixel-button" href={detail.botUrl} onClick={event => openBot(event, detail.botUrl)} target="_blank" rel="noreferrer">{t('events.chat')}</a>}
           {!detail.canApply && !detail.myStatus && <span>{t(detail.participantCount >= detail.capacity ? 'events.full' : !detail.recruitmentOpen ? 'events.recruitmentClosed' : 'events.closed')}</span>}
