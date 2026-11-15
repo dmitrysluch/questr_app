@@ -6,10 +6,12 @@ export async function recipientLocale(db: PoolClient, userId: string): Promise<L
   const row = (await db.query('SELECT locale FROM users WHERE id=$1', [userId])).rows[0];
   return preferredLocale(row?.locale);
 }
-export async function queueBot(db: PoolClient, input: { key: string; userId: string; eventId?: string; messageId?: string; dmId?: string; dmMessageId?: string; applicationUserId?: string; applicationAttemptId?: string; body: string; kind?: 'notification' | 'reply' | 'relay' | 'reminder' | 'dm_request' | 'dm_relay' | 'dm_accept' | 'application' | 'topic_init'; inTopic?: boolean }) {
-  await db.query(`INSERT INTO bot_outbox(dedupe_key,user_id,event_id,message_id,dm_id,dm_message_id,application_user_id,application_attempt_id,body,kind,in_topic)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(dedupe_key) DO NOTHING`,
-  [input.key, input.userId, input.eventId ?? null, input.messageId ?? null, input.dmId ?? null, input.dmMessageId ?? null, input.applicationUserId ?? null, input.applicationAttemptId ?? null, input.body, input.kind ?? 'notification', input.inTopic ?? false]);
+export type BotButton = { text: string; callback_data: string } | { text: string; url: string };
+export type BotKeyboard = { inline_keyboard: BotButton[][] };
+export async function queueBot(db: PoolClient, input: { key: string; userId: string; eventId?: string; messageId?: string; dmId?: string; dmMessageId?: string; applicationUserId?: string; applicationAttemptId?: string; body: string; kind?: 'notification' | 'reply' | 'relay' | 'reminder' | 'dm_request' | 'dm_relay' | 'dm_accept' | 'application' | 'topic_init'; inTopic?: boolean; keyboard?: BotKeyboard }) {
+  await db.query(`INSERT INTO bot_outbox(dedupe_key,user_id,event_id,message_id,dm_id,dm_message_id,application_user_id,application_attempt_id,body,kind,in_topic,reply_markup)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(dedupe_key) DO NOTHING`,
+  [input.key, input.userId, input.eventId ?? null, input.messageId ?? null, input.dmId ?? null, input.dmMessageId ?? null, input.applicationUserId ?? null, input.applicationAttemptId ?? null, input.body, input.kind ?? 'notification', input.inTopic ?? false, input.keyboard ? JSON.stringify(input.keyboard) : null]);
 }
 export async function queuePartyTopic(db: PoolClient, eventId: string, userId: string, title: string, aiMode: 'demo' | 'openrouter') {
   const locale = await recipientLocale(db, userId);

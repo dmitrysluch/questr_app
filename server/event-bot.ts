@@ -5,14 +5,18 @@ import { Adventures } from './events.ts';
 import { ContentReviewer } from './moderation.ts';
 import { AppError } from './errors.ts';
 import { can, consumeCapability } from './permissions.ts';
-import { queueBot, queuePartyTopic } from './event-notifications.ts';
+import { queueBot, queuePartyTopic, type BotKeyboard } from './event-notifications.ts';
 import { botText } from './bot-copy.ts';
 import { relayMarkdown } from './telegram-markdown.ts';
+import { hasPublicLink } from '../shared/events.ts';
 import { ZodError } from 'zod';
 
 class TelegramError extends Error {
   constructor(public retryAfter: number | null, description = 'TELEGRAM_DELIVERY_FAILED') { super(description); }
 }
+const hex = (id: string) => id.replaceAll('-', '');
+const uuid = (id: string) => /^[a-f0-9]{32}$/i.test(id) ? `${id.slice(0,8)}-${id.slice(8,12)}-${id.slice(12,16)}-${id.slice(16,20)}-${id.slice(20)}`.toLowerCase() : null;
+const buttonLabel = (value: string) => value.length > 56 ? `${value.slice(0, 53)}…` : value;
 /** Durable, at-most-one active processor per inbox/outbox row. The Bot API has
  * no idempotency keys: ambiguous network failures are kept as failed for review,
  * rather than automatically risking a duplicate delivery. */
@@ -66,50 +70,102 @@ export class EventBot {
       AND replace(id::text,'-','') LIKE $2 LIMIT 2`, [userId, `${code.toLowerCase()}%`])).rows;
     return rows.length === 1 ? rows[0] : null;
   }
+  private async sharedPeople(db: PoolClient, userId: string, eventId?: string) {
+    const rows = (await db.query(`SELECT p.user_id,p.display_name,e.id AS event_id,e.title,c.status AS dm_status,c.requested_by
+      FROM event_memberships mine JOIN events e ON e.id=mine.event_id
+      JOIN event_memberships theirs ON theirs.event_id=e.id AND theirs.status='accepted' AND theirs.user_id<>$1
+      JOIN profiles p ON p.user_id=theirs.user_id JOIN users u ON u.id=p.user_id AND u.status='active'
+      JOIN telegram_accounts t ON t.user_id=p.user_id AND t.bot_started_at IS NOT NULL
+      LEFT JOIN dm_conversations c ON c.event_id=e.id AND c.first_user_id=LEAST($1::uuid,p.user_id) AND c.second_user_id=GREATEST($1::uuid,p.user_id)
+      WHERE mine.user_id=$1 AND mine.status='accepted' AND e.status='published' AND ($2::uuid IS NULL OR e.id=$2)
+      ORDER BY e.starts_at DESC,e.id DESC,p.display_name LIMIT 300`, [userId, eventId ?? null])).rows;
+    const people: typeof rows = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      if (seen.has(row.user_id) || people.length >= 20) continue;
+      if (!await can(db, userId, 'events.group_chat', { type: 'event', id: row.event_id })
+        || !await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id })) continue;
+      const resource = { type: 'profile' as const, id: row.user_id, eventId: row.event_id };
+      if (!await can(db, userId, 'dm.send_opener', resource) && !await can(db, userId, 'dm.message', resource)
+        && !(row.dm_status === 'pending' && row.requested_by === userId)) continue;
+      seen.add(row.user_id); people.push(row);
+    }
+    return people;
+  }
+  private async menuPeople(db: PoolClient, row: any, locale: string, eventId?: string) {
+    const event = eventId ? await this.eventByCode(db, row.user_id, hex(eventId)) : null;
+    if (eventId && !event) {
+      await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply', body: botText(locale, 'chatNotFound') });
+      return;
+    }
+    const people = await this.sharedPeople(db, row.user_id, event?.id);
+    const buttons = people.map(person => [{ text: buttonLabel(event ? person.display_name : `${person.display_name.slice(0, 22)} · ${person.title.slice(0, 30)}`),
+      callback_data: event ? `menu:member:${hex(event.id).slice(0, 16)}:${hex(person.user_id)}` : `menu:person:${hex(person.user_id)}` }]);
+    const back = { text: botText(locale, 'allChatsButton'), callback_data: 'menu:chats' };
+    await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply',
+      body: people.length ? botText(locale, event ? 'peopleList' : 'peopleGlobalList', { title: event?.title ?? '' }) : botText(locale, 'peopleEmpty'),
+      keyboard: { inline_keyboard: [...buttons, [back]] } });
+  }
+  private async menuChats(db: PoolClient, row: any, locale: string, wake = false) {
+    const events = (await db.query(`SELECT e.id,e.title FROM event_memberships m JOIN events e ON e.id=m.event_id
+      WHERE m.user_id=$1 AND m.status='accepted' AND e.status='published' ORDER BY e.starts_at LIMIT 20`, [row.user_id])).rows;
+    const available = [];
+    let preparing = false;
+    for (const event of events) {
+      if (!await can(db, row.user_id, 'events.group_chat', { type: 'event', id: event.id })) continue;
+      available.push(event);
+      if (!(await db.query('SELECT 1 FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, row.user_id])).rowCount) {
+        preparing = true;
+        await queuePartyTopic(db, event.id, row.user_id, event.title, this.config.aiMode);
+      }
+    }
+    if (wake) await db.query("UPDATE bot_outbox SET available_at=now() WHERE user_id=$1 AND kind='topic_init' AND state='pending'", [row.user_id]);
+    const keyboard: BotKeyboard = { inline_keyboard: [
+      ...available.map(event => [{ text: buttonLabel(event.title), callback_data: `menu:event:${hex(event.id)}` }]),
+      [{ text: botText(locale, 'allPeopleButton'), callback_data: 'menu:people' }],
+    ] };
+    await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply',
+      body: botText(locale, available.length ? preparing ? 'chatsPreparing' : 'chatsList' : 'chatsEmpty'), keyboard });
+  }
+  private async menuEvent(db: PoolClient, row: any, locale: string, eventId: string) {
+    const event = await this.eventByCode(db, row.user_id, hex(eventId));
+    if (!event) {
+      await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply', body: botText(locale, 'chatNotFound') });
+      return;
+    }
+    const topic = (await db.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, row.user_id])).rows[0];
+    if (!topic) await queuePartyTopic(db, event.id, row.user_id, event.title, this.config.aiMode);
+    const link = topic ? `https://t.me/questr_game/${topic.thread_id}` : '';
+    const keyboard: BotKeyboard = { inline_keyboard: [
+      ...(link ? [[{ text: botText(locale, 'partyTopicButton'), url: link }]] : []),
+      [{ text: botText(locale, 'peopleButton'), callback_data: `menu:people:${hex(event.id)}` }],
+      [{ text: botText(locale, 'allChatsButton'), callback_data: 'menu:chats' }],
+    ] };
+    await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply',
+      body: botText(locale, topic ? 'topicReady' : 'topicPreparing', { title: event.title, link }), keyboard });
+  }
   private async command(db: PoolClient, row: any, locale: string): Promise<boolean> {
     const parts = row.text.trim().split(/\s+/);
     let command = parts[0].toLowerCase().replace(/@questr_game$/, '');
-    const deepLink = command === '/start' && parts.length === 2 ? /^dm_([a-f0-9]{8})_([a-f0-9]{8})$/i.exec(parts[1]) : null;
-    if (deepLink) { command = '/dm'; parts.splice(1, 1, deepLink[1], deepLink[2]); }
+    const deepLink = command === '/start' && parts.length === 2 ? /^(dm|contact)_([a-f0-9]{8,16})_([a-f0-9]{8,32})$/i.exec(parts[1]) : null;
+    if (deepLink) { command = '/dm'; parts.splice(1, 1, deepLink[2], deepLink[3]); }
+    const purpose = deepLink?.[1] === 'contact' ? 'contact' : 'chat';
     const reply = (body: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, body, kind: 'reply' });
     if (command === '/chats' || command === '/start' && parts.length === 1) {
-      const events = (await db.query(`SELECT e.id,e.title FROM event_memberships m JOIN events e ON e.id=m.event_id
-        WHERE m.user_id=$1 AND m.status='accepted' AND e.status='published' ORDER BY e.starts_at LIMIT 15`, [row.user_id])).rows;
-      const available = [];
-      for (const event of events) if (await can(db, row.user_id, 'events.group_chat', { type: 'event', id: event.id })) available.push(event);
-      if (command === '/start') {
-        for (const event of available) {
-          if (!(await db.query('SELECT 1 FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, row.user_id])).rowCount)
-            await queuePartyTopic(db, event.id, row.user_id, event.title, this.config.aiMode);
-        }
-        await db.query("UPDATE bot_outbox SET available_at=now() WHERE user_id=$1 AND kind='topic_init' AND state='pending'", [row.user_id]);
-      }
-      const eventList = available.map(e => `${e.title.slice(0, 80)} — ${e.id.replaceAll('-', '').slice(0, 8)}`).join('\n');
-      const dms = (await db.query(`SELECT c.id,c.event_id,p.display_name,p.user_id AS other_id FROM dm_conversations c
-        JOIN profiles p ON p.user_id=CASE WHEN c.first_user_id=$1 THEN c.second_user_id ELSE c.first_user_id END
-        WHERE $1 IN (c.first_user_id,c.second_user_id) AND c.status='accepted' ORDER BY c.updated_at DESC LIMIT 15`, [row.user_id])).rows;
-      const dmList = [];
-      for (const dm of dms) if (await can(db, row.user_id, 'dm.message', { type: 'profile', id: dm.other_id, eventId: dm.event_id })) dmList.push(`${dm.display_name} [${dm.id.replaceAll('-', '').slice(0, 8)}] — /dm ${dm.event_id.replaceAll('-', '').slice(0, 8)} ${dm.other_id.replaceAll('-', '').slice(0, 8)}`);
-      await reply(`${eventList ? botText(locale, 'chatsList', { items: eventList }) : botText(locale, 'chatsEmpty')}${dmList.length ? `\n\n${botText(locale, 'dmList', { items: dmList.join('\n') })}` : ''}`);
+      await this.menuChats(db, row, locale, command === '/start');
       return true;
     }
     if (command === '/chat' && parts.length === 2) {
       const event = await this.eventByCode(db, row.user_id, parts[1]);
-      if (!event) { await reply(botText(locale, 'chatNotFound')); return true; }
-      const topic = (await db.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, row.user_id])).rows[0];
-      if (!topic) await queuePartyTopic(db, event.id, row.user_id, event.title, this.config.aiMode);
-      await reply(botText(locale, topic ? 'topicReady' : 'topicPreparing', { title: event.title, link: topic ? `https://t.me/questr_game/${topic.thread_id}` : '' }));
+      if (event) await this.menuEvent(db, row, locale, event.id);
+      else await reply(botText(locale, 'chatNotFound'));
       return true;
     }
+    if (command === '/people' && parts.length === 1) { await this.menuPeople(db, row, locale); return true; }
     if (command === '/people' && parts.length === 2) {
       const event = await this.eventByCode(db, row.user_id, parts[1]);
-      if (!event) { await reply(botText(locale, 'chatNotFound')); return true; }
-      const people = (await db.query(`SELECT p.user_id,p.display_name FROM event_memberships m JOIN profiles p ON p.user_id=m.user_id
-        JOIN users u ON u.id=m.user_id JOIN telegram_accounts t ON t.user_id=m.user_id AND t.bot_started_at IS NOT NULL
-        WHERE m.event_id=$1 AND m.status='accepted' AND m.user_id<>$2 AND u.status='active' ORDER BY p.display_name LIMIT 20`, [event.id, row.user_id])).rows;
-      const permitted = [];
-      for (const person of people) if (await can(db, row.user_id, 'dm.send_opener', { type: 'profile', id: person.user_id, eventId: event.id }) || await can(db, row.user_id, 'dm.message', { type: 'profile', id: person.user_id, eventId: event.id })) permitted.push(`${person.display_name.slice(0, 80)} — ${person.user_id.replaceAll('-', '').slice(0, 8)}`);
-      await reply(permitted.length ? botText(locale, 'peopleList', { title: event.title, items: permitted.join('\n') }) : botText(locale, 'peopleEmpty'));
+      if (event) await this.menuPeople(db, row, locale, event.id);
+      else await reply(botText(locale, 'chatNotFound'));
       return true;
     }
     if (command === '/dm' && parts.length === 3) {
@@ -125,8 +181,12 @@ export class EventBot {
       let dm = (await db.query('SELECT * FROM dm_conversations WHERE event_id=$1 AND first_user_id=$2 AND second_user_id=$3', [event.id, ...pair])).rows[0];
       const capability = dm?.status === 'accepted' ? 'dm.message' : 'dm.send_opener';
       if (dm?.status === 'declined' || dm?.status === 'blocked' || dm?.status === 'pending' && dm.requested_by !== row.user_id || dm?.status !== 'pending' && !await can(db, row.user_id, capability, { type: 'profile', id: person.user_id, eventId: event.id })) { await reply(botText(locale, 'dmUnavailable')); return true; }
-      if (!dm) dm = (await db.query(`INSERT INTO dm_conversations(event_id,first_user_id,second_user_id,requested_by)
-        VALUES($1,$2,$3,$4) ON CONFLICT(event_id,first_user_id,second_user_id) DO UPDATE SET updated_at=dm_conversations.updated_at RETURNING *`, [event.id, ...pair, row.user_id])).rows[0];
+      if (!dm) dm = (await db.query(`INSERT INTO dm_conversations(event_id,first_user_id,second_user_id,requested_by,purpose)
+        VALUES($1,$2,$3,$4,$5) ON CONFLICT(event_id,first_user_id,second_user_id) DO UPDATE SET updated_at=dm_conversations.updated_at RETURNING *`, [event.id, ...pair, row.user_id, purpose])).rows[0];
+      else if (dm.status === 'draft' && dm.purpose !== purpose) {
+        await db.query('UPDATE dm_conversations SET purpose=$2 WHERE id=$1', [dm.id, purpose]);
+        dm.purpose = purpose;
+      }
       const topic = (await db.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [dm.id, row.user_id])).rows[0];
       if (!topic && ['draft', 'accepted'].includes(dm.status)) await queueBot(db, { key: `dm:${dm.id}:topic:${row.user_id}`, userId: row.user_id, dmId: dm.id, kind: 'reply', inTopic: true,
         body: botText(locale, dm.status === 'accepted' ? 'dmAccepted' : 'dmStart', { name: person.display_name, title: event.title, code: dm.id.replaceAll('-', '').slice(0, 8) }) });
@@ -165,6 +225,7 @@ export class EventBot {
     if (dm.status === 'pending') { await reply(botText(locale, 'dmWaiting')); return true; }
     if (dm.status !== 'draft' && dm.status !== 'accepted') { await reply(botText(locale, 'dmUnavailable')); return true; }
     if (dm.status === 'draft' && (dm.requested_by !== row.user_id || !await can(db, row.user_id, 'dm.send_opener', { type: 'profile', id: other, eventId: dm.event_id })) || dm.status === 'accepted' && !await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })) { await reply(botText(locale, 'dmUnavailable')); return true; }
+    if (dm.status === 'draft' && hasPublicLink(row.text)) throw new AppError(400, 'APPLICATION_LINK_NOT_ALLOWED');
     await this.adventures.review(row.text);
     if (dm.status === 'draft') await consumeCapability(db, row.user_id, 'dm.send_opener', { type: 'profile', id: other, eventId: dm.event_id }, dm.id);
     const message = (await db.query('INSERT INTO dm_messages(conversation_id,sender_id,telegram_update_id,body) VALUES($1,$2,$3,$4) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [dm.id, row.user_id, row.update_id, row.text])).rows[0];
@@ -174,12 +235,59 @@ export class EventBot {
       await db.query("UPDATE dm_conversations SET status='pending',updated_at=now() WHERE id=$1", [dm.id]);
       const title = (await db.query('SELECT title FROM events WHERE id=$1', [dm.event_id])).rows[0].title;
       const targetLocale = (await db.query('SELECT locale FROM users WHERE id=$1', [other])).rows[0].locale;
-      await queueBot(db, { key: `dm:${dm.id}:request`, userId: other, dmId: dm.id, kind: 'dm_request', body: botText(targetLocale, 'dmRequested', { name, title, message: row.text, code: dm.id.replaceAll('-', '').slice(0, 8) }) });
+      await queueBot(db, { key: `dm:${dm.id}:request`, userId: other, dmId: dm.id, kind: 'dm_request', body: botText(targetLocale, dm.purpose === 'contact' ? 'dmRequestedContact' : 'dmRequested', { name, title, message: row.text }) });
       await reply(botText(locale, 'dmWaiting'));
     } else {
       await queueBot(db, { key: `dm:message:${message.id}`, userId: other, dmId: dm.id, dmMessageId: message.id, kind: 'dm_relay', inTopic: true, body: `${name}:\n${row.text}` });
     }
     return true;
+  }
+  private async menuCallback(db: PoolClient, row: any, locale: string) {
+    const data = row.callback_data as string;
+    const respond = (body: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, body, kind: 'reply' });
+    let valid = true;
+    if (data === 'menu:chats') await this.menuChats(db, row, locale);
+    else if (data === 'menu:people') await this.menuPeople(db, row, locale);
+    else if (/^menu:event:[a-f0-9]{32}$/.test(data)) await this.menuEvent(db, row, locale, uuid(data.slice(11))!);
+    else if (/^menu:people:[a-f0-9]{32}$/.test(data)) await this.menuPeople(db, row, locale, uuid(data.slice(12))!);
+    else if (/^menu:person:[a-f0-9]{32}$/.test(data)) {
+      const personId = uuid(data.slice(12))!;
+      const person = (await this.sharedPeople(db, row.user_id)).find(p => p.user_id === personId);
+      if (person) await this.command(db, { ...row, text: `/dm ${hex(person.event_id)} ${hex(personId)}` }, locale);
+      else { valid = false; await respond(botText(locale, 'dmUnavailable')); }
+    } else {
+      const member = /^menu:member:([a-f0-9]{16}):([a-f0-9]{32})$/.exec(data);
+      const event = member ? await this.eventByCode(db, row.user_id, member[1]) : null;
+      const person = event && member ? (await this.sharedPeople(db, row.user_id, event.id)).find(p => hex(p.user_id) === member[2]) : null;
+      if (person) await this.command(db, { ...row, text: `/dm ${hex(event!.id)} ${hex(person.user_id)}` }, locale);
+      else { valid = false; await respond(botText(locale, 'dmUnavailable')); }
+    }
+    try { await this.call('answerCallbackQuery', { callback_query_id: row.callback_query_id, ...(valid ? {} : { text: botText(locale, 'dmUnavailable') }) }); } catch { /* The queued menu reply still arrives. */ }
+  }
+  private async dmDecisionCallback(db: PoolClient, row: any, locale: string) {
+    const match = /^dm:(accept|decline):([a-f0-9]{32})$/.exec(row.callback_data ?? '');
+    let answer = botText(locale, 'dmNoRequest');
+    let clearButtons = false;
+    if (match) {
+      const dmId = uuid(match[2])!;
+      const request = (await db.query(`SELECT c.status,c.requested_by FROM bot_outbox o JOIN dm_conversations c ON c.id=o.dm_id
+        WHERE o.dm_id=$1 AND o.user_id=$2 AND o.kind='dm_request' AND o.telegram_message_id=$3 AND o.state='sent'`, [dmId, row.user_id, row.callback_message_id])).rows[0];
+      if (request) {
+        if (request.status === 'pending' && request.requested_by !== row.user_id) {
+          await this.command(db, { ...row, text: `/${match[1]} ${match[2]}` }, locale);
+          const status = (await db.query('SELECT status FROM dm_conversations WHERE id=$1', [dmId])).rows[0]?.status;
+          if (status === (match[1] === 'accept' ? 'accepted' : 'declined')) {
+            answer = botText(locale, match[1] === 'accept' ? 'applicationAccepted' : 'applicationDeclined');
+            clearButtons = true;
+          } else answer = botText(locale, 'dmUnavailable');
+        } else clearButtons = true;
+      }
+    }
+    try { await this.call('answerCallbackQuery', { callback_query_id: row.callback_query_id, text: answer }); } catch { /* Decision remains durable. */ }
+    if (clearButtons) {
+      const chatId = (await db.query('SELECT telegram_user_id FROM telegram_accounts WHERE user_id=$1', [row.user_id])).rows[0]?.telegram_user_id;
+      if (chatId) try { await this.call('editMessageReplyMarkup', { chat_id: chatId, message_id: row.callback_message_id, reply_markup: { inline_keyboard: [] } }); } catch { /* A later press rechecks status. */ }
+    }
   }
   private async applicationCallback(db: PoolClient, row: any, locale: string) {
     const match = /^application:(accept|decline):(\d{1,20})$/.exec(row.callback_data ?? '');
@@ -233,7 +341,12 @@ export class EventBot {
       try {
         const user = (await db.query("SELECT status,locale FROM users WHERE id=$1", [row.user_id])).rows[0];
         locale = user?.locale ?? 'en';
-        if (row.callback_query_id) await this.applicationCallback(db, row, locale);
+        if (row.callback_query_id) {
+          if (row.callback_data?.startsWith('application:')) await this.applicationCallback(db, row, locale);
+          else if (row.callback_data?.startsWith('dm:')) await this.dmDecisionCallback(db, row, locale);
+          else if (row.callback_data?.startsWith('menu:')) await this.menuCallback(db, row, locale);
+          else try { await this.call('answerCallbackQuery', { callback_query_id: row.callback_query_id, text: botText(locale, 'unavailable') }); } catch { /* Unknown callback. */ }
+        }
         else if (user?.status !== 'active') { await reply(botText(locale, 'finishCharacter')); }
         else if (/^\/start(?:@questr_game)? quest_[a-f0-9]{32}$/.test(row.text)) {
           const raw = row.text.split('quest_')[1];
@@ -370,10 +483,13 @@ export class EventBot {
           : row.in_topic && row.event_id ? await this.topic(db, row.user_id, row.event_id, account.telegram_user_id) : undefined;
         const url = this.config.publicAppUrl;
         const openButton = url && url.startsWith('https://') ? { text: botText(account.locale, 'openButton'), web_app: { url: `${url.split('#')[0]}${row.event_id || dmEventId ? `#adventures/${row.event_id || dmEventId}` : ''}` } } : null;
-        const keyboard = row.kind === 'application' ? { inline_keyboard: [
+        const keyboard = row.reply_markup ?? (row.kind === 'application' ? { inline_keyboard: [
           [{ text: botText(account.locale, 'acceptButton'), callback_data: `application:accept:${row.id}` }, { text: botText(account.locale, 'declineButton'), callback_data: `application:decline:${row.id}` }],
           ...(openButton ? [[openButton]] : []),
-        ] } : openButton ? { inline_keyboard: [[openButton]] } : undefined;
+        ] } : row.kind === 'dm_request' ? { inline_keyboard: [
+          [{ text: botText(account.locale, 'acceptButton'), callback_data: `dm:accept:${hex(row.dm_id)}` }, { text: botText(account.locale, 'declineButton'), callback_data: `dm:decline:${hex(row.dm_id)}` }],
+          ...(openButton ? [[openButton]] : []),
+        ] } : openButton ? { inline_keyboard: [[openButton]] } : undefined);
         const suffix = relayBody === null ? null : `:\n${relayBody}`;
         const author = suffix && row.body.endsWith(suffix) ? row.body.slice(0, -suffix.length) : null;
         const markdown = author && relayBody !== null ? relayMarkdown(author, relayBody) : null;
@@ -396,6 +512,19 @@ export class EventBot {
       if (!me.has_topics_enabled) console.warn('QUESTR bot: enable private-chat topics in BotFather.');
       if (me.allows_users_to_create_topics) console.warn('QUESTR bot: disallow users to create topics in BotFather so commands stay in the main chat.');
     }).catch(() => console.warn('QUESTR bot: could not verify BotFather topic settings.'));
+    const scope = { type: 'all_private_chats' };
+    void Promise.all([
+      this.call('setMyCommands', { scope, commands: [
+        { command: 'chats', description: 'Adventures and party topics' },
+        { command: 'people', description: 'People you can message' },
+        { command: 'help', description: 'How QUESTR chat works' },
+      ] }),
+      this.call('setMyCommands', { scope, language_code: 'ru', commands: [
+        { command: 'chats', description: 'Вылазки и темы групп' },
+        { command: 'people', description: 'Люди, которым можно написать' },
+        { command: 'help', description: 'Как работает чат QUESTR' },
+      ] }),
+    ]).catch(() => console.warn('QUESTR bot: could not update command menu.'));
     let running: Promise<void> | undefined;
     let stopping = false;
     const timer = setInterval(() => {

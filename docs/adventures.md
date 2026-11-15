@@ -126,18 +126,21 @@ it does not relax the existing explicit-sexual-content policy.
    to accepted members' own topics under the sender's QUESTR display name. Raw
    Telegram messages are not forwarded; IDs/usernames are not shared. Only text
    messages are supported in v1 (up to 3000 characters). Bot commands and
-   their replies stay in the main chat. Use `/chats` to list
-   accessible adventures, `/chat <code>` to get its party-topic link, and
-   `/people <code>` to see accepted participants who have started the bot.
-6. Use `/dm <adventure code> <person code>` to open a private topic and write an
-   opener. The other person receives the reviewed opener and must use
-   `/accept <chat code>` before either side can exchange more messages. They can
-   use `/decline <chat code>`, and either side can later use `/block <chat code>`.
+   their replies stay in the main chat. `/chats` shows adventure buttons: choose
+   one to open the automatically created party topic or see its members.
+   `/people` lists people once each, labelled with the latest shared adventure.
+6. Choose a person from either menu to open a private topic, then write the
+   first message in that Telegram topic. The bot confirms that it is waiting
+   for the recipient's decision. The recipient gets the reviewed opener with
+   **Accept** and **Decline** buttons. They must accept before either side can
+   exchange more messages. Either side can later use `/block <chat code>`.
    A declined/blocked conversation cannot be restarted from the same adventure.
    Opening a private chat requires an accepted membership and an event-scoped
    `dm.send_opener` role grant. The default budget is three first contacts per
    rolling seven days; replies require `dm.message` and live roles on both sides.
-   Party and private messages stop when a participant leaves or the adventure
+   In the Telegram Mini App, character-page buttons explain this flow and open
+   the relevant bot topic; the first-message form remains available in the
+   browser version. Party and private messages stop when a participant leaves or the adventure
    closes, including messages queued but not yet delivered.
 
 The Mini App button uses Telegram's `openTelegramLink` when available. Once a

@@ -352,7 +352,7 @@ integration('starting the bot wakes a queued party topic and keeps the command i
   while (await bot.outbox()) { /* Deliver both the party intro and the main-chat reply. */ }
   assert.equal(calls.filter(call => call.method === 'createForumTopic').length, 1);
   assert.equal((await pool.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, host.id])).rows[0].thread_id, '221');
-  assert.ok(calls.some(call => call.method === 'sendMessage' && call.body.message_thread_id === undefined && call.body.text.includes('Party chats')));
+  assert.ok(calls.some(call => call.method === 'sendMessage' && call.body.message_thread_id === undefined && call.body.text.includes('party topics are being created automatically')));
 });
 integration('bot commands select party and private topics; consent and live roles gate DM delivery', async () => {
   const host = await person('Host'), guest = await person('Guest'), other = await person('Other');
@@ -371,39 +371,74 @@ integration('bot commands select party and private topics; consent and live role
       .send({ update_id: updateId, message: { from: { id: telegramId }, chat: { id: telegramId, type: 'private' }, text, ...(thread ? { message_thread_id: thread } : {}) } }).expect(200);
     assert.equal(await bot.inbox(), true);
   };
+  const press = async (updateId: number, telegramId: number, data: string, messageId: number) => {
+    await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+      .send({ update_id: updateId, callback_query: { id: String(updateId), from: { id: telegramId }, data, message: { message_id: messageId, chat: { id: telegramId, type: 'private' } } } }).expect(200);
+    assert.equal(await bot.inbox(), true);
+  };
   const drain = async () => { while (await bot.outbox()) { /* dispatch */ } };
-  const eventCode = event.id.replaceAll('-', '').slice(0, 8), hostCode = host.id.replaceAll('-', '').slice(0, 8);
+  const eventCode = event.id.replaceAll('-', '').slice(0, 8);
   await send(9001, 3002, '/chats');
-  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9001:reply'")).rows[0].body, new RegExp(eventCode));
-  await send(9002, 3002, `/people ${eventCode}`);
-  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9002:reply'")).rows[0].body, new RegExp(hostCode));
-  await send(9003, 3002, `/dm ${eventCode} ${hostCode}`); await drain();
+  const chats = (await pool.query("SELECT body,reply_markup FROM bot_outbox WHERE dedupe_key='update:9001:reply'")).rows[0];
+  assert.match(chats.body, /topics are being created automatically/);
+  const eventButton = chats.reply_markup.inline_keyboard.flat().find((button: any) => button.callback_data?.startsWith('menu:event:'));
+  assert.equal(eventButton.callback_data, `menu:event:${event.id.replaceAll('-', '')}`);
+  await drain();
+  const chatsMessage = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE dedupe_key='update:9001:reply'")).rows[0].telegram_message_id;
+  await press(9002, 3002, eventButton.callback_data, Number(chatsMessage));
+  const eventMenu = (await pool.query("SELECT reply_markup FROM bot_outbox WHERE dedupe_key='update:9002:reply'")).rows[0].reply_markup;
+  assert.ok(eventMenu.inline_keyboard.flat().some((button: any) => button.url?.includes('t.me/questr_game/')));
+  const partyPeople = eventMenu.inline_keyboard.flat().find((button: any) => button.callback_data?.startsWith('menu:people:'));
+  await drain();
+  const eventMessage = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE dedupe_key='update:9002:reply'")).rows[0].telegram_message_id;
+  await press(9003, 3002, partyPeople.callback_data, Number(eventMessage));
+  const memberMenu = (await pool.query("SELECT reply_markup FROM bot_outbox WHERE dedupe_key='update:9003:reply'")).rows[0].reply_markup;
+  const hostButton = memberMenu.inline_keyboard.flat().find((button: any) => button.text === 'Host');
+  assert.match(hostButton.callback_data, new RegExp(`${host.id.replaceAll('-', '')}$`));
+  await drain();
+  await send(9016, 3002, '/chats');
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9016:reply'")).rows[0].body, /party topics are already created/);
+  const peopleMessage = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE dedupe_key='update:9003:reply'")).rows[0].telegram_message_id;
+  await press(9013, 3002, hostButton.callback_data, Number(peopleMessage)); await drain();
   const dm = (await pool.query('SELECT * FROM dm_conversations WHERE event_id=$1 AND requested_by=$2', [event.id, guest.id])).rows[0];
   assert.equal(dm.status, 'draft');
   const thread = Number((await pool.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [dm.id, guest.id])).rows[0].thread_id);
   await send(9004, 3002, 'I can bring my jazz records.', thread);
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'pending');
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9004:reply'")).rows[0].body, /waiting for a reply/);
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM capability_usage WHERE user_id=$1 AND capability='dm.send_opener'", [guest.id])).rows[0].n, 1);
   await drain();
-  assert.ok(calls.some(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.text.includes(`/accept ${dm.id.replaceAll('-', '').slice(0, 8)}`)));
+  const requestCall = calls.find(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.text.includes('jazz records'));
+  assert.ok(requestCall);
+  assert.equal(requestCall?.body.reply_markup.inline_keyboard[0][0].callback_data, `dm:accept:${dm.id.replaceAll('-', '')}`);
   assert.ok(!calls.some(c => String(c.body.chat_id) === '3003' && c.body.text?.includes('jazz records')));
   await send(9005, 3002, 'Another message before consent.', thread);
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [dm.id])).rows[0].n, 1);
-  await send(9006, 3001, `/accept ${dm.id.replaceAll('-', '').slice(0, 8)}`); await drain();
+  const requestMessage = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE kind='dm_request' AND dm_id=$1", [dm.id])).rows[0].telegram_message_id;
+  await press(9015, 3001, requestCall.body.reply_markup.inline_keyboard[0][0].callback_data, Number(requestMessage) + 999);
+  assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'pending');
+  await press(9006, 3001, requestCall.body.reply_markup.inline_keyboard[0][0].callback_data, Number(requestMessage)); await drain();
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'accepted');
   assert.ok(calls.some(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.parse_mode === 'MarkdownV2' && c.body.text === '*Guest*:\nI can bring my jazz records\\.'));
-  const otherCode = other.id.replaceAll('-', '').slice(0, 8);
-  await send(9008, 3002, `/dm ${eventCode} ${otherCode}`); await drain();
+  await send(9008, 3002, '/people');
+  const allPeople = (await pool.query("SELECT reply_markup FROM bot_outbox WHERE dedupe_key='update:9008:reply'")).rows[0].reply_markup;
+  const otherButton = allPeople.inline_keyboard.flat().find((button: any) => button.text.startsWith('Other ·'));
+  assert.equal(otherButton.callback_data, `menu:person:${other.id.replaceAll('-', '')}`);
+  await drain();
+  const allPeopleMessage = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE dedupe_key='update:9008:reply'")).rows[0].telegram_message_id;
+  await press(9014, 3002, otherButton.callback_data, Number(allPeopleMessage)); await drain();
   const second = (await pool.query('SELECT id,status FROM dm_conversations WHERE event_id=$1 AND requested_by=$2 AND id<>$3', [event.id, guest.id, dm.id])).rows[0];
   const secondThread = Number((await pool.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [second.id, guest.id])).rows[0].thread_id);
   await send(9009, 3002, 'I want to have sex with you.', secondThread);
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [second.id])).rows[0].status, 'draft');
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [second.id])).rows[0].n, 0);
   await send(9010, 3002, 'Would you like to bring a record?', secondThread);
-  await send(9011, 3003, `/decline ${second.id.replaceAll('-', '').slice(0, 8)}`);
+  await drain();
+  const secondRequest = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE kind='dm_request' AND dm_id=$1", [second.id])).rows[0].telegram_message_id;
+  await press(9011, 3003, `dm:decline:${second.id.replaceAll('-', '')}`, Number(secondRequest));
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [second.id])).rows[0].status, 'declined');
   await drain();
-  assert.ok(!calls.some(c => String(c.body.chat_id) === '3003' && c.body.text?.includes('Would you like to bring a record?')));
+  assert.ok(!calls.some(c => String(c.body.chat_id) === '3003' && c.body.parse_mode === 'MarkdownV2' && c.body.text?.includes('Would you like to bring a record?')));
   await send(9007, 3002, 'See you tomorrow.', thread);
   await guest.agent.post(`/api/events/${event.id}/leave`).send({}).expect(200);
   await drain();
@@ -411,6 +446,35 @@ integration('bot commands select party and private topics; consent and live role
   assert.equal(await can(pool, guest.id, 'dm.message', { type: 'profile', id: host.id }), false);
   await send(9012, 3001, `/block ${dm.id.replaceAll('-', '').slice(0, 8)}`);
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'blocked');
+});
+integration('/people shows each person once with the latest shared adventure', async () => {
+  const host = await person('Host'), guest = await person('Guest');
+  const first = await create(host, { title: 'First record hunt' });
+  const later = Date.now() + 2 * 86400000;
+  const second = await create(host, { title: 'Next record hunt', startsAt: new Date(later).toISOString(), endsAt: new Date(later + 7200000).toISOString() });
+  for (const event of [first, second]) { await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200); }
+  await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id,bot_started_at) VALUES($1,6101,now()),($2,6102,now())', [host.id, guest.id]);
+  await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+    .send({ update_id: 9601, message: { from: { id: 6102 }, chat: { id: 6102, type: 'private' }, text: '/people' } }).expect(200);
+  const bot = new EventBot(pool, config);
+  assert.equal(await bot.inbox(), true);
+  const menu = (await pool.query("SELECT body,reply_markup FROM bot_outbox WHERE dedupe_key='update:9601:reply'")).rows[0];
+  assert.match(menu.body, /latest shared adventure/);
+  const buttons = menu.reply_markup.inline_keyboard.flat().filter((button: any) => button.callback_data?.startsWith('menu:person:'));
+  assert.equal(buttons.length, 1);
+  assert.equal(buttons[0].callback_data, `menu:person:${host.id.replaceAll('-', '')}`);
+  assert.match(buttons[0].text, /Host · Next record hunt/);
+  await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+    .send({ update_id: 9602, message: { from: { id: 6102 }, chat: { id: 6102, type: 'private' }, text: `/start contact_${second.id.replaceAll('-', '').slice(0, 16)}_${host.id.replaceAll('-', '')}` } }).expect(200);
+  assert.equal(await bot.inbox(), true);
+  const contact = (await pool.query('SELECT id,purpose,status FROM dm_conversations WHERE event_id=$1 AND requested_by=$2', [second.id, guest.id])).rows[0];
+  assert.equal(contact.purpose, 'contact');
+  await pool.query('INSERT INTO dm_bot_topics(conversation_id,user_id,thread_id) VALUES($1,$2,700)', [contact.id, guest.id]);
+  await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+    .send({ update_id: 9603, message: { from: { id: 6102 }, chat: { id: 6102, type: 'private' }, message_thread_id: 700, text: 'Could we exchange Telegram contacts?' } }).expect(200);
+  assert.equal(await bot.inbox(), true);
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE kind='dm_request' AND dm_id=$1", [contact.id])).rows[0].body, /Telegram contact/);
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9603:reply'")).rows[0].body, /waiting for a reply/);
 });
 integration('character page starts consent-based private chat and Telegram contact requests', async () => {
   const host = await person('Host'), guest = await person('Guest'), other = await person('Other'), outsider = await person('Outsider');
@@ -441,7 +505,8 @@ integration('character page starts consent-based private chat and Telegram conta
   const contact = (await pool.query('SELECT * FROM dm_conversations WHERE event_id=$1 AND requested_by=$2 AND id<>$3', [event.id, guest.id, dm.id])).rows[0];
   assert.equal(contact.purpose, 'contact');
   assert.match((await pool.query("SELECT body FROM bot_outbox WHERE kind='dm_request' AND dm_id=$1", [contact.id])).rows[0].body, /Telegram contact/);
-  const bot = new EventBot(pool, config, (async () => Response.json({ ok: true, result: { message_id: 1, message_thread_id: 81 } })) as typeof fetch);
+  let nextThread = 80;
+  const bot = new EventBot(pool, config, (async (url: string | URL | Request) => Response.json({ ok: true, result: String(url).endsWith('/createForumTopic') ? { message_thread_id: ++nextThread } : { message_id: 1 } })) as typeof fetch);
   await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret').send({ update_id: 9501, message: { from: { id: 5103 }, chat: { id: 5103, type: 'private' }, text: `/accept ${contact.id.replaceAll('-', '').slice(0, 8)}` } }).expect(200);
   assert.equal(await bot.inbox(), true);
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [contact.id])).rows[0].status, 'accepted');

@@ -302,13 +302,15 @@ export class Adventures {
     const theirs = accounts.find(row => row.user_id === targetId)?.bot_started_at;
     const botRequired = !mine;
     if (!theirs) return { status: 'unavailable', botRequired: false, botUrl };
-    if (await can(this.pool, userId, 'dm.message', { type: 'profile', id: targetId, eventId })) return { status: 'accepted', botRequired, botUrl };
-    const conversation = (await this.pool.query(`SELECT status,requested_by FROM dm_conversations
+    const conversation = (await this.pool.query(`SELECT id,status,requested_by FROM dm_conversations
       WHERE event_id=$1 AND first_user_id=LEAST($2::uuid,$3::uuid) AND second_user_id=GREATEST($2::uuid,$3::uuid)`, [eventId, userId, targetId])).rows[0];
-    if (conversation?.status === 'pending') return { status: conversation.requested_by === userId ? 'pending' : 'incoming', botRequired, botUrl };
+    const topic = conversation ? (await this.pool.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [conversation.id, userId])).rows[0] : null;
+    const privateUrl = topic ? `https://t.me/questr_game/${topic.thread_id}` : `${botUrl}?start=dm_${eventId.replaceAll('-', '').slice(0, 16)}_${targetId.replaceAll('-', '')}`;
+    if (await can(this.pool, userId, 'dm.message', { type: 'profile', id: targetId, eventId })) return { status: 'accepted', botRequired, botUrl: privateUrl };
+    if (conversation?.status === 'pending') return { status: conversation.requested_by === userId ? 'pending' : 'incoming', botRequired, botUrl: conversation.requested_by === userId ? privateUrl : botUrl };
     if (conversation?.status === 'declined' || conversation?.status === 'blocked') return { status: 'closed', botRequired, botUrl };
     if (conversation?.status === 'draft' && conversation.requested_by !== userId) return { status: 'unavailable', botRequired: false, botUrl };
-    return { status: mine && await can(this.pool, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId }) ? 'available' : 'unavailable', botRequired, botUrl };
+    return { status: await can(this.pool, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId }) ? 'available' : 'unavailable', botRequired, botUrl: privateUrl };
   }
   async requestConnection(userId: string, eventId: string, targetId: string, body: unknown) {
     const input = connectionRequestSchema.parse(body);
