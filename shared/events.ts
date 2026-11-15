@@ -27,6 +27,11 @@ export type EventFields = z.infer<typeof eventFieldsSchema>;
 export const createEventSchema = eventFieldsSchema.extend({ requestId: z.uuid() });
 export const editEventSchema = eventFieldsSchema.extend({ revision: z.number().int().nonnegative() });
 export const applicationSchema = z.object({ message: z.string().trim().min(3).max(2000) }).strict();
+export const connectionRequestSchema = z.object({
+  purpose: z.enum(['chat', 'contact']),
+  message: z.string().trim().min(3).max(3000),
+}).strict();
+export type CharacterConnection = { status: 'available' | 'pending' | 'incoming' | 'accepted' | 'closed' | 'unavailable'; botRequired: boolean; botUrl: string };
 export function hasPublicLink(text: string): boolean {
   return /(?:https?:\/\/|www\.|(?:[a-z0-9-]+\.)+[a-z]{2,}\/)/i.test(text);
 }
@@ -50,7 +55,7 @@ export interface AdventureDetail extends Adventure {
   botUrl: string;
 }
 export interface AdventureList { events: Adventure[]; nextOffset: number | null }
-export interface EventProfile { profile: Profile }
+export interface EventProfile { profile: Profile; connection: CharacterConnection }
 
 export function wallTime(instant: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant));

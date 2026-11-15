@@ -205,6 +205,8 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .interview > .text-button { margin: 0 17px 14px; }
 .interview > .inline-warning { margin-inline: 17px; }
 .profile-card { overflow: hidden; max-width: 840px; margin-inline: auto; }
+.profile-connection { max-width: 840px; margin: 15px auto 0; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.profile-connection p { margin: 0; color: var(--muted); }
 .profile-banner { background: #dfe3d0; padding: 19px 29px; display: flex; align-items: center; gap: 12px; color: #6e7858; border-bottom: 1px solid #c8ceb6; font-size: 9px; letter-spacing: 1.6px; }
 .profile-banner .pixel-spark { transform: scale(.65); color: #7c8b5f; }
 .banner-stars { margin-left: auto; font-size: 20px; color: #9ba477; }

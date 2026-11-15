@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
-import { createEventSchema, editEventSchema, applicationSchema, eventFieldsSchema, hasPublicLink, type Adventure, type AdventureDetail, type EventFields } from '../shared/events.ts';
+import { createEventSchema, editEventSchema, applicationSchema, connectionRequestSchema, eventFieldsSchema, hasPublicLink, type Adventure, type AdventureDetail, type EventFields, type CharacterConnection } from '../shared/events.ts';
 import { AppError } from './errors.ts';
 import { hash } from './auth.ts';
 import { transaction } from './db.ts';
@@ -284,6 +284,57 @@ export class Adventures {
     const profile = await getProfile(this.pool, targetId);
     if (!profile) throw new AppError(404, 'NOT_FOUND');
     return profile;
+  }
+  async connection(userId: string, eventId: string, targetId: string): Promise<CharacterConnection> {
+    const botUrl = 'https://t.me/questr_game';
+    if (userId === targetId || !await can(this.pool, userId, 'events.group_chat', { type: 'event', id: eventId })
+      || !await can(this.pool, targetId, 'events.group_chat', { type: 'event', id: eventId })) return { status: 'unavailable', botRequired: false, botUrl };
+    const accounts = (await this.pool.query('SELECT user_id,bot_started_at FROM telegram_accounts WHERE user_id=ANY($1::uuid[])', [[userId, targetId]])).rows;
+    const mine = accounts.find(row => row.user_id === userId)?.bot_started_at;
+    const theirs = accounts.find(row => row.user_id === targetId)?.bot_started_at;
+    const botRequired = !mine;
+    if (!theirs) return { status: 'unavailable', botRequired: false, botUrl };
+    if (await can(this.pool, userId, 'dm.message', { type: 'profile', id: targetId, eventId })) return { status: 'accepted', botRequired, botUrl };
+    const conversation = (await this.pool.query(`SELECT status,requested_by FROM dm_conversations
+      WHERE event_id=$1 AND first_user_id=LEAST($2::uuid,$3::uuid) AND second_user_id=GREATEST($2::uuid,$3::uuid)`, [eventId, userId, targetId])).rows[0];
+    if (conversation?.status === 'pending') return { status: conversation.requested_by === userId ? 'pending' : 'incoming', botRequired, botUrl };
+    if (conversation?.status === 'declined' || conversation?.status === 'blocked') return { status: 'closed', botRequired, botUrl };
+    if (conversation?.status === 'draft' && conversation.requested_by !== userId) return { status: 'unavailable', botRequired: false, botUrl };
+    return { status: mine && await can(this.pool, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId }) ? 'available' : 'unavailable', botRequired, botUrl };
+  }
+  async requestConnection(userId: string, eventId: string, targetId: string, body: unknown) {
+    const input = connectionRequestSchema.parse(body);
+    if (userId === targetId || !await can(this.pool, userId, 'events.group_chat', { type: 'event', id: eventId })
+      || !await can(this.pool, targetId, 'events.group_chat', { type: 'event', id: eventId })) throw new AppError(403, 'PERMISSION_DENIED');
+    const current = await this.connection(userId, eventId, targetId);
+    if (current.status === 'pending') return current;
+    if (current.status !== 'available') throw new AppError(409, current.botRequired ? 'BOT_NOT_STARTED' : 'DM_UNAVAILABLE');
+    if (hasPublicLink(input.message)) throw new AppError(400, 'APPLICATION_LINK_NOT_ALLOWED');
+    await this.review(input.message);
+    await transaction(this.pool, async db => {
+      await db.query('SELECT id FROM events WHERE id=$1 FOR SHARE', [eventId]);
+      await readRow(db, userId, eventId);
+      if (userId === targetId || !await can(db, userId, 'events.group_chat', { type: 'event', id: eventId })
+        || !await can(db, targetId, 'events.group_chat', { type: 'event', id: eventId })) throw new AppError(403, 'PERMISSION_DENIED');
+      const accounts = (await db.query('SELECT user_id FROM telegram_accounts WHERE user_id=ANY($1::uuid[]) AND bot_started_at IS NOT NULL', [[userId, targetId]])).rows;
+      if (!accounts.some(row => row.user_id === userId) || !accounts.some(row => row.user_id === targetId)) throw new AppError(409, 'BOT_NOT_STARTED');
+      const pair = [userId, targetId].sort();
+      let conversation = (await db.query('SELECT * FROM dm_conversations WHERE event_id=$1 AND first_user_id=$2 AND second_user_id=$3 FOR UPDATE', [eventId, ...pair])).rows[0];
+      if (conversation?.status === 'pending' && conversation.requested_by === userId) return;
+      if (conversation && (conversation.status !== 'draft' || conversation.requested_by !== userId)) throw new AppError(409, 'DM_UNAVAILABLE');
+      await requireCapability(db, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId });
+      if (!conversation) conversation = (await db.query(`INSERT INTO dm_conversations(event_id,first_user_id,second_user_id,requested_by,purpose)
+        VALUES($1,$2,$3,$4,$5) ON CONFLICT(event_id,first_user_id,second_user_id) DO NOTHING RETURNING *`, [eventId, ...pair, userId, input.purpose])).rows[0];
+      if (!conversation) throw new AppError(409, 'DM_UNAVAILABLE');
+      await consumeCapability(db, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId }, conversation.id);
+      const message = (await db.query('INSERT INTO dm_messages(conversation_id,sender_id,body) VALUES($1,$2,$3) RETURNING id', [conversation.id, userId, input.message])).rows[0];
+      await db.query("UPDATE dm_conversations SET status='pending',purpose=$2,updated_at=now() WHERE id=$1", [conversation.id, input.purpose]);
+      const name = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [userId])).rows[0].display_name;
+      const title = (await db.query('SELECT title FROM events WHERE id=$1', [eventId])).rows[0].title;
+      const locale = (await db.query('SELECT locale FROM users WHERE id=$1', [targetId])).rows[0].locale;
+      await queueBot(db, { key: `dm:${conversation.id}:request`, userId: targetId, dmId: conversation.id, dmMessageId: message.id, kind: 'dm_request', body: botText(locale, input.purpose === 'contact' ? 'dmRequestedContact' : 'dmRequested', { name, title, message: input.message, code: conversation.id.replaceAll('-', '').slice(0, 8) }) });
+    });
+    return this.connection(userId, eventId, targetId);
   }
   async setReminder(userId: string, eventId: string, minutesBefore: 15 | 60 | 1440 | null) {
     await transaction(this.pool, async db => {

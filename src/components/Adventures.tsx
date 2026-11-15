@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, CalendarDays, Globe2, Plus, RefreshCw, Users, LockKeyhole, Coins } from 'lucide-react';
 import type { AppConfig, Profile } from '../../shared/schema.ts';
 import { languages, type DiscoveryPreferences } from '../../shared/discovery.ts';
-import { wallTime, wallTimeToInstant, hasPublicLink, type Adventure, type AdventureDetail, type AdventureList, type EventFields } from '../../shared/events.ts';
+import { wallTime, wallTimeToInstant, hasPublicLink, type Adventure, type AdventureDetail, type AdventureList, type EventFields, type CharacterConnection, type EventProfile } from '../../shared/events.ts';
 import { googleMapsSearch } from '../../shared/event-links.ts';
 import { api, apiBlob, ApiError, hasTelegramSession } from '../api.ts';
 import { t, errorText, getLocale, languageName, locationName, type TranslationKey } from '../i18n.ts';
@@ -41,6 +41,9 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
   const [application, setApplication] = useState(false);
   const [message, setMessage] = useState('');
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [connection, setConnection] = useState<CharacterConnection | null>(null);
+  const [connectionPurpose, setConnectionPurpose] = useState<'chat' | 'contact' | null>(null);
+  const [connectionMessage, setConnectionMessage] = useState('');
   const [confirmation, setConfirmation] = useState<{ title: TranslationKey; hint: TranslationKey; path: string; body: object; leave?: boolean } | null>(null);
   const generation = useRef(0);
   useEffect(() => {
@@ -49,7 +52,7 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
       const nextId = location.hash.split('/')[1] ?? '';
       if (nextId !== previousId) setDetail(null);
       previousId = nextId;
-      setId(nextId); setPersonId(location.hash.split('/')[3] ?? ''); setProfile(null); setError(null);
+      setId(nextId); setPersonId(location.hash.split('/')[3] ?? ''); setProfile(null); setConnection(null); setConnectionPurpose(null); setError(null);
     };
     window.addEventListener('hashchange', change);
     return () => window.removeEventListener('hashchange', change);
@@ -60,12 +63,12 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
     try {
       if (id) {
         const result = await api<{ event: AdventureDetail }>(`/events/${id}`);
-        const character = personId ? await api<{ profile: Profile }>(`/events/${id}/profiles/${personId}`) : null;
-        if (current === generation.current) { setDetail(result.event); if (character) setProfile(character.profile); }
+        const character = personId ? await api<EventProfile>(`/events/${id}/profiles/${personId}`) : null;
+        if (current === generation.current) { setDetail(result.event); if (character) { setProfile(character.profile); setConnection(character.connection); } }
       }
       else { const result = await api<AdventureList>(`/events?view=${view}&offset=${offset}`); if (current === generation.current) setList(old => offset ? { ...result, events: [...old.events, ...result.events] } : result); }
       if (current === generation.current) setError(null);
-    } catch (error) { if (current === generation.current) { setError(error); if (id) { setDetail(null); setProfile(null); } } }
+    } catch (error) { if (current === generation.current) { setError(error); if (id) { setDetail(null); setProfile(null); setConnection(null); } } }
     finally { if (current === generation.current) setLoading(false); }
   }, [id, personId, view, discovery.revision]);
   useEffect(() => { void reload(); return () => { generation.current++; }; }, [reload]);
@@ -85,6 +88,14 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
     } catch (error) { setError(error); } finally { setBusy(false); }
   }
   function showCharacter(userId: string) { location.hash = `adventures/${id}/character/${userId}`; }
+  async function requestConnection() {
+    if (!connectionPurpose || !personId || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const result = await api<{ connection: CharacterConnection }>(`/events/${id}/profiles/${personId}/connection`, { method: 'POST', body: { purpose: connectionPurpose, message: connectionMessage } });
+      setConnection(result.connection); setConnectionPurpose(null); setConnectionMessage('');
+    } catch (error) { setError(error); } finally { setBusy(false); }
+  }
   async function setReminder(value: string) {
     if (!detail) return;
     setBusy(true); setError(null);
@@ -111,8 +122,15 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
   return <section className="adventures">
     <div className="adventure-heading">{id ? <button className="text-button" onClick={() => personId ? location.replace(`#adventures/${id}`) : go()}><ArrowLeft size={16} />{t(personId ? 'events.backToAdventure' : 'events.back')}</button> : <h1>{t('nav.adventures')}</h1>}{!personId && <div className="event-actions"><button className="icon-button" disabled={loading || busy} aria-label={t('events.refresh')} onClick={() => void reload()}><RefreshCw size={18} /></button>{!id && <button className="pixel-button small" onClick={() => setEditor('new')}><Plus size={16} />{t('events.create')}</button>}</div>}</div>
     {!id && <><div className="event-tabs"><button className={view === 'discover' ? 'active' : ''} onClick={() => setView('discover')}>{t('events.discover')}</button><button className={view === 'mine' ? 'active' : ''} onClick={() => setView('mine')}>{t('events.mine')}</button></div>{view === 'discover' && <DiscoverySettings initial={discovery} spokenLanguages={spokenLanguages} onSaved={onDiscovery} />}</>}
-    {!editor && !confirmation && !application && <EventError error={error} />}
-    {personId ? profile ? <ProfileCard profile={profile} /> : loading ? <p role="status">{t('common.loading')}</p> : null : loading && !detail ? <p role="status">{t('common.loading')}</p> : id && detail ? <>
+    {!editor && !confirmation && !application && !connectionPurpose && <EventError error={error} />}
+    {personId ? profile ? <><ProfileCard profile={profile} />{config.authMode === 'telegram' && connection && (connection.status !== 'unavailable' || connection.botRequired) ? <div className="profile-connection">
+      {connection.status === 'available' && <><button className="pixel-button small" onClick={() => { setConnectionPurpose('chat'); setConnectionMessage(''); }}>{t('events.requestChat')}</button><button className="outline-button small" onClick={() => { setConnectionPurpose('contact'); setConnectionMessage(''); }}>{t('events.requestContact')}</button></>}
+      {connection.status === 'pending' && <p role="status">{t('events.connectionPending')}</p>}
+      {connection.status === 'closed' && <p role="status">{t('events.connectionClosed')}</p>}
+      {connection.status === 'incoming' && <a className="text-button" href={connection.botUrl} onClick={event => openBot(event, event.currentTarget.href)} target="_blank" rel="noreferrer">{t('events.connectionIncoming')}</a>}
+      {connection.status === 'accepted' && <a className="pixel-button small" href={`${connection.botUrl}?start=dm_${id.replaceAll('-', '').slice(0, 8)}_${personId.replaceAll('-', '').slice(0, 8)}`} onClick={event => openBot(event, event.currentTarget.href)} target="_blank" rel="noreferrer">{t('events.openPrivateChat')}</a>}
+      {connection.botRequired && <a className="text-button" href={connection.botUrl} onClick={event => openBot(event, event.currentTarget.href)} target="_blank" rel="noreferrer">{t('events.startBot')}</a>}
+    </div> : null}</> : loading ? <p role="status">{t('common.loading')}</p> : null : loading && !detail ? <p role="status">{t('common.loading')}</p> : id && detail ? <>
       <article className="paper-card event-detail"><div className="event-status">{t(statusKey(detail))}</div><h1 dir="auto">{detail.title}</h1><p className="event-summary" dir="auto">{detail.activitySummary}</p><EventFacts event={detail} /><p className="event-experience"><strong>{t('events.experience')}:</strong> {detail.experienceNotes}</p>
         <button className="event-host text-button" disabled={busy} onClick={() => void showCharacter(detail.host.id)}><Character id={detail.host.avatarId} appearance={detail.host.avatarAppearance} />{t('events.host', { name: detail.host.displayName })}</button>
         <Markdown content={detail.descriptionMarkdown} />
@@ -137,6 +155,7 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
     </> : !id && <div className="adventure-list">{!list.events.length && <div className="events-empty"><Users size={28} /><h2>{t('events.empty')}</h2>{view === 'discover' && <p>{t('events.emptyHint')}</p>}</div>}{list.events.map(event => <button className="paper-card adventure-card" key={event.id} onClick={() => go(event.id)}><div className="event-status">{t(statusKey(event))}{event.myStatus && !event.isHost ? ` · ${t(`events.${event.myStatus}`)}` : ''}</div><h2 dir="auto">{event.title}</h2><p className="event-summary" dir="auto">{event.activitySummary}</p><EventFacts event={event} /><div className="card-host"><Character id={event.host.avatarId} appearance={event.host.avatarAppearance} /><span>{event.host.displayName}</span></div></button>)}{list.nextOffset !== null && <button className="outline-button" disabled={loading} onClick={() => void reload(list.nextOffset!)}>{t('events.more')}</button>}</div>}
     {editor && <EventEditor config={config} initial={editor === 'new' ? undefined : editor} spokenLanguages={spokenLanguages} onClose={() => setEditor(null)} onSaved={event => { setEditor(null); setDetail(event); setView('mine'); go(event.id); if (id === event.id) void reload(); }} />}
     {application && <Modal title={t(detail?.myStatus === 'withdrawn' ? 'events.reapply' : 'events.apply')} onClose={() => { if (!busy) { setApplication(false); setError(null); } }}><form onSubmit={event => { event.preventDefault(); void action('/applications', { message }); }}><label htmlFor="application-message">{t('events.message')}</label><textarea id="application-message" required minLength={3} maxLength={2000} rows={5} value={message} onChange={e => setMessage(e.target.value)} disabled={busy} autoFocus /><p className="field-hint">{t('events.firstMessageHint')}</p><p className="field-hint">{t(config.aiMode === 'openrouter' ? 'events.moderationLive' : 'events.moderation')}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button small" disabled={busy}>{t('events.send')}</button></div></form></Modal>}
+    {connectionPurpose && <Modal title={t(connectionPurpose === 'contact' ? 'events.requestContact' : 'events.requestChat')} onClose={() => { if (!busy) { setConnectionPurpose(null); setError(null); } }}><form onSubmit={event => { event.preventDefault(); void requestConnection(); }}><label htmlFor="connection-message">{t('events.connectionMessage')}</label><textarea id="connection-message" required minLength={3} maxLength={3000} rows={5} value={connectionMessage} onChange={e => setConnectionMessage(e.target.value)} disabled={busy} autoFocus /><p className="field-hint">{t(connectionPurpose === 'contact' ? 'events.contactHint' : 'events.chatHint')}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button small" disabled={busy}>{t('events.sendRequest')}</button></div></form></Modal>}
     {confirmation && <Modal title={t(confirmation.title)} onClose={() => { if (!busy) { setConfirmation(null); setError(null); } }}><p>{t(confirmation.hint)}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button small" disabled={busy} onClick={() => void action(confirmation.path, confirmation.body, confirmation.leave)}>{t('events.confirm')}</button></div></Modal>}
   </section>;
 }

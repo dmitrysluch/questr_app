@@ -66,7 +66,9 @@ export class EventBot {
   }
   private async command(db: PoolClient, row: any, locale: string): Promise<boolean> {
     const parts = row.text.trim().split(/\s+/);
-    const command = parts[0].toLowerCase().replace(/@questr_game$/, '');
+    let command = parts[0].toLowerCase().replace(/@questr_game$/, '');
+    const deepLink = command === '/start' && parts.length === 2 ? /^dm_([a-f0-9]{8})_([a-f0-9]{8})$/i.exec(parts[1]) : null;
+    if (deepLink) { command = '/dm'; parts.splice(1, 1, deepLink[1], deepLink[2]); }
     const reply = (body: string, options: { eventId?: string; dmId?: string } = {}) => queueBot(db, {
       key: `update:${row.update_id}:reply`, userId: row.user_id, body, kind: 'reply',
       eventId: options.eventId, dmId: options.dmId, inTopic: !!(options.eventId || options.dmId),
@@ -129,7 +131,7 @@ export class EventBot {
         await db.query("UPDATE dm_conversations SET status='accepted',updated_at=now() WHERE id=$1", [dm.id]);
         if (!await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id }) || !await can(db, other, 'dm.message', { type: 'profile', id: row.user_id, eventId: dm.event_id })) { await db.query('ROLLBACK TO SAVEPOINT dm_consent'); await reply(botText(locale, 'dmUnavailable')); return true; }
         const names = (await db.query('SELECT user_id,display_name FROM profiles WHERE user_id=ANY($1::uuid[])', [[row.user_id, other]])).rows;
-        for (const id of [row.user_id, other]) await queueBot(db, { key: `dm:${dm.id}:accepted:${id}`, userId: id, dmId: dm.id, kind: 'dm_accept', inTopic: true, body: botText((await db.query('SELECT locale FROM users WHERE id=$1', [id])).rows[0].locale, 'dmAccepted', { name: names.find(n => n.user_id !== id)?.display_name ?? '', code: dm.id.replaceAll('-', '').slice(0, 8) }) });
+        for (const id of [row.user_id, other]) await queueBot(db, { key: `dm:${dm.id}:accepted:${id}`, userId: id, dmId: dm.id, kind: 'dm_accept', inTopic: true, body: botText((await db.query('SELECT locale FROM users WHERE id=$1', [id])).rows[0].locale, dm.purpose === 'contact' && id === row.user_id ? 'dmAcceptedContact' : 'dmAccepted', { name: names.find(n => n.user_id !== id)?.display_name ?? '', code: dm.id.replaceAll('-', '').slice(0, 8) }) });
         const opener = (await db.query('SELECT id,body FROM dm_messages WHERE conversation_id=$1 ORDER BY created_at LIMIT 1', [dm.id])).rows[0];
         if (opener) await queueBot(db, { key: `dm:${dm.id}:opener`, userId: row.user_id, dmId: dm.id, dmMessageId: opener.id, kind: 'dm_relay', inTopic: true, body: `${names.find(n => n.user_id === other)?.display_name}:\n${opener.body}` });
       } else {

@@ -95,11 +95,26 @@ test('create an adventure, apply from another character, accept, edit and withdr
   await expect(hostCard.locator('.party-match').nth(2)).toHaveAttribute('title', 'Both open to romance');
   await hostCard.getByRole('button', { name: 'Ask me' }).click();
   await expect(guest.locator('.party-ask-topics')).toContainText('Ask me how I found my first jazz record.');
+  const eventId = hash.split('/')[1];
+  const hostId = (await (await page.request.get('/api/me')).json()).user.id;
+  const connection = { status: 'available', botRequired: false, botUrl: 'https://t.me/questr_game' };
+  await guest.route(`**/api/events/${eventId}/profiles/${hostId}`, async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), connection } });
+  });
+  await guest.route(`**/api/events/${eventId}/profiles/${hostId}/connection`, route => route.fulfill({ json: { connection: { ...connection, status: 'pending' } } }));
   await hostCard.getByRole('button', { name: "View Record keeper's character" }).click();
   await expect(guest.locator('.profile-ask-me')).toContainText('Ask me how I found my first jazz record.');
   await expect(guest).toHaveURL(/#adventures\/[^/]+\/character\//);
   await guest.reload();
   await expect(guest.locator('.profile-ask-me')).toContainText('Ask me how I found my first jazz record.');
+  await guest.getByRole('button', { name: 'Request private chat' }).click();
+  await expect(guest.getByRole('dialog')).toContainText('They can read this message');
+  await guest.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
+  await guest.getByRole('button', { name: 'Ask for Telegram contact' }).click();
+  await guest.getByRole('dialog').getByLabel('Your first message').fill('Would you like to exchange Telegram contacts?');
+  await guest.getByRole('dialog').getByRole('button', { name: 'Send request' }).click();
+  await expect(guest.getByRole('status')).toContainText('waiting for a reply');
   await guest.getByRole('button', { name: 'Back to adventure' }).click();
   await expect(guest.locator('.party-person')).toHaveCount(2);
   await noOverflow(page); await noOverflow(guest);

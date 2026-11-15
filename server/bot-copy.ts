@@ -5,7 +5,7 @@ type Key = 'updated' | 'newApplication' | 'accepted' | 'declined' | 'removed' | 
   | 'notAccepting' | 'chooseTopic' | 'applicationSent' | 'alreadyPending' | 'chatClosed' | 'botHelp'
   | 'applicationLength' | 'explicitContent' | 'noLinks' | 'messageLength' | 'unavailable' | 'processingFailed'
   | 'reminder' | 'openButton' | 'chatsEmpty' | 'chatsList' | 'peopleList' | 'peopleEmpty'
-  | 'chatNotFound' | 'dmStart' | 'dmWaiting' | 'dmRequested' | 'dmAccepted' | 'dmDeclined' | 'dmBlocked' | 'dmUnavailable' | 'dmNoRequest' | 'dmList'
+  | 'chatNotFound' | 'dmStart' | 'dmWaiting' | 'dmRequested' | 'dmRequestedContact' | 'dmAccepted' | 'dmAcceptedContact' | 'dmDeclined' | 'dmBlocked' | 'dmUnavailable' | 'dmNoRequest' | 'dmList'
   | 'acceptButton' | 'declineButton' | 'applicationAccepted' | 'applicationDeclined' | 'applicationChanged';
 
 const copy: Record<Locale, Record<Key, string>> = {
@@ -45,7 +45,9 @@ const copy: Record<Locale, Record<Key, string>> = {
     dmStart: 'Private thread with {name} from {title}. Write an opener. It will be shown to {name} for approval before you can chat.',
     dmWaiting: 'Your opener is waiting for a reply. Further messages are not delivered yet.',
     dmRequested: '{name} from {title} would like to message you:\n\n{message}\n\n/accept {code} or /decline {code}',
+    dmRequestedContact: '{name} from {title} asks for your Telegram contact:\n\n{message}\n\n/accept {code} opens a private chat where you can share your @username if you want. /decline {code} keeps it private.',
     dmAccepted: 'Private chat with {name} is open. Reply in this topic. /block {code} closes it.',
+    dmAcceptedContact: 'Private chat with {name} is open. You can share your @username here if you want; QUESTR does not reveal it automatically. /block {code} closes the chat.',
     dmDeclined: 'Private chat declined.',
     dmBlocked: 'Private chat closed. You will not receive more messages here.',
     dmUnavailable: 'Private chat unavailable. Use /people <adventure code> to see who you can contact.',
@@ -88,7 +90,9 @@ const copy: Record<Locale, Record<Key, string>> = {
     dmStart: 'Личная тема с {name} из вылазки «{title}». Напиши первое сообщение. {name} увидит его и решит, открыть ли чат.',
     dmWaiting: 'Первое сообщение ждёт ответа. Следующие пока не доставляются.',
     dmRequested: '{name} из вылазки «{title}» хочет написать тебе:\n\n{message}\n\n/accept {code} или /decline {code}',
+    dmRequestedContact: '{name} из вылазки «{title}» просит твой Telegram-контакт:\n\n{message}\n\n/accept {code} откроет личный чат, где можно по желанию отправить свой @username. /decline {code} оставит контакт закрытым.',
     dmAccepted: 'Личный чат с {name} открыт. Пиши в этой теме. /block {code} — закрыть его.',
+    dmAcceptedContact: 'Личный чат с {name} открыт. Можешь отправить свой @username в этой теме, если хочешь. QUESTR не раскрывает его автоматически. /block {code} — закрыть чат.',
     dmDeclined: 'Личный чат отклонён.',
     dmBlocked: 'Личный чат закрыт. Новых сообщений здесь не будет.',
     dmUnavailable: 'Личный чат недоступен. Посмотреть доступных людей: /people <код вылазки>.',

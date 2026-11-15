@@ -41,6 +41,14 @@ export function eventRoutes(events: Adventures) {
     const { status, revision } = z.object({ status: z.enum(['cancelled', 'completed']), revision: z.number().int().nonnegative() }).strict().parse(req.body);
     res.json({ event: await events.transition(res.locals.user.id, id(req.params.id), revision, status) });
   });
-  router.get('/:id/profiles/:userId', async (req, res) => res.json({ profile: await events.profile(res.locals.user.id, id(req.params.id), id(req.params.userId)) }));
+  router.get('/:id/profiles/:userId', async (req, res) => {
+    const eventId = id(req.params.id), targetId = id(req.params.userId), userId = res.locals.user.id;
+    const profile = await events.profile(userId, eventId, targetId);
+    res.json({ profile, connection: await events.connection(userId, eventId, targetId) });
+  });
+  router.post('/:id/profiles/:userId/connection', async (req, res) => {
+    const eventId = id(req.params.id), targetId = id(req.params.userId), userId = res.locals.user.id;
+    res.json({ connection: await events.requestConnection(userId, eventId, targetId, req.body) });
+  });
   return router;
 }
