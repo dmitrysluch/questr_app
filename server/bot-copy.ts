@@ -3,7 +3,7 @@ import { preferredLocale, type Locale } from '../shared/locale.ts';
 type Key = 'updated' | 'newApplication' | 'accepted' | 'declined' | 'removed' | 'left' | 'cancelled' | 'completed'
   | 'finishCharacter' | 'topicChatLive' | 'topicChatDemo' | 'topicPending' | 'topicApplyLive' | 'topicApplyDemo'
   | 'topicReady' | 'topicPreparing' | 'applyInApp' | 'dmTopicReady' | 'dmTopicPreparing'
-  | 'notAccepting' | 'chooseTopic' | 'applicationSent' | 'alreadyPending' | 'chatClosed' | 'botHelp'
+  | 'notAccepting' | 'chooseTopic' | 'applicationSent' | 'alreadyPending' | 'chatClosed' | 'botHelp' | 'commandsInAllChats' | 'offTopicText'
   | 'applicationLength' | 'explicitContent' | 'noLinks' | 'messageLength' | 'photoCaptionLength' | 'photoOpenerTextOnly' | 'unavailable' | 'processingFailed'
   | 'reminder' | 'openButton' | 'chatsEmpty' | 'chatsList' | 'chatsPreparing' | 'peopleList' | 'peopleEmpty'
   | 'peopleGlobalList' | 'partyTopicButton' | 'peopleButton' | 'allChatsButton' | 'allPeopleButton'
@@ -36,6 +36,8 @@ const copy: Record<Locale, Record<Key, string>> = {
     applicationSent: 'Application sent. The host will review your character and message.',
     alreadyPending: 'Your application is already waiting for the host.', chatClosed: 'This party chat is closed to you.',
     botHelp: '/chats — your adventures and party topics. /people — people you can message.',
+    commandsInAllChats: 'Bot commands work in All messages. Use the adventure topics for chat.',
+    offTopicText: 'Only bot commands work in All messages. To chat, open the matching adventure or private topic. Use /chats to find it.',
     applicationLength: 'Please write an application of 3–2000 characters.',
     explicitContent: 'Please keep explicit sexual content out of QUESTR messages. Try a message about the adventure instead.',
     noLinks: 'Please write your first message without links. You can ask the host about the adventure instead.',
@@ -91,6 +93,8 @@ const copy: Record<Locale, Record<Key, string>> = {
     applicationSent: 'Заявка отправлена. Организатор прочитает твоё сообщение и посмотрит персонажа.',
     alreadyPending: 'Твоя заявка уже ждёт ответа организатора.', chatClosed: 'Чат этой группы тебе недоступен.',
     botHelp: '/chats — вылазки и темы групп. /people — люди, которым можно написать.',
+    commandsInAllChats: 'Команды бота работают в «Все сообщения». Для общения используй темы вылазок.',
+    offTopicText: 'В «Все сообщения» бот принимает только команды. Чтобы общаться, открой тему нужной вылазки или личного чата. Найти её можно через /chats.',
     applicationLength: 'Напиши заявку длиной от 3 до 2000 символов.',
     explicitContent: 'Пожалуйста, не добавляй откровенно сексуальный текст в сообщения QUESTR. Лучше напиши о самой вылазке.',
     noLinks: 'Первое сообщение должно быть без ссылок. Ты можешь спросить организатора о вылазке.',

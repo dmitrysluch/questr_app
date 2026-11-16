@@ -134,9 +134,13 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
           await client.query('UPDATE telegram_accounts SET bot_started_at=COALESCE(bot_started_at,now()) WHERE telegram_user_id=$1', [message.from.id]);
         }
         if (message.text || message.photo?.length) {
-          await client.query(`INSERT INTO bot_inbox(update_id,user_id,text,thread_id,photo_file_id)
-            SELECT $1,user_id,$3,$4,$5 FROM telegram_accounts WHERE telegram_user_id=$2`,
+          const incoming = await client.query(`INSERT INTO bot_inbox(update_id,user_id,text,thread_id,photo_file_id)
+            SELECT $1,user_id,$3,$4,$5 FROM telegram_accounts WHERE telegram_user_id=$2 RETURNING user_id`,
           [update.update_id, message.from.id, message.photo?.length ? message.caption ?? '' : message.text, message.message_thread_id ?? null, message.photo?.at(-1)?.file_id ?? null]);
+          if (incoming.rowCount) console.info('QUESTR bot message received:', JSON.stringify({
+            updateId: update.update_id, userId: incoming.rows[0].user_id,
+            telegramUserId: message.from.id, threadId: message.message_thread_id ?? null,
+          }));
         }
       }
       const callback = update.callback_query;

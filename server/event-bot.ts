@@ -51,6 +51,7 @@ export class EventBot {
     const topic = await this.call('createForumTopic', { chat_id: chatId, name: event.title.slice(0, 110) });
     if (!Number.isSafeInteger(topic?.message_thread_id)) throw new TelegramError(null);
     await db.query('INSERT INTO event_bot_topics(user_id,event_id,thread_id) VALUES($1,$2,$3)', [userId, eventId, topic.message_thread_id]);
+    console.info('QUESTR bot topic created:', JSON.stringify({ kind: 'event', userId, eventId, chatId, threadId: topic.message_thread_id }));
     return topic.message_thread_id as number;
   }
   private async dmTopic(db: PoolClient, userId: string, dmId: string, chatId: string) {
@@ -64,6 +65,7 @@ export class EventBot {
     const topic = await this.call('createForumTopic', { chat_id: chatId, name: `${other.display_name} · ${other.title}`.slice(0, 110) });
     if (!Number.isSafeInteger(topic?.message_thread_id)) throw new TelegramError(null);
     await db.query('INSERT INTO dm_bot_topics(user_id,conversation_id,thread_id) VALUES($1,$2,$3)', [userId, dmId, topic.message_thread_id]);
+    console.info('QUESTR bot topic created:', JSON.stringify({ kind: 'dm', userId, conversationId: dmId, chatId, threadId: topic.message_thread_id }));
     return topic.message_thread_id as number;
   }
   private async eventByCode(db: PoolClient, userId: string, code: string) {
@@ -114,7 +116,7 @@ export class EventBot {
       body: people.length ? botText(locale, event ? 'peopleList' : 'peopleGlobalList', { title: event?.title ?? '' }) : botText(locale, 'peopleEmpty'),
       keyboard: { inline_keyboard: [...buttons, [back]] } });
   }
-  private async menuChats(db: PoolClient, row: any, locale: string, wake = false) {
+  private async menuChats(db: PoolClient, row: any, locale: string, wake = false, fromTopic = false) {
     const events = (await db.query(`SELECT e.id,e.title FROM event_memberships m JOIN events e ON e.id=m.event_id
       WHERE m.user_id=$1 AND m.status='accepted' AND e.status='published' ORDER BY e.starts_at LIMIT 20`, [row.user_id])).rows;
     const available = [];
@@ -135,7 +137,7 @@ export class EventBot {
       ...(appButton ? [[appButton]] : []),
     ] };
     await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply',
-      body: botText(locale, available.length ? preparing ? 'chatsPreparing' : 'chatsList' : 'chatsEmpty'), keyboard });
+      body: `${fromTopic ? `${botText(locale, 'commandsInAllChats')}\n\n` : ''}${botText(locale, available.length ? preparing ? 'chatsPreparing' : 'chatsList' : 'chatsEmpty')}`, keyboard });
   }
   private async menuEvent(db: PoolClient, row: any, locale: string, eventId: string) {
     const event = await this.eventByCode(db, row.user_id, hex(eventId));
@@ -360,6 +362,9 @@ export class EventBot {
           else try { await this.call('answerCallbackQuery', { callback_query_id: row.callback_query_id, text: botText(locale, 'unavailable') }); } catch { /* Unknown callback. */ }
         }
         else if (user?.status !== 'active') { await reply(botText(locale, 'finishCharacter')); }
+        else if (row.thread_id && !row.photo_file_id && row.text.startsWith('/')) {
+          await this.menuChats(db, row, locale, false, true);
+        }
         else if (/^\/start(?:@questr_game)? quest_[a-f0-9]{32}$/.test(row.text)) {
           const raw = row.text.split('quest_')[1];
           const eventId = `${raw.slice(0,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}-${raw.slice(16,20)}-${raw.slice(20)}`;
@@ -379,7 +384,7 @@ export class EventBot {
             // A private topic has its own consent and delivery rules.
           } else {
           const mapping = (await db.query('SELECT event_id FROM event_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
-          if (!mapping) await reply(botText(locale, 'chooseTopic'));
+          if (!mapping) await reply(botText(locale, row.photo_file_id ? 'chooseTopic' : 'offTopicText'));
           else {
             const event = await this.adventures.detail(row.user_id, mapping.event_id);
             if (event.canChat) {
@@ -398,7 +403,7 @@ export class EventBot {
             } else await reply(botText(locale, event.myStatus === 'pending' ? 'alreadyPending' : 'chatClosed'), event.id);
           }
           }
-        } else await reply(botText(locale, row.photo_file_id ? 'chooseTopic' : 'botHelp'));
+        } else await reply(botText(locale, row.photo_file_id ? 'chooseTopic' : 'offTopicText'));
         await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
       } catch (error) {
         await db.query('ROLLBACK TO SAVEPOINT process_bot_update');

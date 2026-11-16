@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, Check } from 'lucide-react';
 import { avatars } from '../../shared/catalog.ts';
-import { appearanceForPreset, hairColors, hairStyles, headwear, isPresetAppearance, silhouettes, skinTones, tops, type AvatarAppearance } from '../../shared/avatar.ts';
+import { appearanceForPreset, hairColors, hairStyles, headwear, isPresetAppearance, skinTones, tops, type AvatarAppearance } from '../../shared/avatar.ts';
 import { t, type TranslationKey } from '../i18n.ts';
 import { Character } from './Character.tsx';
 
@@ -14,7 +14,7 @@ export function AvatarBuilder({ id, appearance, onChange }: Props) {
   const [part, setPart] = useState<Part>('face');
   const current = appearance ?? appearanceForPreset(id);
   const presetSelected = isPresetAppearance(id, appearance);
-  const update = (patch: Partial<AvatarAppearance>) => onChange({ ...current, ...patch });
+  const update = (patch: Partial<AvatarAppearance>) => onChange({ ...current, ...patch, silhouette: 'feminine' });
   const option = (key: string, label: string, selected: boolean, preview: AvatarAppearance, choose: () => void) =>
     <button key={key} type="button" className={`avatar-part-choice ${selected ? 'selected' : ''}`} aria-pressed={selected} onClick={choose}>
       <Character id={id} appearance={preview} /><span>{label}</span>{selected && <Check size={13} className="avatar-part-check" />}
@@ -34,7 +34,7 @@ export function AvatarBuilder({ id, appearance, onChange }: Props) {
     </div>
     <div role="tabpanel" className="avatar-builder-panel">
       {part === 'face' && <><h2>{t('avatar.faceTitle')}</h2><div className="avatar-option-grid avatar-face-grid">
-        {silhouettes.flatMap(silhouette => skinTones.map(skinTone => option(`${silhouette}-${skinTone}`, `${labels('silhouette', silhouette)} · ${labels('skin', skinTone)}`, current.silhouette === silhouette && current.skinTone === skinTone, { ...current, silhouette, skinTone }, () => update({ silhouette, skinTone }))))}
+        {skinTones.map(skinTone => option(skinTone, labels('skin', skinTone), current.skinTone === skinTone, { ...current, silhouette: 'feminine', skinTone }, () => update({ silhouette: 'feminine', skinTone })))}
       </div></>}
       {part === 'hair' && <><h2>{t('avatar.hairStyleTitle')}</h2><div className="avatar-option-grid">
         {hairStyles.map(hairStyle => option(hairStyle, labels('hairStyle', hairStyle), current.hairStyle === hairStyle, { ...current, hairStyle }, () => update({ hairStyle })))}

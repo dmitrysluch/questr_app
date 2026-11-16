@@ -41,14 +41,16 @@ async function highlightedText(page: Page) {
   return page.evaluate(() => [...(CSS.highlights.get('questr-explicit') ?? [])].map(range => range.toString()).join('\n'));
 }
 
-test('character builder saves skin, presentation, hair, clothing and accessories', async ({ page }, info) => {
+test('character builder saves skin, hair, clothing and accessories', async ({ page }, info) => {
   await register(page);
   await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Character', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Choose Moss', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.screenshot({ path: `.artifacts/${info.project.name}-avatar-presets.png`, fullPage: true });
   await page.getByRole('button', { name: 'Customize character' }).click();
   await expect(page.getByRole('tab', { name: 'Face' })).toHaveAttribute('aria-selected', 'true');
-  await page.getByRole('button', { name: 'Femme · Deep' }).click();
+  await expect(page.locator('.avatar-face-grid .avatar-part-choice')).toHaveCount(6);
+  await expect(page.getByRole('button', { name: /Masc|Femme|Neutral/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Deep' }).click();
   await page.getByRole('tab', { name: 'Hair' }).click();
   await page.getByRole('button', { name: 'Curly' }).click();
   await page.getByRole('button', { name: 'Pink' }).click();

@@ -1,5 +1,5 @@
 import { avatars } from '../../shared/catalog.ts';
-import type { AvatarAppearance } from '../../shared/avatar.ts';
+import { appearanceForPreset, type AvatarAppearance } from '../../shared/avatar.ts';
 
 const skin = {
   porcelain: ['#f9dcca', '#d9a890', '#fff0dd'], light: ['#eec2a0', '#c58e74', '#f9d6b8'],
@@ -22,7 +22,7 @@ type Props = { id: string | null; appearance?: AvatarAppearance | null; classNam
 export function Character({ id, appearance, className = '', alt = '' }: Props) {
   const avatar = avatars.find(a => a.id === id) ?? avatars[0];
   return <div className={`character ${className}`} style={{ '--avatar-bg': avatar.background } as React.CSSProperties}>
-    {appearance ? <Sprite appearance={appearance} alt={alt} /> : <img src={avatar.asset} alt={alt} draggable={false} />}
+    <Sprite appearance={appearance ?? appearanceForPreset(id)} alt={alt} />
   </div>;
 }
 
@@ -30,14 +30,11 @@ function Sprite({ appearance: a, alt }: { appearance: AvatarAppearance; alt: str
   const [face, faceShade, faceLight] = skin[a.skinTone];
   const [hairBase, hairShade, hairLight] = hair[a.hairColor];
   const [shirt, shirtShade, shirtLight] = clothes[a.top];
-  const isFeminine = a.silhouette === 'feminine';
-  const isMasculine = a.silhouette === 'masculine';
-  // The original portraits occupy roughly 32 of the 48 pixels at the
-  // shoulders. Keep the three silhouettes close to that shared frame so
-  // clothes and headwear still read as parts of the same character.
-  const bodyLeft = isMasculine ? 7 : isFeminine ? 10 : 8;
+  // One shared 48px shape keeps every hairstyle and accessory on the same anchors.
+  // Older saved silhouettes render on this geometry too.
+  const bodyLeft = 10;
   const bodyRight = 48 - bodyLeft;
-  const headLeft = isFeminine ? 14 : 13;
+  const headLeft = 14;
   const headRight = 48 - headLeft;
   const longHair = ['long', 'bob', 'ponytail'].includes(a.hairStyle);
   const sweater = a.top.includes('sweater');
@@ -58,13 +55,12 @@ function Sprite({ appearance: a, alt }: { appearance: AvatarAppearance; alt: str
     {/* Neck, ears, face and its small features. */}
     <rect x="20" y="27" width="8" height="8" fill={faceShade} /><rect x="21" y="27" width="6" height="6" fill={face} />
     <rect x={headLeft - 3} y="19" width="4" height="7" fill={faceShade} /><rect x={headRight - 1} y="19" width="4" height="7" fill={faceShade} />
-    <path d={`M${headLeft + 3} 10h${headRight - headLeft - 6}v2h3v3h3v12h-2v4h-4v2H${headLeft + 4}v-2h-4v-4h-2V15h3v-3h3z`} fill={faceShade} />
-    <path d={`M${headLeft + 3} 11h${headRight - headLeft - 6}v2h3v3h2v11h-2v4h-4v1H${headLeft + 4}v-1h-4v-4h-2V16h2v-3h3z`} fill={face} />
+    <path d="M18 10h12v2h3v3h2v13h-2v3h-3v2H18v-2h-3v-3h-2V15h2v-3h3z" fill={faceShade} />
+    <path d="M18 11h12v2h3v3h1v11h-2v3h-3v2H19v-2h-3v-3h-2V16h1v-3h3z" fill={face} />
     <rect x={headLeft + 1} y="17" width="3" height="10" fill={faceLight} opacity=".6" />
     <rect x="18" y="21" width="2" height="2" fill="#292930" /><rect x="28" y="21" width="2" height="2" fill="#292930" />
     <rect x="23" y="24" width="2" height="2" fill={faceShade} /><rect x="22" y="28" width="4" height="1" fill="#86534c" />
-    {isMasculine && <><rect x="17" y="19" width="4" height="1" fill={hairShade} /><rect x="27" y="19" width="4" height="1" fill={hairShade} /></>}
-    {isFeminine && <><rect x="17" y="21" width="1" height="1" fill="#292930" /><rect x="30" y="21" width="1" height="1" fill="#292930" /></>}
+    <rect x="17" y="21" width="1" height="1" fill="#292930" /><rect x="30" y="21" width="1" height="1" fill="#292930" />
     {/* Hair on top and around the face. */}
     {a.hairStyle !== 'shaved' && <>
       <path d="M12 20v-7h2V9h3V7h4V5h6v2h4v2h3v4h2v7h-3v-5h-2v-3H17v3h-2v5z" fill={hairShade} />
