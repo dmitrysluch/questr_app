@@ -136,14 +136,19 @@ it does not relax the existing explicit-sexual-content policy.
    for the recipient's decision. The recipient gets the reviewed opener with
    **Accept** and **Decline** buttons. They must accept before either side can
    exchange more messages, including photos. Either side can later use `/block <chat code>`.
-   A declined/blocked conversation cannot be restarted from the same adventure.
+   Each pair of people has one private conversation and one topic in each person's
+   bot chat, reused across all their shared adventures. A decline or block applies
+   to the pair, so another adventure cannot restart the conversation.
    Opening a private chat requires an accepted membership and an event-scoped
    `dm.send_opener` role grant. The default budget is three first contacts per
-   rolling seven days; replies require `dm.message` and live roles on both sides.
+   rolling seven days; a second shared adventure does not consume another opener.
+   After acceptance, `dm.message` follows pair-level consent while both accounts
+   are active, even if they leave the adventure or it closes.
    In the Telegram Mini App, character-page buttons explain this flow and open
-   the relevant bot topic; the first-message form remains available in the
-   browser version. Party and private messages stop when a participant leaves or the adventure
-   closes, including messages queued but not yet delivered.
+   the same bot topic from either adventure; the first-message form remains available in the
+   browser version. Party messages stop when a participant leaves or the adventure
+   closes. Existing extra private topics keep their Telegram history and reply with
+   a link to the selected topic if someone writes in them.
 
 Before a public release, add image-content review before relaying photos. The
 current text reviewer does not inspect image pixels. The review-model choice
@@ -161,8 +166,8 @@ Official references: [private bot topics](https://core.telegram.org/bots/api#cre
 
 Webhook handling stores a normalized update and quickly acknowledges it. Duplicate
 update IDs cannot create duplicate applications, messages or queue entries. Workers
-use row locks and durable queue state. Relay delivery rechecks both sender and
-recipient under an event lock, so leaving/cancellation excludes queued messages.
+use row locks and durable queue state. Party relay delivery rechecks live event
+membership; private relay delivery rechecks pair-level consent and active accounts.
 Known Telegram 429 responses retry after the specified delay, with a bounded
 attempt count. Ambiguous network failures and other delivery errors are marked
 `failed`, rather than retried blindly: Bot API has no send idempotency key. A crash

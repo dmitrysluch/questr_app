@@ -56,15 +56,24 @@ export class EventBot {
   }
   private async dmTopic(db: PoolClient, userId: string, dmId: string, chatId: string) {
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,82))', [`${userId}:${dmId}`]);
-    const old = (await db.query('SELECT thread_id FROM dm_bot_topics WHERE user_id=$1 AND conversation_id=$2', [userId, dmId])).rows[0];
-    if (old) return Number(old.thread_id);
-    const other = (await db.query(`SELECT p.display_name,e.title FROM dm_conversations c
+    const old = (await db.query('SELECT thread_id,name_synced FROM dm_bot_topics WHERE user_id=$1 AND conversation_id=$2', [userId, dmId])).rows[0];
+    if (old?.name_synced) return Number(old.thread_id);
+    const other = (await db.query(`SELECT p.display_name FROM dm_conversations c
       JOIN profiles p ON p.user_id=CASE WHEN c.first_user_id=$1 THEN c.second_user_id ELSE c.first_user_id END
-      JOIN events e ON e.id=c.event_id WHERE c.id=$2 AND $1 IN (c.first_user_id,c.second_user_id)`, [userId, dmId])).rows[0];
+      WHERE c.id=$2 AND $1 IN (c.first_user_id,c.second_user_id)`, [userId, dmId])).rows[0];
     if (!other) throw new AppError(403, 'PERMISSION_DENIED');
-    const topic = await this.call('createForumTopic', { chat_id: chatId, name: `${other.display_name} · ${other.title}`.slice(0, 110) });
+    if (old) {
+      let renamed = false;
+      try {
+        await this.call('editForumTopic', { chat_id: chatId, message_thread_id: Number(old.thread_id), name: other.display_name.slice(0, 110) });
+        renamed = true;
+      } catch (error) { console.warn('QUESTR bot topic rename failed:', { userId, conversationId: dmId, error: error instanceof Error ? error.message : String(error) }); }
+      if (renamed) await db.query('UPDATE dm_bot_topics SET name_synced=true WHERE user_id=$1 AND conversation_id=$2', [userId, dmId]);
+      return Number(old.thread_id);
+    }
+    const topic = await this.call('createForumTopic', { chat_id: chatId, name: other.display_name.slice(0, 110) });
     if (!Number.isSafeInteger(topic?.message_thread_id)) throw new TelegramError(null);
-    await db.query('INSERT INTO dm_bot_topics(user_id,conversation_id,thread_id) VALUES($1,$2,$3)', [userId, dmId, topic.message_thread_id]);
+    await db.query('INSERT INTO dm_bot_topics(user_id,conversation_id,thread_id,name_synced) VALUES($1,$2,$3,true)', [userId, dmId, topic.message_thread_id]);
     console.info('QUESTR bot topic created:', JSON.stringify({ kind: 'dm', userId, conversationId: dmId, chatId, threadId: topic.message_thread_id }));
     return topic.message_thread_id as number;
   }
@@ -76,8 +85,10 @@ export class EventBot {
   }
   private async dmByCode(db: PoolClient, userId: string, code: string) {
     if (!/^[a-f0-9]{8,32}$/i.test(code)) return null;
-    const rows = (await db.query(`SELECT * FROM dm_conversations WHERE $1 IN (first_user_id,second_user_id)
-      AND replace(id::text,'-','') LIKE $2 LIMIT 2`, [userId, `${code.toLowerCase()}%`])).rows;
+    const rows = (await db.query(`SELECT DISTINCT c.* FROM dm_conversations c
+      LEFT JOIN dm_conversation_aliases a ON a.conversation_id=c.id
+      WHERE $1 IN (c.first_user_id,c.second_user_id)
+        AND (replace(c.id::text,'-','') LIKE $2 OR replace(a.legacy_id::text,'-','') LIKE $2) LIMIT 2`, [userId, `${code.toLowerCase()}%`])).rows;
     return rows.length === 1 ? rows[0] : null;
   }
   private async sharedPeople(db: PoolClient, userId: string, eventId?: string) {
@@ -86,7 +97,7 @@ export class EventBot {
       JOIN event_memberships theirs ON theirs.event_id=e.id AND theirs.status='accepted' AND theirs.user_id<>$1
       JOIN profiles p ON p.user_id=theirs.user_id JOIN users u ON u.id=p.user_id AND u.status='active'
       JOIN telegram_accounts t ON t.user_id=p.user_id AND t.bot_started_at IS NOT NULL
-      LEFT JOIN dm_conversations c ON c.event_id=e.id AND c.first_user_id=LEAST($1::uuid,p.user_id) AND c.second_user_id=GREATEST($1::uuid,p.user_id)
+      LEFT JOIN dm_conversations c ON c.first_user_id=LEAST($1::uuid,p.user_id) AND c.second_user_id=GREATEST($1::uuid,p.user_id)
       WHERE mine.user_id=$1 AND mine.status='accepted' AND e.status='published' AND ($2::uuid IS NULL OR e.id=$2)
       ORDER BY e.starts_at DESC,e.id DESC,p.display_name LIMIT 300`, [userId, eventId ?? null])).rows;
     const people: typeof rows = [];
@@ -100,6 +111,17 @@ export class EventBot {
         && !(row.dm_status === 'pending' && row.requested_by === userId)) continue;
       seen.add(row.user_id); people.push(row);
     }
+    if (!eventId && people.length < 20) {
+      const accepted = (await db.query(`SELECT p.user_id,p.display_name,c.status AS dm_status,c.requested_by
+        FROM dm_conversations c JOIN profiles p ON p.user_id=CASE WHEN c.first_user_id=$1 THEN c.second_user_id ELSE c.first_user_id END
+        JOIN users u ON u.id=p.user_id AND u.status='active'
+        WHERE $1 IN (c.first_user_id,c.second_user_id) AND c.status='accepted'
+        ORDER BY c.updated_at DESC LIMIT 20`, [userId])).rows;
+      for (const row of accepted) {
+        if (seen.has(row.user_id) || people.length >= 20) continue;
+        seen.add(row.user_id); people.push({ ...row, event_id: null, title: '' });
+      }
+    }
     return people;
   }
   private async menuPeople(db: PoolClient, row: any, locale: string, eventId?: string) {
@@ -109,7 +131,7 @@ export class EventBot {
       return;
     }
     const people = await this.sharedPeople(db, row.user_id, event?.id);
-    const buttons = people.map(person => [{ text: buttonLabel(event ? person.display_name : `${person.display_name.slice(0, 22)} · ${person.title.slice(0, 30)}`),
+    const buttons = people.map(person => [{ text: buttonLabel(event ? person.display_name : person.title ? `${person.display_name.slice(0, 22)} · ${person.title.slice(0, 30)}` : person.display_name),
       callback_data: event ? `menu:member:${hex(event.id).slice(0, 16)}:${hex(person.user_id)}` : `menu:person:${hex(person.user_id)}` }]);
     const back = { text: botText(locale, 'allChatsButton'), callback_data: 'menu:chats' };
     await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply',
@@ -181,6 +203,25 @@ export class EventBot {
       else await reply(botText(locale, 'chatNotFound'));
       return true;
     }
+    if (command === '/dm' && parts.length === 2 && /^[a-f0-9]{8,32}$/i.test(parts[1])) {
+      const matches = (await db.query(`SELECT c.id,p.display_name,p.user_id AS other_id FROM dm_conversations c
+        JOIN profiles p ON p.user_id=CASE WHEN c.first_user_id=$1 THEN c.second_user_id ELSE c.first_user_id END
+        WHERE $1 IN (c.first_user_id,c.second_user_id) AND c.status='accepted'
+          AND replace(p.user_id::text,'-','') LIKE $2 LIMIT 2`, [row.user_id, `${parts[1].toLowerCase()}%`])).rows;
+      if (matches.length !== 1 || !await can(db, row.user_id, 'dm.message', { type: 'profile', id: matches[0].other_id })) {
+        await reply(botText(locale, 'dmUnavailable')); return true;
+      }
+      const dm = matches[0];
+      const topic = (await db.query('SELECT thread_id,name_synced FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [dm.id, row.user_id])).rows[0];
+      if (topic && !topic.name_synced) {
+        const chatId = (await db.query('SELECT telegram_user_id FROM telegram_accounts WHERE user_id=$1', [row.user_id])).rows[0]?.telegram_user_id;
+        if (chatId) await this.dmTopic(db, row.user_id, dm.id, chatId);
+      }
+      if (!topic) await queueBot(db, { key: `dm:${dm.id}:resume:${row.update_id}`, userId: row.user_id, dmId: dm.id, kind: 'dm_accept', inTopic: true,
+        body: botText(locale, 'dmAccepted', { name: dm.display_name, code: hex(dm.id).slice(0, 8) }) });
+      await reply(botText(locale, topic ? 'dmTopicReady' : 'dmTopicPreparing', { name: dm.display_name, link: topic ? `https://t.me/questr_game/${topic.thread_id}` : '' }));
+      return true;
+    }
     if (command === '/dm' && parts.length === 3) {
       const event = await this.eventByCode(db, row.user_id, parts[1]);
       if (!event || !/^[a-f0-9]{8,32}$/i.test(parts[2])) { await reply(botText(locale, 'dmUnavailable')); return true; }
@@ -191,30 +232,37 @@ export class EventBot {
       if (people.length !== 1) { await reply(botText(locale, 'dmUnavailable')); return true; }
       const person = people[0];
       const pair = [row.user_id, person.user_id].sort();
-      let dm = (await db.query('SELECT * FROM dm_conversations WHERE event_id=$1 AND first_user_id=$2 AND second_user_id=$3', [event.id, ...pair])).rows[0];
+      await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,83))', [pair.join(':')]);
+      let dm = (await db.query('SELECT * FROM dm_conversations WHERE first_user_id=$1 AND second_user_id=$2', pair)).rows[0];
       const capability = dm?.status === 'accepted' ? 'dm.message' : 'dm.send_opener';
       if (dm?.status === 'declined' || dm?.status === 'blocked' || dm?.status === 'pending' && dm.requested_by !== row.user_id || dm?.status !== 'pending' && !await can(db, row.user_id, capability, { type: 'profile', id: person.user_id, eventId: event.id })) { await reply(botText(locale, 'dmUnavailable')); return true; }
       if (!dm) dm = (await db.query(`INSERT INTO dm_conversations(event_id,first_user_id,second_user_id,requested_by,purpose)
-        VALUES($1,$2,$3,$4,$5) ON CONFLICT(event_id,first_user_id,second_user_id) DO UPDATE SET updated_at=dm_conversations.updated_at RETURNING *`, [event.id, ...pair, row.user_id, purpose])).rows[0];
-      else if (dm.status === 'draft' && dm.purpose !== purpose) {
-        await db.query('UPDATE dm_conversations SET purpose=$2 WHERE id=$1', [dm.id, purpose]);
+        VALUES($1,$2,$3,$4,$5) ON CONFLICT(first_user_id,second_user_id) DO UPDATE SET updated_at=dm_conversations.updated_at RETURNING *`, [event.id, ...pair, row.user_id, purpose])).rows[0];
+      else if (dm.status === 'draft' && (dm.purpose !== purpose || dm.event_id !== event.id)) {
+        await db.query('UPDATE dm_conversations SET purpose=$2,event_id=$3 WHERE id=$1', [dm.id, purpose, event.id]);
         dm.purpose = purpose;
+        dm.event_id = event.id;
       }
-      const topic = (await db.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [dm.id, row.user_id])).rows[0];
+      await db.query('INSERT INTO dm_conversation_events(conversation_id,event_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [dm.id, event.id]);
+      const topic = (await db.query('SELECT thread_id,name_synced FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [dm.id, row.user_id])).rows[0];
+      if (topic && !topic.name_synced) {
+        const chatId = (await db.query('SELECT telegram_user_id FROM telegram_accounts WHERE user_id=$1', [row.user_id])).rows[0]?.telegram_user_id;
+        if (chatId) await this.dmTopic(db, row.user_id, dm.id, chatId);
+      }
       if (!topic && ['draft', 'accepted'].includes(dm.status)) await queueBot(db, { key: `dm:${dm.id}:topic:${row.user_id}`, userId: row.user_id, dmId: dm.id, kind: 'reply', inTopic: true,
         body: botText(locale, dm.status === 'accepted' ? 'dmAccepted' : 'dmStart', { name: person.display_name, title: event.title, code: dm.id.replaceAll('-', '').slice(0, 8) }) });
       await reply(botText(locale, dm.status === 'pending' ? 'dmWaiting' : topic ? 'dmTopicReady' : 'dmTopicPreparing', { name: person.display_name, link: topic ? `https://t.me/questr_game/${topic.thread_id}` : '' }));
       return true;
     }
     if (['/accept', '/decline', '/block'].includes(command) && parts.length === 2) {
-      const dm = await this.dmByCode(db, row.user_id, parts[1]);
+      const selected = await this.dmByCode(db, row.user_id, parts[1]);
+      const dm = selected ? (await db.query('SELECT * FROM dm_conversations WHERE id=$1 FOR UPDATE', [selected.id])).rows[0] : null;
       if (!dm || command !== '/block' && (dm.status !== 'pending' || dm.requested_by === row.user_id) || command === '/block' && dm.status !== 'accepted') { await reply(botText(locale, 'dmNoRequest')); return true; }
       const other = dm.first_user_id === row.user_id ? dm.second_user_id : dm.first_user_id;
       if (command === '/accept') {
-        if (!await can(db, row.user_id, 'events.group_chat', { type: 'event', id: dm.event_id }) || !await can(db, other, 'events.group_chat', { type: 'event', id: dm.event_id })) { await reply(botText(locale, 'dmUnavailable')); return true; }
         await db.query('SAVEPOINT dm_consent');
         await db.query("UPDATE dm_conversations SET status='accepted',updated_at=now() WHERE id=$1", [dm.id]);
-        if (!await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id }) || !await can(db, other, 'dm.message', { type: 'profile', id: row.user_id, eventId: dm.event_id })) { await db.query('ROLLBACK TO SAVEPOINT dm_consent'); await reply(botText(locale, 'dmUnavailable')); return true; }
+        if (!await can(db, row.user_id, 'dm.message', { type: 'profile', id: other }) || !await can(db, other, 'dm.message', { type: 'profile', id: row.user_id })) { await db.query('ROLLBACK TO SAVEPOINT dm_consent'); await reply(botText(locale, 'dmUnavailable')); return true; }
         const names = (await db.query('SELECT user_id,display_name FROM profiles WHERE user_id=ANY($1::uuid[])', [[row.user_id, other]])).rows;
         for (const id of [row.user_id, other]) await queueBot(db, { key: `dm:${dm.id}:accepted:${id}`, userId: id, dmId: dm.id, kind: 'dm_accept', inTopic: true, body: botText((await db.query('SELECT locale FROM users WHERE id=$1', [id])).rows[0].locale, dm.purpose === 'contact' && id === row.user_id ? 'dmAcceptedContact' : 'dmAccepted', { name: names.find(n => n.user_id !== id)?.display_name ?? '', code: dm.id.replaceAll('-', '').slice(0, 8) }) });
         const opener = (await db.query('SELECT id,body FROM dm_messages WHERE conversation_id=$1 ORDER BY created_at LIMIT 1', [dm.id])).rows[0];
@@ -229,6 +277,15 @@ export class EventBot {
     return false;
   }
   private async dmText(db: PoolClient, row: any, locale: string): Promise<boolean> {
+    const redirect = (await db.query(`SELECT p.thread_id FROM dm_topic_redirects r
+      JOIN dm_bot_topics p ON p.conversation_id=r.conversation_id AND p.user_id=r.user_id
+      WHERE r.user_id=$1 AND r.thread_id=$2`, [row.user_id, row.thread_id])).rows[0];
+    if (redirect) {
+      const link = `https://t.me/questr_game/${redirect.thread_id}`;
+      await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, threadId: Number(row.thread_id),
+        kind: 'reply', inTopic: true, body: botText(locale, 'dmMoved', { link }) });
+      return true;
+    }
     const mapped = (await db.query('SELECT conversation_id FROM dm_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
     if (!mapped) return false;
     const dm = (await db.query('SELECT * FROM dm_conversations WHERE id=$1 FOR UPDATE', [mapped.conversation_id])).rows[0];
@@ -237,7 +294,7 @@ export class EventBot {
     if (row.text.length > 3000) throw new AppError(400, 'MESSAGE_TOO_LONG');
     if (dm.status === 'pending') { await reply(botText(locale, 'dmWaiting')); return true; }
     if (dm.status !== 'draft' && dm.status !== 'accepted') { await reply(botText(locale, 'dmUnavailable')); return true; }
-    if (dm.status === 'draft' && (dm.requested_by !== row.user_id || !await can(db, row.user_id, 'dm.send_opener', { type: 'profile', id: other, eventId: dm.event_id })) || dm.status === 'accepted' && !await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })) { await reply(botText(locale, 'dmUnavailable')); return true; }
+    if (dm.status === 'draft' && (!dm.event_id || dm.requested_by !== row.user_id || !await can(db, row.user_id, 'dm.send_opener', { type: 'profile', id: other, eventId: dm.event_id })) || dm.status === 'accepted' && !await can(db, row.user_id, 'dm.message', { type: 'profile', id: other })) { await reply(botText(locale, 'dmUnavailable')); return true; }
     if (dm.status === 'draft' && row.photo_file_id) { await reply(botText(locale, 'photoOpenerTextOnly')); return true; }
     if (row.photo_file_id && row.text.length > 900) throw new AppError(400, 'PHOTO_CAPTION_TOO_LONG');
     if (dm.status === 'draft' && hasPublicLink(row.text)) throw new AppError(400, 'APPLICATION_LINK_NOT_ALLOWED');
@@ -268,7 +325,7 @@ export class EventBot {
     else if (/^menu:person:[a-f0-9]{32}$/.test(data)) {
       const personId = uuid(data.slice(12))!;
       const person = (await this.sharedPeople(db, row.user_id)).find(p => p.user_id === personId);
-      if (person) await this.command(db, { ...row, text: `/dm ${hex(person.event_id)} ${hex(personId)}` }, locale);
+      if (person) await this.command(db, { ...row, text: person.event_id ? `/dm ${hex(person.event_id)} ${hex(personId)}` : `/dm ${hex(personId)}` }, locale);
       else { valid = false; await respond(botText(locale, 'dmUnavailable')); }
     } else {
       const member = /^menu:member:([a-f0-9]{16}):([a-f0-9]{32})$/.exec(data);
@@ -284,7 +341,7 @@ export class EventBot {
     let answer = botText(locale, 'dmNoRequest');
     let clearButtons = false;
     if (match) {
-      const dmId = uuid(match[2])!;
+      const dmId = (await db.query('SELECT conversation_id FROM dm_conversation_aliases WHERE legacy_id=$1', [uuid(match[2])])).rows[0]?.conversation_id ?? uuid(match[2])!;
       const request = (await db.query(`SELECT c.status,c.requested_by FROM bot_outbox o JOIN dm_conversations c ON c.id=o.dm_id
         WHERE o.dm_id=$1 AND o.user_id=$2 AND o.kind='dm_request' AND o.telegram_message_id=$3 AND o.state='sent'`, [dmId, row.user_id, row.callback_message_id])).rows[0];
       if (request) {
@@ -473,22 +530,20 @@ export class EventBot {
         allowed = application?.status === 'pending' && application.application_attempt_id === row.application_attempt_id && await can(db, row.user_id, 'events.accept', { type: 'event', id: row.event_id });
       }
       if (allowed && row.dm_id) {
-        const dm = (await db.query('SELECT * FROM dm_conversations WHERE id=$1', [row.dm_id])).rows[0];
+        const dm = (await db.query('SELECT * FROM dm_conversations WHERE id=$1 FOR SHARE', [row.dm_id])).rows[0];
         allowed = !!dm && [dm.first_user_id, dm.second_user_id].includes(row.user_id);
         if (allowed) {
-          await db.query('SELECT id FROM events WHERE id=$1 FOR SHARE', [dm.event_id]);
           const other = dm.first_user_id === row.user_id ? dm.second_user_id : dm.first_user_id;
           if (row.kind === 'dm_request') allowed = dm.status === 'pending' && dm.requested_by !== row.user_id
-            && await can(db, dm.requested_by, 'events.group_chat', { type: 'event', id: dm.event_id })
-            && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: dm.event_id });
+            && (await db.query("SELECT count(*)::int AS n FROM users WHERE id=ANY($1::uuid[]) AND status='active'", [[dm.requested_by, row.user_id]])).rows[0].n === 2;
           if (row.kind === 'dm_accept') allowed = dm.status === 'accepted'
-            && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })
-            && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id, eventId: dm.event_id });
+            && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other })
+            && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id });
           if (row.kind === 'dm_relay') {
             const message = (await db.query('SELECT sender_id,body,photo_file_id FROM dm_messages WHERE id=$1 AND conversation_id=$2', [row.dm_message_id, row.dm_id])).rows[0];
             allowed = dm.status === 'accepted' && !!message && message.sender_id === other
-              && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other, eventId: dm.event_id })
-              && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id, eventId: dm.event_id });
+              && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other })
+              && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id });
             if (allowed) { relayBody = message.body; relayPhotoId = message.photo_file_id; }
           }
           // A reply may explain why a closed topic no longer accepts messages.
@@ -496,7 +551,8 @@ export class EventBot {
       }
       if (!allowed) { await db.query("UPDATE bot_outbox SET state='discarded' WHERE id=$1", [row.id]); return true; }
       try {
-        const thread = row.in_topic && row.dm_id ? await this.dmTopic(db, row.user_id, row.dm_id, account.telegram_user_id)
+        const thread = row.target_thread_id ? Number(row.target_thread_id)
+          : row.in_topic && row.dm_id ? await this.dmTopic(db, row.user_id, row.dm_id, account.telegram_user_id)
           : row.in_topic && row.event_id ? await this.topic(db, row.user_id, row.event_id, account.telegram_user_id) : undefined;
         const keyboard = row.reply_markup ?? (row.kind === 'application' ? { inline_keyboard: [
           [{ text: botText(account.locale, 'acceptButton'), callback_data: `application:accept:${row.id}` }, { text: botText(account.locale, 'declineButton'), callback_data: `application:decline:${row.id}` }],

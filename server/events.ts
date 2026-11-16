@@ -303,10 +303,10 @@ export class Adventures {
     const botRequired = !mine;
     if (!theirs) return { status: 'unavailable', botRequired: false, botUrl };
     const conversation = (await this.pool.query(`SELECT id,status,requested_by FROM dm_conversations
-      WHERE event_id=$1 AND first_user_id=LEAST($2::uuid,$3::uuid) AND second_user_id=GREATEST($2::uuid,$3::uuid)`, [eventId, userId, targetId])).rows[0];
+      WHERE first_user_id=LEAST($1::uuid,$2::uuid) AND second_user_id=GREATEST($1::uuid,$2::uuid)`, [userId, targetId])).rows[0];
     const topic = conversation ? (await this.pool.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [conversation.id, userId])).rows[0] : null;
     const privateUrl = topic ? `https://t.me/questr_game/${topic.thread_id}` : `${botUrl}?start=dm_${eventId.replaceAll('-', '').slice(0, 16)}_${targetId.replaceAll('-', '')}`;
-    if (await can(this.pool, userId, 'dm.message', { type: 'profile', id: targetId, eventId })) return { status: 'accepted', botRequired, botUrl: privateUrl };
+    if (await can(this.pool, userId, 'dm.message', { type: 'profile', id: targetId })) return { status: 'accepted', botRequired, botUrl: privateUrl };
     if (conversation?.status === 'pending') return { status: conversation.requested_by === userId ? 'pending' : 'incoming', botRequired, botUrl: conversation.requested_by === userId ? privateUrl : botUrl };
     if (conversation?.status === 'declined' || conversation?.status === 'blocked') return { status: 'closed', botRequired, botUrl };
     if (conversation?.status === 'draft' && conversation.requested_by !== userId) return { status: 'unavailable', botRequired: false, botUrl };
@@ -329,16 +329,17 @@ export class Adventures {
       const accounts = (await db.query('SELECT user_id FROM telegram_accounts WHERE user_id=ANY($1::uuid[]) AND bot_started_at IS NOT NULL', [[userId, targetId]])).rows;
       if (!accounts.some(row => row.user_id === userId) || !accounts.some(row => row.user_id === targetId)) throw new AppError(409, 'BOT_NOT_STARTED');
       const pair = [userId, targetId].sort();
-      let conversation = (await db.query('SELECT * FROM dm_conversations WHERE event_id=$1 AND first_user_id=$2 AND second_user_id=$3 FOR UPDATE', [eventId, ...pair])).rows[0];
+      let conversation = (await db.query('SELECT * FROM dm_conversations WHERE first_user_id=$1 AND second_user_id=$2 FOR UPDATE', pair)).rows[0];
       if (conversation?.status === 'pending' && conversation.requested_by === userId) return;
       if (conversation && (conversation.status !== 'draft' || conversation.requested_by !== userId)) throw new AppError(409, 'DM_UNAVAILABLE');
       await requireCapability(db, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId });
       if (!conversation) conversation = (await db.query(`INSERT INTO dm_conversations(event_id,first_user_id,second_user_id,requested_by,purpose)
-        VALUES($1,$2,$3,$4,$5) ON CONFLICT(event_id,first_user_id,second_user_id) DO NOTHING RETURNING *`, [eventId, ...pair, userId, input.purpose])).rows[0];
+        VALUES($1,$2,$3,$4,$5) ON CONFLICT(first_user_id,second_user_id) DO NOTHING RETURNING *`, [eventId, ...pair, userId, input.purpose])).rows[0];
       if (!conversation) throw new AppError(409, 'DM_UNAVAILABLE');
+      await db.query('INSERT INTO dm_conversation_events(conversation_id,event_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [conversation.id, eventId]);
       await consumeCapability(db, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId }, conversation.id);
       const message = (await db.query('INSERT INTO dm_messages(conversation_id,sender_id,body) VALUES($1,$2,$3) RETURNING id', [conversation.id, userId, input.message])).rows[0];
-      await db.query("UPDATE dm_conversations SET status='pending',purpose=$2,updated_at=now() WHERE id=$1", [conversation.id, input.purpose]);
+      await db.query("UPDATE dm_conversations SET status='pending',purpose=$2,event_id=$3,updated_at=now() WHERE id=$1", [conversation.id, input.purpose, eventId]);
       const name = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [userId])).rows[0].display_name;
       const title = (await db.query('SELECT title FROM events WHERE id=$1', [eventId])).rows[0].title;
       const locale = (await db.query('SELECT locale FROM users WHERE id=$1', [targetId])).rows[0].locale;

@@ -2,8 +2,8 @@
 
 The POC has profiles, AI-assisted bios, spoken languages, private adventure filters
 and scoped access. [Adventures v1](adventures.md) builds creation, applications,
-discovery and a Telegram party relay on this foundation. Event-scoped DMs require
-consent; global DMs remain future work.
+discovery and a Telegram party relay on this foundation. First DM contact starts
+from a shared adventure; after consent, the conversation belongs to the pair of people.
 
 ## Languages and geography
 
@@ -51,7 +51,7 @@ changing access. Roles attach to the account that owns the profile.
 | `profile.<location>.create/view` | `profile.edit`, `profile.view` | A person has one global profile; ownership or future event/club visibility determines access, not a claimed residence |
 | `profile.<location>.<event>.edit/accept` | `events.edit`, `events.accept` | Event ID, with its location loaded by the server |
 | `…group_chat/group_chat_moderator` | `events.group_chat`, `events.group_chat_moderator` | Event ID; accepted participant/host/moderator grant |
-| `dm.<profile>.send_opener/message` | `dm.send_opener`, `dm.message` | Recipient profile plus consent, block and conversation state |
+| `dm.<profile>.send_opener/message` | `dm.send_opener`, `dm.message` | Opener needs a shared adventure and role; replies need pair-level consent and active accounts |
 | `invite.create` | `invite.create` | Global, budgeted |
 | `admin` | `admin` | Explicit, audited administrative assignment |
 
@@ -67,9 +67,9 @@ Current templates:
 - `event_creator`: create events, subject to a separate rolling budget. Existing
   members were backfilled when this became a separate role.
 - `organizer`: edit an assigned event, accept applicants, use/moderate its chat,
-  and request event-scoped DMs.
+  and request first DM contact through that event.
 - `applicant`: view the assigned event, including its public history. No chat access.
-- `participant`: view an assigned event, use its chat, and request event-scoped DMs
+- `participant`: view an assigned event, use its chat, and request first DM contact
   while accepted and open.
 - `event_moderator`: moderate one event's chat.
 - `inviter`: create invitations, subject to its separate budget and invite-chain depth.
@@ -80,8 +80,10 @@ revokes the participant assignment in the membership transaction. The host grant
 is created with the event. Chat checks accepted membership and open event state
 in addition to grants. A DM opener spends a separate budget only when the first
 reviewed message is sent. The recipient must accept before later messages are
-delivered. Decline or block closes the conversation; access is rechecked before
-each delivery.
+delivered. Each pair shares one DM across all adventures. Decline or block closes
+that conversation everywhere; after acceptance, replies remain available while
+both accounts are active, even after the originating adventure ends. Consent and
+account status are rechecked before each delivery.
 
 The evaluator denies blocked, uninvited, expired or revoked accounts/grants.
 Onboarding accounts can only work on their own profile. It derives an event's

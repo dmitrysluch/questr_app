@@ -7,7 +7,7 @@ type Key = 'updated' | 'newApplication' | 'accepted' | 'declined' | 'removed' | 
   | 'applicationLength' | 'explicitContent' | 'noLinks' | 'messageLength' | 'photoCaptionLength' | 'photoOpenerTextOnly' | 'unavailable' | 'processingFailed'
   | 'reminder' | 'openButton' | 'chatsEmpty' | 'chatsList' | 'chatsPreparing' | 'peopleList' | 'peopleEmpty'
   | 'peopleGlobalList' | 'partyTopicButton' | 'peopleButton' | 'allChatsButton' | 'allPeopleButton'
-  | 'chatNotFound' | 'dmStart' | 'dmWaiting' | 'dmRequested' | 'dmRequestedContact' | 'dmAccepted' | 'dmAcceptedContact' | 'dmDeclined' | 'dmBlocked' | 'dmUnavailable' | 'dmNoRequest' | 'dmList'
+  | 'chatNotFound' | 'dmStart' | 'dmWaiting' | 'dmRequested' | 'dmRequestedContact' | 'dmAccepted' | 'dmAcceptedContact' | 'dmDeclined' | 'dmBlocked' | 'dmUnavailable' | 'dmNoRequest' | 'dmList' | 'dmMoved'
   | 'acceptButton' | 'declineButton' | 'applicationAccepted' | 'applicationDeclined' | 'applicationChanged';
 
 const copy: Record<Locale, Record<Key, string>> = {
@@ -29,6 +29,7 @@ const copy: Record<Locale, Record<Key, string>> = {
     applyInApp: '{title} — open QUESTR to apply. The party topic appears after you are accepted.',
     dmTopicReady: 'Private topic with {name}: {link}',
     dmTopicPreparing: 'Private topic with {name} is opening. Write your first message there.',
+    dmMoved: 'The main topic for this conversation is here: {link}',
     topicApplyLive: '{title}\n\nWrite one short text message about this adventure to apply (3–2000 characters, no links or attachments). Your application is sent through OpenRouter to check for explicit sexual content before the host can read it.',
     topicApplyDemo: '{title}\n\nWrite one short text message about this adventure to apply (3–2000 characters, no links or attachments). This local demo uses a limited content check without an AI provider.',
     notAccepting: 'This adventure is not accepting applications.',
@@ -52,7 +53,7 @@ const copy: Record<Locale, Record<Key, string>> = {
     chatsList: 'Your party topics are already created. Choose an adventure to open its topic or see the party.',
     chatsPreparing: 'Your party topics are being created automatically. They will appear here shortly; choose an adventure to see its party.',
     peopleList: '{title} — choose someone to open a private topic. Your first message will wait for their approval.',
-    peopleGlobalList: 'People you can message. Each button shows your latest shared adventure.',
+    peopleGlobalList: 'People you can message. A shared adventure appears where you have one.',
     partyTopicButton: 'Open party topic', peopleButton: 'People', allChatsButton: 'All adventures', allPeopleButton: 'All people',
     peopleEmpty: 'No other accepted party members yet.',
     chatNotFound: 'Could not find a chat you can access. Use /chats to see your adventures.',
@@ -86,6 +87,7 @@ const copy: Record<Locale, Record<Key, string>> = {
     applyInApp: '«{title}» — подай заявку в QUESTR. Тема группы появится после принятия.',
     dmTopicReady: 'Личная тема с {name}: {link}',
     dmTopicPreparing: 'Личная тема с {name} создаётся. Первое сообщение напиши там.',
+    dmMoved: 'Основная тема этого диалога: {link}',
     topicApplyLive: '«{title}»\n\nНапиши короткое сообщение о вылазке для заявки (3–2000 символов, без ссылок и вложений). Перед отправкой организатору оно пройдёт проверку через OpenRouter на откровенно сексуальный контент.',
     topicApplyDemo: '«{title}»\n\nНапиши короткое сообщение о вылазке для заявки (3–2000 символов, без ссылок и вложений). В локальном демо действует ограниченная проверка без ИИ-провайдера.',
     notAccepting: 'На эту вылазку больше не принимают заявки.',
@@ -109,7 +111,7 @@ const copy: Record<Locale, Record<Key, string>> = {
     chatsList: 'Темы групп для твоих вылазок уже созданы. Выбери вылазку, чтобы открыть тему или увидеть участников.',
     chatsPreparing: 'Темы групп создаются автоматически. Они скоро появятся здесь; пока можешь выбрать вылазку и увидеть участников.',
     peopleList: '«{title}» — выбери человека, чтобы открыть личную тему. Первое сообщение будет ждать его согласия.',
-    peopleGlobalList: 'Люди, которым можно написать. На каждой кнопке указана последняя общая вылазка.',
+    peopleGlobalList: 'Люди, которым можно написать. Если есть общая вылазка, она указана на кнопке.',
     partyTopicButton: 'Открыть тему группы', peopleButton: 'Участники', allChatsButton: 'Все вылазки', allPeopleButton: 'Все люди',
     peopleEmpty: 'Других принятых участников пока нет.',
     chatNotFound: 'Нет доступного чата с таким кодом. Список: /chats.',
