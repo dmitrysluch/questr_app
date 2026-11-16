@@ -6,6 +6,23 @@ export function googleMapsSearch(query: string, placeId?: string): string {
   return url.toString();
 }
 
+export function callPlatform(link: string): string {
+  if (!link) return '';
+  let host: string;
+  try {
+    const url = new URL(link);
+    if (url.protocol !== 'https:' || url.username || url.password) return '';
+    host = url.hostname.toLowerCase();
+  } catch { return ''; }
+  if (host === 'zoom.us' || host.endsWith('.zoom.us')) return 'Zoom';
+  if (host === 'meet.google.com') return 'Google Meet';
+  if (host === 'teams.microsoft.com' || host === 'teams.live.com') return 'Microsoft Teams';
+  if (host === 'meet.jit.si') return 'Jitsi Meet';
+  if (host === 'whereby.com' || host.endsWith('.whereby.com')) return 'Whereby';
+  if (host === 'discord.gg' || host === 'discord.com') return 'Discord';
+  return '';
+}
+
 export function zoomLink(text: string): string | null {
   for (const candidate of text.match(/https:\/\/[^\s<>"\])]+/gi) ?? []) {
     try {

@@ -16,23 +16,26 @@ My adventures includes hosted adventures, applications and accessible history,
 regardless of discovery filters. To try an application, open a separate browser
 profile/incognito session, save a second character and open the same adventure URL.
 The application form is in the Mini App in both demo and Telegram modes. The
-applicant does not need to start the bot to submit. The host can accept in the
-Mini App or from the Telegram notification buttons; the applicant can then see
+applicant does not need to start the bot to submit. The host can open the
+applicant's character directly from the notification, then accept in the
+Mini App or from the Telegram buttons; the applicant can then see
 the meeting details. Refresh
 reloads immediately; visible pages also refresh every 20 seconds and on focus.
 
 An adventure has a Markdown description, one city or Online, one language, start
-and end instants and an IANA time zone, party size (2–50, **including the host**),
-and private meeting details. Offline hosts can choose a place with Google Places
+and end instants and an IANA time zone, and party size (2–50, **including the host**).
+The card summary is generated from the public description, so hosts write only
+one required description. Private meeting details can be added later. Offline hosts can choose a place with Google Places
 when `GOOGLE_MAPS_BROWSER_KEY` is configured, or enter a venue and Maps link
 manually. The picker stores a Place ID in the Maps link; hosts write their own
 meeting instructions because Places names and addresses cannot be persisted as
 application data. The browser key needs Google Maps JavaScript and Places API (New),
 billing, and an HTTP referrer restriction. A Maps search link works without a key.
-Online adventures require an HTTPS meeting link. If an accepted party has a Zoom
-URL in its details or public description, it gets a Join Zoom button. A link in
-the public description remains visible to all viewers, so use private joining
-details when the call is intended for accepted members only. Public content
+Online adventures can be published before the call is arranged. If a private
+HTTPS call link is supplied, known platforms (Zoom, Google Meet, Microsoft Teams,
+Jitsi Meet, Whereby and Discord) are named automatically, and accepted members
+get a Join call button. Public descriptions reject links; call links belong in
+private joining details. Public content
 and application, party-chat and direct messages use the existing explicit-content reviewer; private
 meeting details are not sent to the model. Demo review uses limited local fixtures.
 The UI explains connected review through OpenRouter before publication/submission.
@@ -54,8 +57,8 @@ start time resets unsent reminders; cancellation clears queued reminders.
 - Creation publishes directly. The existing `events.create` budget allows 2 per
   rolling 7 days. Failed transactions spend nothing. A UUID plus payload hash
   makes retried creation return the same adventure without spending again.
-- Public event cards show a short joint-activity summary, district or online
-  platform, approximate cost, experience requirements and remaining places.
+- Public event cards show a short summary derived from the description, district
+  or known online platform, approximate cost, experience requirements and remaining places.
   Full descriptions may use Markdown, but public event fields reject links;
   exact meeting addresses and call URLs belong in private meeting details.
 - Organizers can close or reopen applications without cancelling the event.
@@ -115,7 +118,8 @@ it does not relax the existing explicit-sexual-content policy.
    the adventure page in the Mini App: write the first message in the form and
    submit it there. The applicant does not need to start the bot. The typed first
    contact is reviewed before delivery. The host notification contains the
-   application and Accept/Decline buttons; every press rechecks live permissions,
+   application, Accept/Decline buttons and a character button that opens the
+   applicant's profile inside the Mini App. Every decision rechecks live permissions,
    event capacity and application status.
    Existing `/start quest_<id>` links show the adventure's chat status in the
    bot; opening a bot link alone does not submit an application.
@@ -123,7 +127,9 @@ it does not relax the existing explicit-sexual-content policy.
    queues a party topic for that participant. If they have not started the bot,
    the topic is created after their first `/start`. Then use “Open party chat”
    or the bot's topic link. Text and Telegram photos in that topic are delivered
-   to accepted members' own topics under the sender's QUESTR display name. Raw
+   to accepted members' own topics under the sender's QUESTR display name.
+   Earlier party messages are not replayed to new members; someone who rejoins
+   can still see messages already in their own Telegram topic. Raw
    Telegram messages are not forwarded; IDs/usernames are not shared. Text is
    limited to 3000 characters and photo captions to 900 characters. Captions
    use the existing text review; photo pixels are not reviewed in this invite-only

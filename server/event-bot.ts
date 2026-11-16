@@ -25,12 +25,16 @@ export class EventBot {
   constructor(private pool: Pool, private config: Config, private fetcher: typeof fetch = fetch) {
     this.adventures = new Adventures(pool, new ContentReviewer(config));
   }
-  private appButton(locale: string, eventId?: string): BotButton | null {
-    const url = this.config.publicAppUrl;
-    return url.startsWith('https://') ? { text: botText(locale, 'openButton'), web_app: { url: `${url.split('#')[0]}${eventId ? `#adventures/${eventId}` : ''}` } } : null;
+  private appButton(locale: string, route?: string, label: 'openButton' | 'viewCharacterButton' = 'openButton'): BotButton | null {
+    if (!this.config.publicAppUrl.startsWith('https://')) return null;
+    let url: URL;
+    try { url = new URL(this.config.publicAppUrl); } catch { return null; }
+    url.hash = '';
+    if (route) url.searchParams.set('route', route);
+    return { text: botText(locale, label), web_app: { url: route ? url.toString() : this.config.publicAppUrl.split('#')[0] } };
   }
   private appKeyboard(locale: string, eventId?: string): BotKeyboard | undefined {
-    const button = this.appButton(locale, eventId);
+    const button = this.appButton(locale, eventId ? `adventures/${eventId}` : undefined);
     return button ? { inline_keyboard: [[button]] } : undefined;
   }
   private async call(method: string, body: object): Promise<any> {
@@ -554,8 +558,11 @@ export class EventBot {
         const thread = row.target_thread_id ? Number(row.target_thread_id)
           : row.in_topic && row.dm_id ? await this.dmTopic(db, row.user_id, row.dm_id, account.telegram_user_id)
           : row.in_topic && row.event_id ? await this.topic(db, row.user_id, row.event_id, account.telegram_user_id) : undefined;
+        const profileButton = row.kind === 'application' && row.event_id && row.application_user_id
+          ? this.appButton(account.locale, `adventures/${row.event_id}/character/${row.application_user_id}`, 'viewCharacterButton') : null;
         const keyboard = row.reply_markup ?? (row.kind === 'application' ? { inline_keyboard: [
           [{ text: botText(account.locale, 'acceptButton'), callback_data: `application:accept:${row.id}` }, { text: botText(account.locale, 'declineButton'), callback_data: `application:decline:${row.id}` }],
+          ...(profileButton ? [[profileButton]] : []),
         ] } : row.kind === 'dm_request' ? { inline_keyboard: [
           [{ text: botText(account.locale, 'acceptButton'), callback_data: `dm:accept:${hex(row.dm_id)}` }, { text: botText(account.locale, 'declineButton'), callback_data: `dm:decline:${hex(row.dm_id)}` }],
         ] } : undefined);

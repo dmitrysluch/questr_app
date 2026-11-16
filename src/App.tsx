@@ -87,7 +87,11 @@ export function App() {
           const auth = await api<{ sessionToken?: string }>('/auth/telegram', { method: 'POST', body: { initData: telegram.initData, browserLanguage } });
           if (auth.sessionToken) setTelegramSession(auth.sessionToken);
         }
-        if (active) await loadState();
+        if (active) {
+          const target = new URLSearchParams(location.search).get('route');
+          if (target && /^adventures\/[0-9a-f-]{36}(?:\/character\/[0-9a-f-]{36})?$/i.test(target)) location.hash = target;
+          await loadState();
+        }
       } catch (e) { if (active) setError(e); }
       finally { if (active) setLoading(false); }
     })();
@@ -169,13 +173,13 @@ export function App() {
       <div className="header-right">{config?.authMode === 'demo' && <span className="preview-badge">{t('app.demo')}</span>}<select className="locale-switch" aria-label={t('ui.language')} value={locale} disabled={!state || busy} onChange={event => void changeLocale(event.target.value as Locale)}><option value="en">EN</option><option value="ru">RU</option></select><button className="text-button" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
     </header>
     <div className="workspace">
-      {draft && !showProfile && !adventuresOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
+      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !invitesOpen ? 'active' : ''} aria-current={!adventuresOpen && !invitesOpen ? 'page' : undefined} onClick={() => { location.hash = 'character'; }}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'adventures'; }); }}>{t('nav.adventures')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'invites'; }); }}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}</nav>}
+      {draft && !showProfile && !adventuresOpen && !invitesOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
         {steps.map((step, index) => <button key={step.id} className={`step ${currentStep === step.id ? 'active' : ''} ${index < stepIndex ? 'done' : ''}`}
           disabled={busy || (step.id !== 'avatar' && !draft.avatarId)} aria-current={currentStep === step.id ? 'step' : undefined} onClick={() => void go(step.id)}>
           <span className="step-number">{index < stepIndex ? <Check size={13} /> : index + 1}</span><span className="step-label">{t(step.label)}</span>
         </button>)}
       </nav>}
-      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !invitesOpen ? 'active' : ''} aria-current={!adventuresOpen && !invitesOpen ? 'page' : undefined} onClick={() => { location.hash = 'character'; }}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'adventures'; }); }}>{t('nav.adventures')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'invites'; }); }}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}</nav>}
       <main className={`main-content ${currentStep === 'welcome' ? 'welcome-content' : ''}`}>
         {!!visibleError && <div className="error-banner" role="alert"><span>{errorText(visibleError)}</span>
           <button className="text-button" onClick={() => void run(async () => { if (conflict || !state) await loadState(); else await flush(); })}>{t(conflict ? 'common.reload' : 'common.retry')}</button></div>}

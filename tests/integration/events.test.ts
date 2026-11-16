@@ -86,7 +86,11 @@ integration('Telegram Mini App submits applications directly; organizer buttons 
   assert.ok(sent); assert.equal(String(sent.body.chat_id), '4101');
   const buttons = sent.body.reply_markup.inline_keyboard[0];
   assert.deepEqual(buttons.map((b: any) => b.text), ['Accept', 'Decline']);
-  assert.equal(sent.body.reply_markup.inline_keyboard.length, 1);
+  const profileButton = sent.body.reply_markup.inline_keyboard[1][0];
+  assert.equal(profileButton.text, 'View character');
+  const profileUrl = new URL(profileButton.web_app.url);
+  assert.equal(profileUrl.searchParams.get('route'), `adventures/${event.id}/character/${guest.id}`);
+  assert.equal(sent.body.reply_markup.inline_keyboard.length, 2);
   assert.equal(buttons[0].callback_data, `application:accept:${notification.id}`);
   const sentId = (await pool.query('SELECT telegram_message_id FROM bot_outbox WHERE id=$1', [notification.id])).rows[0].telegram_message_id;
   const webhook = (update_id: number, telegramId: number, data: string, messageId = Number(sentId)) => request(telegramApp).post('/api/telegram/webhook')
@@ -133,9 +137,14 @@ integration('creation is atomic, idempotent, budgeted and validates geography, t
   assert.equal(results[0].body.event.costEstimate, body.costEstimate);
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM capability_usage WHERE user_id=$1", [host.id])).rows[0].n, 1);
   await host.agent.post('/api/events').send({ ...body, title: 'Different title' }).expect(409);
-  for (const change of [{ locationId: 'country:IL' }, { locationId: 'online', meetingDetails: 'javascript:alert(1)' }, { district: '' }, { locationId: 'online', onlinePlatform: '', meetingDetails: 'https://meet.example/secret' }, { descriptionMarkdown: 'Meet at https://meet.example/secret at seven.' }, { startsAt: '2020-01-01T00:00:00Z' }, { endsAt: '2020-01-01T00:00:00Z' }, { meetingMapUrl: 'https://evil.example/maps/secret' }, { timeZone: 'Moon/Crater' }]) await host.agent.post('/api/events').send(fields(change)).expect(400);
+  for (const change of [{ locationId: 'country:IL' }, { locationId: 'online', meetingDetails: 'javascript:alert(1)' }, { district: '' }, { locationId: 'online', meetingDetails: 'http://meet.example/secret' }, { descriptionMarkdown: 'Meet at https://meet.example/secret at seven.' }, { startsAt: '2020-01-01T00:00:00Z' }, { endsAt: '2020-01-01T00:00:00Z' }, { meetingMapUrl: 'https://evil.example/maps/secret' }, { timeZone: 'Moon/Crater' }]) await host.agent.post('/api/events').send(fields(change)).expect(400);
   await host.agent.post('/api/events').send(fields({ descriptionMarkdown: 'I want to have sex with you.' })).expect(422);
-  await create(host, { locationId: 'online', meetingDetails: 'https://meet.example/private' });
+  const online = await create(host, { locationId: 'online', meetingDetails: '', activitySummary: '', onlinePlatform: '', descriptionMarkdown: '## Coffee\n\nBring a favourite record.' });
+  assert.equal(online.meetingDetails, ''); assert.equal(online.onlinePlatform, '');
+  assert.equal(online.activitySummary, 'Coffee Bring a favourite record.');
+  const { requestId: _requestId, ...editBody } = fields({ locationId: 'online', meetingDetails: 'https://us02web.zoom.us/j/123456789', activitySummary: '', onlinePlatform: '' });
+  const edited = await host.agent.put(`/api/events/${online.id}`).send({ ...editBody, revision: online.revision }).expect(200);
+  assert.equal(edited.body.event.onlinePlatform, 'Zoom');
   await host.agent.post('/api/events').send(fields()).expect(429);
 });
 integration('discovery applies location ancestry and language together without exposing private details', async () => {
@@ -347,6 +356,25 @@ integration('party topics appear on acceptance and relay messages without a bot 
   await host.agent.post(`/api/events/${event.id}/status`).send({ status: 'cancelled', revision: 0 }).expect(200);
   await text(8006, 'This cannot be relayed.'); await bot.inbox();
   assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=8006')).rowCount, 0);
+});
+integration('joining a party does not expose messages sent before acceptance', async () => {
+  const host = await person('Host'), guest = await person('Guest');
+  const event = await create(host);
+  await pool.query('INSERT INTO telegram_accounts(user_id,telegram_user_id,bot_started_at) VALUES($1,8301,now()),($2,8302,now())', [host.id, guest.id]);
+  const calls: { method: string; body: any }[] = []; let thread = 8300, message = 0;
+  const bot = new EventBot(pool, config, (async (url: string | URL | Request, options?: RequestInit) => {
+    const method = String(url).split('/').at(-1)!; const body = JSON.parse(String(options?.body)); calls.push({ method, body });
+    return Response.json({ ok: true, result: method === 'createForumTopic' ? { message_thread_id: ++thread } : { message_id: ++message } });
+  }) as typeof fetch);
+  while (await bot.outbox()) { /* Create the host's party topic. */ }
+  const hostThread = (await pool.query('SELECT thread_id FROM event_bot_topics WHERE event_id=$1 AND user_id=$2', [event.id, host.id])).rows[0].thread_id;
+  await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret').send({ update_id: 8301,
+    message: { from: { id: 8301 }, chat: { id: 8301, type: 'private' }, message_thread_id: Number(hostThread), text: 'Before anyone joined.' } }).expect(200);
+  await bot.inbox(); while (await bot.outbox()) { /* Deliver current messages. */ }
+  await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200);
+  while (await bot.outbox()) { /* Create the new member's topic. */ }
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM bot_outbox WHERE kind='relay' AND user_id=$1", [guest.id])).rows[0].n, 0);
+  assert.ok(!calls.some(call => call.method === 'sendMessage' && String(call.body.chat_id) === '8302' && call.body.text.includes('Before anyone joined.')));
 });
 integration('Telegram photos relay in party and accepted private topics while captions keep text checks', async () => {
   const host = await person('Host'), guest = await person('Guest');

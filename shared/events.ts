@@ -8,19 +8,19 @@ export const timeZoneSchema = z.string().max(100).refine(zone => {
 }, 'Invalid time zone');
 export const eventFieldsSchema = z.object({
   title: z.string().trim().min(3).max(160),
-  activitySummary: z.string().trim().min(10).max(240),
+  activitySummary: z.string().trim().max(240).default(''),
   descriptionMarkdown: z.string().trim().min(10).max(12000),
   district: z.string().trim().max(120),
   costEstimate: z.string().trim().min(2).max(120),
   experienceNotes: z.string().trim().min(2).max(240),
-  onlinePlatform: z.string().trim().max(120),
+  onlinePlatform: z.string().trim().max(120).default(''),
   locationId: locationIdSchema,
   languageCode: languageCodeSchema,
   startsAt: z.iso.datetime({ offset: true }),
   endsAt: z.iso.datetime({ offset: true }),
   timeZone: timeZoneSchema,
   capacity: z.number().int().min(2).max(50),
-  meetingDetails: z.string().trim().min(3).max(2000),
+  meetingDetails: z.string().trim().max(2000).default(''),
   meetingMapUrl: z.string().max(2048).default(''),
 }).strict();
 export type EventFields = z.infer<typeof eventFieldsSchema>;

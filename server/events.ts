@@ -10,8 +10,18 @@ import { getProfile } from './store.ts';
 import { tagKey, type ProfileTag } from '../shared/schema.ts';
 import { queueBot, queuePartyTopic, notifyMembers, recipientLocale } from './event-notifications.ts';
 import { botText } from './bot-copy.ts';
+import { callPlatform } from '../shared/event-links.ts';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { toString } from 'mdast-util-to-string';
 
 type Db = Pool | PoolClient;
+function normalizeFields<T extends EventFields>(fields: T): T {
+  const summary = fromMarkdown(fields.descriptionMarkdown).children.map(node => toString(node).trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 240);
+  return { ...fields,
+    activitySummary: fields.activitySummary || summary || fields.title,
+    onlinePlatform: fields.locationId === 'online' ? callPlatform(fields.meetingDetails) : '',
+  };
+}
 const eventProjection = `SELECT e.*,l.name AS location_name,l.kind AS location_kind,l.parent_id,p.name AS country_name,
   h.display_name AS host_name,h.avatar_preset_id AS host_avatar,h.avatar_appearance AS host_appearance,
   (SELECT count(*)::int FROM event_memberships m WHERE m.event_id=e.id AND m.status='accepted') AS participant_count,
@@ -55,10 +65,11 @@ async function validateFields(db: Db, userId: string, fields: EventFields, requi
     throw new AppError(400, 'EVENT_PUBLIC_LINK');
   }
   if (location.kind === 'online') {
-    if (!fields.onlinePlatform) throw new AppError(400, 'EVENT_PLATFORM_REQUIRED');
     if (fields.meetingMapUrl) throw new AppError(400, 'EVENT_MAP_INVALID');
-    try { const url = new URL(fields.meetingDetails); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }
-    catch { throw new AppError(400, 'EVENT_LINK_INVALID'); }
+    if (fields.meetingDetails) {
+      try { const url = new URL(fields.meetingDetails); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }
+      catch { throw new AppError(400, 'EVENT_LINK_INVALID'); }
+    }
   }
   if (location.kind === 'city' && !fields.district) throw new AppError(400, 'EVENT_DISTRICT_REQUIRED');
   if (fields.meetingMapUrl) {
@@ -150,7 +161,7 @@ export class Adventures {
   async create(userId: string, body: unknown) {
     const input = createEventSchema.parse(body);
     await activeUser(this.pool, userId);
-    const fields = eventFieldsSchema.parse(Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'requestId')));
+    const fields = normalizeFields(eventFieldsSchema.parse(Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'requestId'))));
     await requireCapability(this.pool, userId, 'events.create', { type: 'location', id: fields.locationId });
     await this.review([fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.district, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform].join('\n\n'));
     const fingerprint = hash(JSON.stringify(fields));
@@ -175,7 +186,7 @@ export class Adventures {
     return this.detail(userId, eventId);
   }
   async edit(userId: string, eventId: string, body: unknown) {
-    const input = editEventSchema.parse(body);
+    const input = normalizeFields(editEventSchema.parse(body));
     await requireCapability(this.pool, userId, 'events.edit', { type: 'event', id: eventId });
     await this.review([input.title, input.activitySummary, input.descriptionMarkdown, input.district, input.costEstimate, input.experienceNotes, input.onlinePlatform].join('\n\n'));
     await transaction(this.pool, async db => {
