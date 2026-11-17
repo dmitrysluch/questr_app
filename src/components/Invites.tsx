@@ -4,6 +4,7 @@ import type { InviteBudget, InviteRecord, InviterAccount } from '../../shared/sc
 import { api } from '../api.ts';
 import { errorText, getLocale, t } from '../i18n.ts';
 import { PlacesAdmin } from './PlacesAdmin.tsx';
+import { communities, communityAncestors } from '../../shared/communities.ts';
 
 type Listing = { invites: InviteRecord[]; total: number; budget: InviteBudget | null; admin: boolean; grantOptions: { eventCreator: boolean; maxInviteDepth: number } };
 const empty: Listing = { invites: [], total: 0, budget: null, admin: false, grantOptions: { eventCreator: false, maxInviteDepth: 0 } };
@@ -20,11 +21,12 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
   const [expiresInDays, setExpiresInDays] = useState(7);
   const [eventCreator, setEventCreator] = useState(true);
   const [inviteDepth, setInviteDepth] = useState(0);
+  const [communityIds, setCommunityIds] = useState<string[]>([]);
   const [issuedCode, setIssuedCode] = useState<{ id: string; code: string } | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const pending = useRef<{ requestId: string; code: string; expiresInDays: number; eventCreator: boolean; inviteDepth: number } | null>(null);
+  const pending = useRef<{ requestId: string; code: string; expiresInDays: number; eventCreator: boolean; inviteDepth: number; communityIds: string[] } | null>(null);
   async function refresh(q = search) {
     const [next, accounts] = await Promise.all([
       api<Listing>('/invites'),
@@ -49,11 +51,11 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
   async function issue() {
     if (busy) return;
     const request = pending.current ?? { requestId: crypto.randomUUID(), code: newCode(), expiresInDays,
-      eventCreator: eventCreator && listing.grantOptions.eventCreator, inviteDepth: Math.min(inviteDepth, listing.grantOptions.maxInviteDepth) };
+      eventCreator: eventCreator && listing.grantOptions.eventCreator, inviteDepth: Math.min(inviteDepth, listing.grantOptions.maxInviteDepth), communityIds: admin ? communityIds : [] };
     pending.current = request; setBusy(true); setError(null);
     try {
       const result = await api<{ id: string }>('/invites', { method: 'POST', body: request });
-      setIssuedCode({ id: result.id, code: request.code }); pending.current = null;
+      setIssuedCode({ id: result.id, code: request.code }); pending.current = null; setCommunityIds([]);
       await refresh();
     } catch (problem) { setError(problem); } finally { setBusy(false); }
   }
@@ -89,6 +91,7 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
             {Array.from({ length: listing.grantOptions.maxInviteDepth + 1 }, (_, depth) => <option key={depth} value={depth}>{t(`invites.depth.${depth}` as 'invites.depth.0' | 'invites.depth.1' | 'invites.depth.2')}</option>)}
           </select>
           <small className="hint">{t('invites.depthHint')}</small>
+          {admin && <fieldset className="invite-community-grants"><legend>{t('communities.label')}</legend>{communities.map(community => <label className="checkbox-label" key={community.id} style={{ paddingInlineStart: `${12 * (communityAncestors(community.id).length - 1)}px` }}><input type="checkbox" checked={communityIds.includes(community.id)} disabled={busy} onChange={event => { setCommunityIds(old => event.target.checked ? [...old, community.id] : old.filter(id => id !== community.id)); pending.current = null; }} />{community.name[getLocale()]}</label>)}</fieldset>}
         </div>
         <button className="pixel-button" disabled={busy || !budget || budget.used >= budget.maxUses} onClick={() => void issue()}>{busy ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}{t('invites.create')}</button>
         {issuedCode && <div className="issued-invite" role="status"><span>{t('invites.copyNow')}</span><code>{issuedCode.code}</code><button className="outline-button small" onClick={() => void navigator.clipboard.writeText(issuedCode.code).catch(setError)}><ClipboardCopy size={15} />{t('invites.copy')}</button></div>}
@@ -99,6 +102,7 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
           {admin && invite.createdBy && <span className="invite-person">{t('invites.issuer', { name: invite.createdBy })}</span>}
           {invite.redeemedBy && <span className="invite-person">{t('invites.usedBy', { name: invite.redeemedBy })}</span>}
           <span className="invite-person">{[invite.eventCreator ? t('invites.eventCreator') : null, invite.inviteDepth ? t('invites.depthLabel', { count: invite.inviteDepth }) : null].filter(Boolean).join(' · ') || t('invites.basicAccess')}</span>
+          {!!invite.communityIds?.length && <span className="invite-person">{invite.communityIds.map(id => communities.find(community => community.id === id)?.name[getLocale()] ?? id).join(' · ')}</span>}
           {invite.status === 'active' && (confirmId === invite.id ? <div className="invite-actions"><button className="outline-button small" disabled={busy} onClick={() => void revoke(invite.id)}><Check size={14} />{t('invites.confirmRevoke')}</button><button className="text-button" onClick={() => setConfirmId(null)}><X size={14} />{t('common.cancel')}</button></div> : <button className="text-button invite-revoke" disabled={busy} onClick={() => setConfirmId(invite.id)}>{t('invites.revoke')}</button>)}
         </li>)}</ul>}
         {listing.invites.length < listing.total && <button className="text-button" disabled={busy} onClick={() => void loadMore()}>{t('events.more')}</button>}

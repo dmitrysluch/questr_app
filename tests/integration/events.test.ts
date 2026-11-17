@@ -1,6 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { createPool, type Pool } from '../../server/db.ts';
 import { migrate } from '../../server/migrate.ts';
@@ -33,6 +33,44 @@ function fields(extra = {}) { const start = Date.now() + 86400000; return { titl
 const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (await who.agent.post('/api/events').send(fields(extra)).expect(201)).body.event;
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
+
+integration('community adventures are visible only to direct members and members of child communities', async () => {
+  const curator = await person('Community curator'), ariel = await person('Ariel member');
+  const israel = await person('Israeli universities member'), outsider = await person('Outsider');
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Test admin')", [curator.id]);
+  for (const [member, communityId] of [[ariel, 'ariel_students'], [israel, 'israeli_university_students']] as const) {
+    const inviteCode = `QUEST-${randomBytes(18).toString('base64url')}`;
+    await curator.agent.post('/api/invites').send({ code: inviteCode, requestId: randomUUID(), expiresInDays: 7,
+      communityIds: [communityId] }).expect(201);
+    await member.agent.post('/api/invites/redeem').send({ code: inviteCode }).expect(200);
+  }
+  const arielEvent = await create(ariel, { title: 'Ariel coffee', communityId: 'ariel_students' });
+  const israelEvent = await create(israel, { title: 'University coffee', communityId: 'israeli_university_students' });
+  assert.equal(arielEvent.communityId, 'ariel_students');
+  const visibleToAriel = (await ariel.agent.get('/api/events').expect(200)).body.events.map((event: any) => event.id);
+  assert.ok(visibleToAriel.includes(arielEvent.id)); assert.ok(visibleToAriel.includes(israelEvent.id));
+  const visibleToIsrael = (await israel.agent.get('/api/events').expect(200)).body.events.map((event: any) => event.id);
+  assert.ok(visibleToIsrael.includes(israelEvent.id)); assert.ok(!visibleToIsrael.includes(arielEvent.id));
+  assert.ok(!(await outsider.agent.get('/api/events').expect(200)).body.events.some((event: any) => event.id === arielEvent.id));
+  await israel.agent.get(`/api/events/${arielEvent.id}`).expect(404);
+  await outsider.agent.get(`/api/events/${arielEvent.id}/calendar.ics`).expect(404);
+  await outsider.agent.post(`/api/events/${arielEvent.id}/applications`).send({ message: '' }).expect(404);
+  await outsider.agent.post('/api/events').send(fields({ communityId: 'ariel_students' })).expect(403);
+  const { requestId: _requestId, ...editedFields } = fields({ communityId: null });
+  await ariel.agent.put(`/api/events/${arielEvent.id}`).send({ ...editedFields, revision: arielEvent.revision }).expect(409);
+  const applicant = await person('Former Ariel member');
+  const thirdCode = `QUEST-${randomBytes(18).toString('base64url')}`;
+  await curator.agent.post('/api/invites').send({ code: thirdCode, requestId: randomUUID(), expiresInDays: 7,
+    communityIds: ['ariel_students'] }).expect(201);
+  await applicant.agent.post('/api/invites/redeem').send({ code: thirdCode }).expect(200);
+  await applicant.agent.post(`/api/events/${arielEvent.id}/applications`).send({ message: '' }).expect(200);
+  await pool.query('DELETE FROM user_community_grants WHERE user_id=$1', [applicant.id]);
+  await ariel.agent.post(`/api/events/${arielEvent.id}/members/${applicant.id}`).send({ action: 'accept' }).expect(409);
+  await applicant.agent.get(`/api/events/${arielEvent.id}`).expect(404);
+  await pool.query('DELETE FROM user_community_grants WHERE user_id=$1', [ariel.id]);
+  assert.equal(await can(pool, ariel.id, 'events.group_chat', { type: 'event', id: arielEvent.id }), false);
+  await ariel.agent.get(`/api/events/${arielEvent.id}`).expect(404);
+});
 
 integration('manual public places are admin-owned and never reveal private meeting instructions', async () => {
   const curator = await person('Curator'), host = await person('Host'), guest = await person('Guest');

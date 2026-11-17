@@ -16,6 +16,7 @@ import { Modal } from './components/Modal.tsx';
 import { Interview } from './components/Interview.tsx';
 import { AskMeTopics } from './components/AskMeTopics.tsx';
 import { Invites } from './components/Invites.tsx';
+import { InviteRedeemer } from './components/InviteRedeemer.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
 import { RomanceSettings } from './components/RomanceSettings.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
@@ -212,9 +213,10 @@ export function App() {
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
             <p className="form-privacy"><LockKeyhole size={13} />{t('footer.private')}</p>
           </form>
-        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
+        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} />
+          <InviteRedeemer onRedeemed={loadState} />
           <RomanceSettings />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
 
@@ -262,7 +264,7 @@ export function App() {
           <PageHeading title="review.title" />
           <ContentWarning text={draft.introMarkdown} review={currentReview} />
           {draft.askMeTopics.map((topic, index) => <ContentWarning key={`${topic}:${index}`} text={topic} review={currentTopicReviews?.[index]} />)}
-          <ProfileCard profile={{ ...draft, avatarId: draft.avatarId!, completedAt: '' }} flagged={currentReview?.spans} />
+          <ProfileCard profile={{ ...draft, avatarId: draft.avatarId!, completedAt: '', communities: state.profile?.communities ?? [] }} flagged={currentReview?.spans} />
           <div className="page-actions"><button className="text-button" disabled={busy} onClick={() => void go('bio')}><ArrowLeft size={16} />{t('review.edit')}</button><button className="pixel-button" disabled={busy} onClick={() => void publish()}>{busy ? <LoaderCircle size={17} className="spin" /> : <Check size={17} />}{t(checkingBio ? 'content.checking' : 'review.finish')}</button></div>
           <p className="review-privacy"><LockKeyhole size={13} />{t('review.private')}</p>
         </section>}

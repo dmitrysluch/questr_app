@@ -6,6 +6,8 @@ import { transaction } from './db.ts';
 import { AppError } from './errors.ts';
 import { can, consumeCapability, requireCapability } from './permissions.ts';
 import type { InviteBudget, InviteRecord, InviterAccount } from '../shared/schema.ts';
+import { communities } from '../shared/communities.ts';
+import { redeemInvite } from './invite-redemption.ts';
 
 const issueSchema = z.object({
   requestId: z.uuid(),
@@ -13,6 +15,8 @@ const issueSchema = z.object({
   expiresInDays: z.number().int().min(1).max(30),
   eventCreator: z.boolean().optional(),
   inviteDepth: z.number().int().min(0).max(2).optional(),
+  communityIds: z.array(z.string().refine(value => communities.some(community => community.id === value))).max(20)
+    .refine(ids => new Set(ids).size === ids.length).default([]),
 }).strict();
 const accessSchema = z.object({
   enabled: z.boolean(), maxUses: z.number().int().min(0).max(100), windowDays: z.number().int().min(1).max(90),
@@ -48,7 +52,7 @@ function mapInvite(row: Record<string, any>): InviteRecord {
     id: row.id, createdAt: row.created_at.toISOString(), expiresAt: row.expires_at.toISOString(),
     status: row.redeemed_at ? 'redeemed' : row.revoked_at ? 'revoked' : row.expires_at <= new Date() ? 'expired' : 'active',
     createdBy: row.creator_name, redeemedBy: row.redeemer_name,
-    eventCreator: row.grants_event_creation, inviteDepth: row.invite_depth,
+    eventCreator: row.grants_event_creation, inviteDepth: row.invite_depth, communityIds: row.community_ids,
   };
 }
 
@@ -60,6 +64,7 @@ export function inviteRoutes(pool: Pool) {
     const admin = await can(pool, userId, 'admin', { type: 'global' });
     const { offset } = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0) }).strict().parse(req.query);
     const { rows } = await pool.query(`SELECT i.id,i.created_at,i.expires_at,i.revoked_at,i.redeemed_at,i.grants_event_creation,i.invite_depth,
+      ARRAY(SELECT community_id FROM invite_communities WHERE invite_id=i.id ORDER BY community_id) AS community_ids,
       COALESCE(cp.display_name,cd.display_name) AS creator_name,
       COALESCE(rp.display_name,rd.display_name) AS redeemer_name
       FROM invites i
@@ -82,20 +87,33 @@ export function inviteRoutes(pool: Pool) {
       const eventCreator = input.eventCreator ?? allowed.eventCreator;
       const inviteDepth = input.inviteDepth ?? 0;
       if (eventCreator && !allowed.eventCreator || inviteDepth > allowed.maxInviteDepth) throw new AppError(403, 'PERMISSION_DENIED');
+      if (input.communityIds.length && !admin) throw new AppError(403, 'PERMISSION_DENIED');
       const result = await consumeCapability(db, userId, 'invite.create', { type: 'global' }, input.requestId);
       if (result === 'replay') {
         const old = (await db.query('SELECT id,token_hash,expires_at,grants_event_creation,invite_depth,expiry_days FROM invites WHERE created_by=$1 AND issuance_request_id=$2', [userId, input.requestId])).rows[0];
-        if (!old || old.token_hash !== tokenHash || old.grants_event_creation !== eventCreator || old.invite_depth !== inviteDepth || old.expiry_days !== input.expiresInDays) throw new AppError(409, 'REQUEST_CONFLICT');
+        const oldCommunities = old && (await db.query('SELECT community_id FROM invite_communities WHERE invite_id=$1 ORDER BY community_id', [old.id])).rows.map(row => row.community_id);
+        if (!old || old.token_hash !== tokenHash || old.grants_event_creation !== eventCreator || old.invite_depth !== inviteDepth || old.expiry_days !== input.expiresInDays || JSON.stringify(oldCommunities) !== JSON.stringify([...input.communityIds].sort())) throw new AppError(409, 'REQUEST_CONFLICT');
         return old;
       }
       if ((await db.query('SELECT 1 FROM invites WHERE token_hash=$1', [tokenHash])).rowCount) throw new AppError(409, 'INVITE_CODE_CONFLICT');
       const { rows } = await db.query(`INSERT INTO invites(token_hash,created_by,issuance_request_id,expires_at,expiry_days,grants_event_creation,invite_depth)
         VALUES($1,$2,$3,now()+make_interval(days=>$4),$4,$5,$6) RETURNING id,expires_at`, [tokenHash, userId, input.requestId, input.expiresInDays, eventCreator, inviteDepth]);
+      for (const communityId of input.communityIds) await db.query('INSERT INTO invite_communities(invite_id,community_id) VALUES($1,$2)', [rows[0].id, communityId]);
       await db.query("INSERT INTO permission_audit(user_id,actor_id,action,details,reason) VALUES($1,$1,'invite.created',$2,'Invitation issued')",
-        [userId, JSON.stringify({ inviteId: rows[0].id, expiresInDays: input.expiresInDays, eventCreator, inviteDepth })]);
+        [userId, JSON.stringify({ inviteId: rows[0].id, expiresInDays: input.expiresInDays, eventCreator, inviteDepth, communityIds: input.communityIds })]);
       return rows[0];
     });
     res.status(201).json({ id: record.id, expiresAt: record.expires_at.toISOString() });
+  });
+  router.post('/redeem', async (req, res) => {
+    const { code } = z.object({ code: z.string().trim().min(6).max(120) }).strict().parse(req.body);
+    const userId = res.locals.user.id as string;
+    const result = await transaction(pool, async db => {
+      const user = (await db.query('SELECT status FROM users WHERE id=$1 FOR UPDATE', [userId])).rows[0];
+      if (user?.status !== 'active') throw new AppError(403, 'PROFILE_REQUIRED');
+      return redeemInvite(db, userId, code);
+    });
+    res.json(result);
   });
   router.post('/:id/revoke', async (req, res) => {
     z.object({}).strict().parse(req.body);

@@ -14,6 +14,8 @@ import { callPlatform } from '../shared/event-links.ts';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { toString } from 'mdast-util-to-string';
 import { romanceConsentVersion } from '../shared/romance.ts';
+import { hasCommunityAccess, requireCommunityAccess } from './communities.ts';
+import { communities } from '../shared/communities.ts';
 
 type Db = Pool | PoolClient;
 function normalizeFields<T extends EventFields>(fields: T): T {
@@ -38,7 +40,7 @@ function mapEvent(row: any, userId: string): Adventure {
     location: { id: row.location_id, name: row.location_name, kind: row.location_kind, parentId: row.parent_id, countryName: row.country_name },
     place: row.place_id && row.place_name ? { id: row.place_id, cityLocationId: row.place_city_id, cityName: row.location_name,
       name: row.place_name, address: row.place_address, active: row.place_active, revision: row.place_revision } : null,
-    languageCode: row.language_code, startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), timeZone: row.time_zone,
+    languageCode: row.language_code, communityId: row.community_id, startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), timeZone: row.time_zone,
     capacity: row.capacity, participantCount: row.participant_count, revision: row.revision, status: row.status,
     host: { id: row.created_by, displayName: row.host_name, avatarId: row.host_avatar, avatarAppearance: row.host_appearance }, myStatus: row.my_status ?? null, isHost: row.created_by === userId };
 }
@@ -66,6 +68,8 @@ async function validateFields(db: Db, userId: string, fields: EventFields, requi
   if (Date.parse(fields.endsAt) <= Date.parse(fields.startsAt)) throw new AppError(400, 'EVENT_END_INVALID');
   const location = (await db.query("SELECT kind FROM locations WHERE id=$1 AND kind IN ('city','online')", [fields.locationId])).rows[0];
   if (!location) throw new AppError(400, 'EVENT_LOCATION_INVALID');
+  if (fields.communityId && !communities.some(community => community.id === fields.communityId)) throw new AppError(400, 'COMMUNITY_INVALID');
+  await requireCommunityAccess(db, userId, fields.communityId);
   if ([fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform].some(hasPublicLink)) {
     throw new AppError(400, 'EVENT_PUBLIC_LINK');
   }
@@ -128,6 +132,9 @@ export class Adventures {
           OR EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1 AND language_code=e.language_code))
         AND EXISTS(SELECT 1 FROM discovery_locations WHERE user_id=$1 AND (location_id=e.location_id OR location_id=l.parent_id))`;
     const { rows } = await this.pool.query(`${eventProjection} WHERE host_user.status='active' AND ${filter}
+      AND (e.community_id IS NULL OR EXISTS(SELECT 1 FROM user_community_grants g
+        JOIN community_closure c ON c.descendant_id=g.community_id
+        WHERE g.user_id=$1 AND c.ancestor_id=e.community_id))
       ORDER BY e.starts_at ${mode === 'mine' ? 'DESC' : 'ASC'},e.id LIMIT 21 OFFSET $2`, [userId, offset]);
     const events: Adventure[] = [];
     for (const row of rows.slice(0, 20)) if (await can(this.pool, userId, 'events.view', { type: 'event', id: row.id })) events.push(mapEvent(row, userId));
@@ -204,8 +211,8 @@ export class Adventures {
         return old.id;
       }
       await validateFields(db, userId, fields);
-      const row = (await db.query(`INSERT INTO events(created_by,title,activity_summary,description_markdown,cost_estimate,experience_notes,online_platform,location_id,language_code,starts_at,ends_at,time_zone,capacity,place_id,status,request_id,request_hash)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'published',$15,$16) RETURNING id`, [userId, fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, fields.placeId, input.requestId, fingerprint])).rows[0];
+      const row = (await db.query(`INSERT INTO events(created_by,title,activity_summary,description_markdown,cost_estimate,experience_notes,online_platform,location_id,language_code,starts_at,ends_at,time_zone,capacity,place_id,community_id,status,request_id,request_hash)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'published',$16,$17) RETURNING id`, [userId, fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, fields.placeId, fields.communityId, input.requestId, fingerprint])).rows[0];
       await db.query('INSERT INTO event_private_details(event_id,meeting_details,meeting_map_url) VALUES($1,$2,$3)', [row.id, fields.meetingDetails, fields.meetingMapUrl]);
       await db.query("INSERT INTO event_memberships(event_id,user_id,role,status) VALUES($1,$2,'host','accepted')", [row.id, userId]);
       await grantEventRole(db, row.id, userId, 'organizer', userId);
@@ -223,6 +230,7 @@ export class Adventures {
     await transaction(this.pool, async db => {
       const row = await lockEvent(db, userId, eventId);
       if (!placeProvided) input.placeId = row.place_id;
+      if (input.communityId !== row.community_id) throw new AppError(409, 'COMMUNITY_EVENT_IMMUTABLE');
       await requireCapability(db, userId, 'events.edit', { type: 'event', id: eventId });
       recruiting(row);
       if (row.revision !== input.revision) throw new AppError(409, 'EVENT_CONFLICT');
@@ -286,6 +294,7 @@ export class Adventures {
       else if (!['pending', 'accepted'].includes(member.status)) throw new AppError(409, 'APPLICATION_CHANGED');
       if (action === 'accept') {
         await activeUser(db, targetId);
+        if (row.community_id && !await hasCommunityAccess(db, targetId, row.community_id)) throw new AppError(409, 'COMMUNITY_APPLICANT_LEFT');
         const count = (await db.query("SELECT count(*)::int AS count FROM event_memberships WHERE event_id=$1 AND status='accepted'", [eventId])).rows[0].count;
         if (count >= row.capacity) throw new AppError(409, 'EVENT_FULL');
         await grantEventRole(db, eventId, targetId, 'participant', userId);

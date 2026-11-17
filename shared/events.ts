@@ -17,6 +17,7 @@ export const eventFieldsSchema = z.object({
   locationId: locationIdSchema,
   placeId: z.uuid().nullable().default(null),
   languageCode: languageCodeSchema,
+  communityId: z.string().nullable().default(null),
   startsAt: z.iso.datetime({ offset: true }),
   endsAt: z.iso.datetime({ offset: true }),
   timeZone: timeZoneSchema,
@@ -44,6 +45,7 @@ export interface EventPerson {
 export interface Adventure {
   id: string; title: string; activitySummary: string; descriptionMarkdown: string; costEstimate: string;
   experienceNotes: string; onlinePlatform: string; recruitmentOpen: boolean; location: Location; languageCode: string;
+  communityId: string | null;
   place: Place | null;
   startsAt: string; endsAt: string; timeZone: string; capacity: number; participantCount: number; revision: number;
   status: 'draft' | 'published' | 'cancelled' | 'completed';

@@ -214,6 +214,13 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .profile-identity .character { width: 113px; height: 125px; padding: 6px; flex-shrink: 0; border: 1px solid #c5b899; box-shadow: 3px 3px 0 #dfd2bc; }
 .profile-identity h2 { font-family: inherit; font-size: 36px; line-height: 1.2; font-weight: 400; margin: 7px 0 13px; overflow-wrap: anywhere; }
 .profile-identity > div:last-child { min-width: 0; }
+.community-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.community-badge { padding: 5px 9px; border: 1px solid #bdc8ad; background: #edf0e4; color: #536548; font-size: 11px; }
+.invite-redeemer { max-width: 840px; margin: 14px auto; padding: 18px 24px; }
+.invite-redeemer h2 { font-size: 15px; margin: 0 0 11px; }
+.invite-redeemer > div { display: flex; gap: 10px; }
+.invite-redeemer input { flex: 1; min-width: 0; }
+.invite-redeemer p { margin: 9px 0 0; font-size: 12px; }
 .profile-body { margin: 0 33px; padding: 25px 0 34px; border-top: 1px solid #e7ddcd; }
 .profile-ask-me { margin: 0 33px 30px; padding-top: 22px; border-top: 1px solid #e7ddcd; }
 .profile-ask-me h3 { font-size: 14px; margin: 0 0 14px; }
@@ -448,6 +455,8 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .invite-grants > span { font-size: 12px; font-weight: 700; }
 .invite-grants > label { font-size: 12px; }
 .invite-grants select, .admin-role-block select { width: 100%; border: 1px solid #d5cbbb; background: #fffdf8; color: var(--ink); padding: 10px; }
+.invite-community-grants { border: 0; padding: 5px 0 0; margin: 0; display: grid; gap: 7px; }
+.invite-community-grants legend { font-size: 12px; font-weight: 700; margin-bottom: 7px; }
 .issued-invite { margin-top: 20px; padding: 14px; border: 1px solid #c9d0b7; background: #edf0e4; display: grid; gap: 10px; }
 .issued-invite span { font-size: 11px; color: #5b694b; }
 .issued-invite code { overflow-wrap: anywhere; user-select: all; font-size: 13px; }

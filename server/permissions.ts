@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { AppError } from './errors.ts';
+import { hasCommunityAccess } from './communities.ts';
 
 type Db = Pool | PoolClient;
 export type Capability = 'profile.view' | 'profile.edit' | 'events.view' | 'events.create' | 'events.edit' | 'events.accept' | 'events.group_chat' | 'events.group_chat_moderator' | 'dm.send_opener' | 'dm.message' | 'invite.create' | 'admin';
@@ -35,8 +36,9 @@ export async function can(db: Db, userId: string, capability: Capability, resour
   let locationId: string | null = resource.type === 'location' ? resource.id : null;
   let eventStatus: string | null = null;
   if (resource.type === 'event') {
-    const event = (await db.query("SELECT e.location_id,e.status FROM events e JOIN users u ON u.id=e.created_by WHERE e.id=$1 AND u.status='active'", [resource.id])).rows[0];
+    const event = (await db.query("SELECT e.location_id,e.status,e.community_id FROM events e JOIN users u ON u.id=e.created_by WHERE e.id=$1 AND u.status='active'", [resource.id])).rows[0];
     if (!event) return false;
+    if (event.community_id && !await hasCommunityAccess(db, userId, event.community_id)) return false;
     locationId = event.location_id; // Resolve scope on the server, never trust a caller's country.
     eventStatus = event.status;
     if (capability === 'events.group_chat') {
@@ -72,12 +74,16 @@ export async function can(db: Db, userId: string, capability: Capability, resour
 export async function requireCapability(db: Db, userId: string, capability: Capability, resource: Resource) {
   if (!await can(db, userId, capability, resource)) throw new AppError(403, 'PERMISSION_DENIED');
 }
-export async function grantMember(db: PoolClient, userId: string, grants: { eventCreator: boolean; inviteDepth: number; invitedBy: string | null }) {
-  await db.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'member','Invitation redeemed')", [userId]);
-  await db.query("INSERT INTO permission_audit(user_id,action,details,reason) VALUES($1,'role.granted','{\"role\":\"member\"}','Invitation redeemed')", [userId]);
-  if (grants.eventCreator) await db.query("INSERT INTO role_assignments(user_id,role_code,granted_by,reason) VALUES($1,'event_creator',$2,'Invitation redeemed')", [userId, grants.invitedBy]);
-  if (grants.inviteDepth > 0) await db.query("INSERT INTO role_assignments(user_id,role_code,invite_depth,granted_by,reason) VALUES($1,'inviter',$2,$3,'Invitation redeemed')", [userId, grants.inviteDepth, grants.invitedBy]);
-  await db.query("INSERT INTO permission_audit(user_id,actor_id,action,details,reason) VALUES($1,$2,'invite.grants.applied',$3,'Invitation redeemed')", [userId, grants.invitedBy, JSON.stringify({ eventCreator: grants.eventCreator, inviteDepth: grants.inviteDepth })]);
+export async function grantMember(db: PoolClient, userId: string, grants: { inviteId: string; eventCreator: boolean; inviteDepth: number; invitedBy: string | null }) {
+  const member = await db.query(`INSERT INTO role_assignments(user_id,role_code,source_invite_id,reason)
+    SELECT $1,'member',$2,'Invitation redeemed' WHERE NOT EXISTS
+    (SELECT 1 FROM role_assignments WHERE user_id=$1 AND role_code='member' AND revoked_at IS NULL) RETURNING id`, [userId, grants.inviteId]);
+  if (member.rowCount) await db.query("INSERT INTO permission_audit(user_id,action,details,reason) VALUES($1,'role.granted','{\"role\":\"member\"}','Invitation redeemed')", [userId]);
+  if (grants.eventCreator) await db.query("INSERT INTO role_assignments(user_id,role_code,granted_by,source_invite_id,reason) VALUES($1,'event_creator',$2,$3,'Invitation redeemed')", [userId, grants.invitedBy, grants.inviteId]);
+  if (grants.inviteDepth > 0) await db.query("INSERT INTO role_assignments(user_id,role_code,invite_depth,granted_by,source_invite_id,reason) VALUES($1,'inviter',$2,$3,$4,'Invitation redeemed')", [userId, grants.inviteDepth, grants.invitedBy, grants.inviteId]);
+  await db.query(`INSERT INTO user_community_grants(user_id,community_id,invite_id)
+    SELECT $1,community_id,$2 FROM invite_communities WHERE invite_id=$2 ON CONFLICT DO NOTHING`, [userId, grants.inviteId]);
+  await db.query("INSERT INTO permission_audit(user_id,actor_id,action,details,reason) VALUES($1,$2,'invite.grants.applied',$3,'Invitation redeemed')", [userId, grants.invitedBy, JSON.stringify({ inviteId: grants.inviteId, eventCreator: grants.eventCreator, inviteDepth: grants.inviteDepth })]);
   await db.query("INSERT INTO capability_budgets(user_id,capability,max_uses,window_seconds) VALUES($1,'events.create',2,604800),($1,'invite.create',3,604800),($1,'dm.send_opener',3,604800) ON CONFLICT DO NOTHING", [userId]);
 }
 // Must run in the SAME transaction as the action. Serializes competing consumes;

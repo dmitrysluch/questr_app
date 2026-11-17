@@ -71,6 +71,7 @@ export interface Proposal {
 export interface Profile {
   displayName: string; avatarId: string; avatarAppearance: AvatarAppearance | null; introMarkdown: string;
   tags: ProfileTag[]; askMeTopics: string[]; spokenLanguages: string[]; revision: number; completedAt: string;
+  communities?: string[];
 }
 export interface AppState {
   user: { id: string; status: 'pending_invite' | 'onboarding' | 'active' | 'blocked'; locale: string };
@@ -92,6 +93,7 @@ export interface InviteRecord {
   redeemedBy: string | null;
   eventCreator: boolean;
   inviteDepth: number;
+  communityIds: string[];
 }
 export interface InviteBudget { maxUses: number; used: number; windowDays: number }
 export interface InviterAccount {

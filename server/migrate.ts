@@ -7,6 +7,7 @@ import { avatars, tags } from '../shared/catalog.ts';
 import languageData from '../shared/languages.json';
 import locationData from './data/locations.json';
 import { normalizeSearch } from '../shared/discovery.ts';
+import { communities, communityAncestors } from '../shared/communities.ts';
 
 export async function migrate(pool: Pool) {
   await transaction(pool, async client => {
@@ -20,6 +21,18 @@ export async function migrate(pool: Pool) {
     }
     await client.query(`INSERT INTO languages(code,label) SELECT code,label FROM jsonb_to_recordset($1) AS x(code text,label text)
       ON CONFLICT(code) DO UPDATE SET label=EXCLUDED.label`, [JSON.stringify(languageData)]);
+    const existingCommunities = (await client.query('SELECT id,parent_id FROM communities')).rows;
+    for (const existing of existingCommunities) {
+      const configured = communities.find(community => community.id === existing.id);
+      if (!configured || configured.parentId !== existing.parent_id) throw new Error(`Community ${existing.id} needs an explicit migration before removal or reparenting`);
+    }
+    for (const community of communities) await client.query(`INSERT INTO communities(id,parent_id,name_en,name_ru) VALUES($1,$2,$3,$4)
+      ON CONFLICT(id) DO UPDATE SET name_en=EXCLUDED.name_en,name_ru=EXCLUDED.name_ru`,
+    [community.id, community.parentId, community.name.en, community.name.ru]);
+    await client.query('DELETE FROM community_closure');
+    for (const community of communities) for (const [depth, ancestor] of communityAncestors(community.id).entries()) {
+      await client.query('INSERT INTO community_closure(ancestor_id,descendant_id,depth) VALUES($1,$2,$3)', [ancestor, community.id, depth]);
+    }
     // Countries first so every city's parent already exists. Batched, offline seed.
     for (const cities of [false, true]) {
       const rows = locationData.filter(location => (location.kind === 'city') === cities).map(location => {

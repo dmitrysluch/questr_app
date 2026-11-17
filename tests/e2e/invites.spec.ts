@@ -44,10 +44,21 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await newest.getByRole('button', { name: 'Revoke', exact: true }).click();
     await newest.getByRole('button', { name: 'Confirm revoke' }).click();
     await expect(newest.locator('.invite-status.revoked')).toBeVisible();
+    await page.getByLabel('Ariel University students', { exact: true }).check();
+    await page.getByRole('button', { name: 'Create invite' }).click();
+    const communityCode = await page.locator('.issued-invite code').innerText();
 
     const guest = await guestContext.newPage();
     const friendName = `Invite Friend ${crypto.randomUUID().slice(0, 8)}`;
     await character(guest, friendName);
+    await guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character' }).click();
+    await guest.getByRole('textbox', { name: 'Invite code' }).fill(communityCode);
+    await guest.getByRole('button', { name: 'Apply invite' }).click();
+    await expect(guest.locator('.community-badge')).toHaveText('✦ Ariel University students');
+    await guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Adventures' }).click();
+    await guest.getByRole('button', { name: 'Create adventure' }).click();
+    await guest.getByRole('dialog').getByLabel('Community').selectOption('ariel_students');
+    await expect(guest.getByRole('dialog').getByLabel('Community')).toHaveValue('ariel_students');
     await page.getByRole('textbox', { name: 'Search characters' }).fill(friendName);
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     const card = page.locator('.admin-user').filter({ hasText: friendName });

@@ -16,7 +16,8 @@ export async function getProfile(db: Db, userId: string): Promise<Profile | null
   const tags: ProfileTag[] = tagRows.map(r => r.tag_id ? { kind: 'catalog', code: r.tag_id } : { kind: 'custom', label: r.custom_label, emoji: r.custom_emoji, locale: r.locale });
   const r = rows[0];
   const spokenLanguages = (await db.query('SELECT language_code FROM profile_languages WHERE user_id=$1 ORDER BY position', [userId])).rows.map(row => row.language_code);
-  return { displayName: r.display_name, avatarId: r.avatar_preset_id, avatarAppearance: r.avatar_appearance, introMarkdown: r.intro_markdown, askMeTopics: r.ask_me_topics, revision: r.revision, completedAt: r.completed_at.toISOString(), tags, spokenLanguages };
+  const communities = (await db.query('SELECT DISTINCT community_id FROM user_community_grants WHERE user_id=$1 ORDER BY community_id', [userId])).rows.map(row => row.community_id);
+  return { displayName: r.display_name, avatarId: r.avatar_preset_id, avatarAppearance: r.avatar_appearance, introMarkdown: r.intro_markdown, askMeTopics: r.ask_me_topics, revision: r.revision, completedAt: r.completed_at.toISOString(), tags, spokenLanguages, communities };
 }
 export async function getMessages(db: Db, conversationId: string): Promise<ChatMessage[]> {
   const { rows } = await db.query('SELECT id,role,content,created_at,content_review,kind FROM ai_messages WHERE conversation_id=$1 ORDER BY sequence', [conversationId]);

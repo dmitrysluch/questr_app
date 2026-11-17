@@ -168,3 +168,30 @@ integration('admins grant and revoke global roles and budgets without resetting 
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM capability_usage WHERE user_id=$1 AND capability='invite.create'", [target.id])).rows[0].n, 1);
   await owner.agent.put(`/api/invites/admin/roles/${owner.id}`).send({ ...settings, admin: false }).expect(400);
 });
+
+integration('an active character can redeem several invites for communities and roles', async () => {
+  const admin = await active('Community Admin');
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Test admin')", [admin.id]);
+  const firstCode = code();
+  const firstRequest = { ...issue(firstCode), eventCreator: false, communityIds: ['ariel_students'] };
+  const first = (await admin.agent.post('/api/invites').send(firstRequest).expect(201)).body;
+  assert.equal((await admin.agent.post('/api/invites').send(firstRequest).expect(201)).body.id, first.id);
+  await admin.agent.post('/api/invites').send({ ...firstRequest, communityIds: [] }).expect(409);
+  const member = await activeWithInvite('Ariel Member', firstCode);
+  assert.deepEqual((await member.agent.get('/api/me').expect(200)).body.profile.communities, ['ariel_students']);
+  const secondCode = code();
+  await admin.agent.post('/api/invites').send({ ...issue(secondCode), eventCreator: true, inviteDepth: 1,
+    communityIds: ['israeli_university_students'] }).expect(201);
+  const firstRedeem = (await member.agent.post('/api/invites/redeem').send({ code: secondCode }).expect(200)).body;
+  assert.equal(firstRedeem.alreadyRedeemed, false);
+  assert.equal((await member.agent.post('/api/invites/redeem').send({ code: secondCode }).expect(200)).body.alreadyRedeemed, true);
+  assert.deepEqual((await member.agent.get('/api/me').expect(200)).body.profile.communities,
+    ['ariel_students', 'israeli_university_students']);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM user_community_grants WHERE user_id=$1', [member.id])).rows[0].n, 2);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM role_assignments WHERE user_id=$1 AND role_code='member' AND revoked_at IS NULL", [member.id])).rows[0].n, 1);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM capability_budgets WHERE user_id=$1 AND capability='invite.create'", [member.id])).rows[0].n, 1);
+  assert.equal(await can(pool, member.id, 'invite.create', { type: 'global' }), true);
+  const other = await active('Other Invite User');
+  await other.agent.post('/api/invites/redeem').send({ code: secondCode }).expect(400);
+  await member.agent.post('/api/invites').send({ ...issue(), communityIds: ['ariel_students'] }).expect(403);
+});

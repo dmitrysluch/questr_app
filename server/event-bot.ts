@@ -5,6 +5,7 @@ import { Adventures } from './events.ts';
 import { ContentReviewer } from './moderation.ts';
 import { AppError } from './errors.ts';
 import { can, consumeCapability } from './permissions.ts';
+import { hasCommunityAccess } from './communities.ts';
 import { queueBot, queuePartyTopic, type BotButton, type BotKeyboard } from './event-notifications.ts';
 import { botText } from './bot-copy.ts';
 import { relayMarkdown } from './telegram-markdown.ts';
@@ -507,8 +508,8 @@ export class EventBot {
       let allowed = !!account;
       if (row.event_id) {
         await db.query('SELECT id FROM events WHERE id=$1 FOR SHARE', [row.event_id]);
-        const owner = (await db.query("SELECT 1 FROM events e JOIN users u ON u.id=e.created_by WHERE e.id=$1 AND u.status='active'", [row.event_id])).rowCount;
-        allowed = allowed && !!owner;
+        const event = (await db.query("SELECT e.community_id FROM events e JOIN users u ON u.id=e.created_by WHERE e.id=$1 AND u.status='active'", [row.event_id])).rows[0];
+        allowed = allowed && !!event && (!event.community_id || await hasCommunityAccess(db, row.user_id, event.community_id));
       }
       let relayBody: string | null = null;
       let relayPhotoId: string | null = null;
