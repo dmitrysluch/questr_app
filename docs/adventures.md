@@ -28,12 +28,16 @@ The card summary is generated from the public description, so hosts write only
 one required description. Cost defaults to Free and experience to Beginners
 welcome; hosts can change either under Meeting details & more, together with
 the time zone and private meeting point. Private meeting details can be added
-later. Offline hosts can choose a place with Google Places
-when `GOOGLE_MAPS_BROWSER_KEY` is configured, or enter a venue and Maps link
-manually. The picker stores a Place ID in the Maps link; hosts write their own
-meeting instructions because Places names and addresses cannot be persisted as
-application data. The browser key needs Google Maps JavaScript and Places API (New),
-billing, and an HTTP referrer restriction. A Maps search link works without a key.
+later. Offline hosts search one field for team-curated public venues and, when
+`GOOGLE_MAPS_BROWSER_KEY` is configured, Google Maps points. A curated venue is
+shown on the public adventure card. A Google selection stores only its Place ID
+in the private meeting URL, visible to accepted members; it is not added to the
+public catalog. Hosts may add private directions, including for a home, without
+selecting a public venue or entering a URL. Admins add and archive public venues
+under Admin. The browser key needs Google Maps JavaScript and Places API (New),
+billing, and an HTTP referrer restriction. Saved-venue search works without a key.
+Before enabling Google search for users, publish Terms of Use and a Privacy Policy
+that incorporate Google's Terms of Service and Privacy Policy.
 Online adventures can be published before the call is arranged. If a private
 HTTPS call link is supplied, known platforms (Zoom, Google Meet, Microsoft Teams,
 Jitsi Meet, Whereby and Discord) are named automatically, and accepted members

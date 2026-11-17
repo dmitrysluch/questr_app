@@ -10,6 +10,7 @@ import { can } from '../../server/permissions.ts';
 import { EventBot } from '../../server/event-bot.ts';
 import type { ProfileTag } from '../../shared/schema.ts';
 import { appearanceForPreset, type AvatarAppearance } from '../../shared/avatar.ts';
+import { googleMapsSearch } from '../../shared/event-links.ts';
 const connection = process.env.TEST_DATABASE_URL;
 const database = `questr_events_${randomUUID().replaceAll('-', '')}`;
 const config = { ...loadConfig(), authMode: 'demo' as const, aiMode: 'demo' as const, botToken: 'fake-token', webhookSecret: 'test-secret', publicAppUrl: 'https://questr.example' };
@@ -59,6 +60,19 @@ integration('manual public places are admin-owned and never reveal private meeti
   const updated = (await host.agent.put(`/api/events/${event.id}`).send({ ...legacyEdit, revision: event.revision }).expect(200)).body.event;
   assert.equal(updated.place.id, place.id);
   await host.agent.post('/api/events').send(fields({ placeId: place.id })).expect(400);
+});
+
+integration('a Google search pick is a private meeting point and needs no public venue', async () => {
+  const host = await person('Host'), guest = await person('Guest');
+  const meetingMapUrl = googleMapsSearch('meeting point', 'ChIJtestPrivatePoint');
+  const event = await create(host, { district: '', meetingDetails: '', meetingMapUrl });
+  assert.equal(event.place, null);
+  assert.equal(event.meetingMapUrl, meetingMapUrl);
+  const publicEvent = (await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event;
+  assert.equal(publicEvent.meetingMapUrl, null);
+  assert.equal(publicEvent.meetingDetails, null);
+  assert.equal(publicEvent.place, null);
+  assert.ok(!JSON.stringify((await guest.agent.get('/api/events').expect(200)).body).includes('ChIJtestPrivatePoint'));
 });
 
 integration('application note is optional and the host notification omits empty text', async () => {

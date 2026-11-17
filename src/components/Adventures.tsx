@@ -177,6 +177,8 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
   const optionsRef = useRef<HTMLDetailsElement>(null);
   const privateMeeting = useRef({
     offlineLocationId: initial?.location.kind === 'city' ? initial.location.id : '',
+    offlinePlaceId: initial?.location.kind === 'city' ? initial.place?.id ?? null : null,
+    offlineDistrict: initial?.location.kind === 'city' ? initial.district : '',
     offlineDetails: initial?.location.kind === 'city' ? initial.meetingDetails ?? '' : '',
     offlineMapUrl: initial?.location.kind === 'city' ? initial.meetingMapUrl ?? '' : '',
     onlineLink: initial?.location.kind === 'online' ? initial.meetingDetails ?? '' : '',
@@ -189,6 +191,8 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
     if (fields.locationId === 'online') saved.onlineLink = fields.meetingDetails;
     else if (fields.locationId) {
       saved.offlineLocationId = fields.locationId;
+      saved.offlinePlaceId = fields.placeId;
+      saved.offlineDistrict = fields.district;
       saved.offlineDetails = fields.meetingDetails;
       saved.offlineMapUrl = fields.meetingMapUrl;
     }
@@ -196,9 +200,9 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
     if (nextId === 'online') change({ locationId: nextId, placeId: null, meetingDetails: saved.onlineLink, meetingMapUrl: '' });
     else {
       if (nextId !== saved.offlineLocationId) {
-        saved.offlineLocationId = nextId; saved.offlineDetails = ''; saved.offlineMapUrl = '';
+        saved.offlineLocationId = nextId; saved.offlinePlaceId = null; saved.offlineDistrict = ''; saved.offlineDetails = ''; saved.offlineMapUrl = '';
       }
-      change({ locationId: nextId, placeId: nextId === fields.locationId ? fields.placeId : null, meetingDetails: saved.offlineDetails, meetingMapUrl: saved.offlineMapUrl });
+      change({ locationId: nextId, placeId: saved.offlinePlaceId, district: saved.offlineDistrict, meetingDetails: saved.offlineDetails, meetingMapUrl: saved.offlineMapUrl });
     }
   }
   useEffect(() => {
@@ -230,12 +234,16 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
     <div className="event-form-grid"><div><label htmlFor="event-when">{t('events.start')}</label><input id="event-when" type="datetime-local" value={localTime} onChange={e => { const old = Date.parse(`${localTime}:00Z`), next = Date.parse(`${e.target.value}:00Z`); if (Number.isFinite(old) && Number.isFinite(next)) setLocalEndTime(new Date(Date.parse(`${localEndTime}:00Z`) + next - old).toISOString().slice(0,16)); setLocalTime(e.target.value); }} required /></div><div><label htmlFor="event-end">{t('events.end')}</label><input id="event-end" type="datetime-local" value={localEndTime} onChange={e => setLocalEndTime(e.target.value)} required /></div></div>
     <LocationPicker single value={fields.locationId ? [fields.locationId] : []} onChange={ids => changeLocation(ids[0] ?? '')} />
     {!initial && fields.locationId && locationAccess && !locationAccess.canCreate && <p className="field-error" role="alert">{t(locationAccess.hasRole ? 'events.createLimitReached' : 'events.createLocationDenied')}</p>}
-    {fields.locationId && fields.locationId !== 'online' && <><PlacePicker cityId={fields.locationId} value={fields.placeId} selected={initial?.place} onChange={placeId => change({ placeId })} />{!fields.placeId && <><label htmlFor="event-district">{t('events.district')}</label><input id="event-district" required maxLength={120} value={fields.district} onChange={e => change({ district: e.target.value })} /></>}</>}
+    {fields.locationId && fields.locationId !== 'online' && <><PlacePicker cityId={fields.locationId} placeId={fields.placeId} meetingMapUrl={fields.meetingMapUrl} selected={initial?.place} googleKey={config.googleMapsBrowserKey} onPick={pick => {
+      if (pick?.kind === 'saved') change({ placeId: pick.id, meetingMapUrl: '', district: '' });
+      else if (pick?.kind === 'google') change({ placeId: null, meetingMapUrl: pick.mapUrl, district: '' });
+      else change({ placeId: null, meetingMapUrl: '' });
+    }} />{!fields.placeId && !fields.meetingMapUrl && <><label htmlFor="event-district">{t('events.district')}</label><input id="event-district" required maxLength={120} value={fields.district} onChange={e => change({ district: e.target.value })} /></>}</>}
     <div className="event-form-grid"><div><label htmlFor="event-language">{t('events.language')}</label><select id="event-language" value={fields.languageCode} onChange={e => change({ languageCode: e.target.value })}>{languages.map(l => <option key={l.code} value={l.code}>{languageName(l.code)} · {l.native}</option>)}</select></div><div><label htmlFor="event-capacity">{t('events.capacity')}</label><input id="event-capacity" type="number" min={2} max={50} required value={fields.capacity} onChange={e => change({ capacity: Number(e.target.value) })} /><p className="field-hint">{t('events.capacityHint')}</p></div></div>
     <details className="event-options" ref={optionsRef} open={optionsOpen} onToggle={event => setOptionsOpen(event.currentTarget.open)}><summary>{t('events.moreOptions')}<small>{t('events.moreOptionsHint', { cost: fields.costEstimate.trim() || t('events.defaultCost'), experience: fields.experienceNotes.trim() || t('events.defaultExperience'), zone: fields.timeZone })}</small></summary>
     <div className="event-form-grid"><div><label htmlFor="event-cost">{t('events.cost')}</label><input id="event-cost" maxLength={120} value={fields.costEstimate} onChange={e => change({ costEstimate: e.target.value })} placeholder={t('events.costPlaceholder')} /></div><div><label htmlFor="event-experience">{t('events.experience')}</label><input id="event-experience" maxLength={240} value={fields.experienceNotes} onChange={e => change({ experienceNotes: e.target.value })} placeholder={t('events.experiencePlaceholder')} /></div></div>
     <label htmlFor="event-zone">{t('events.zone')}</label><select id="event-zone" value={fields.timeZone} onChange={e => change({ timeZone: e.target.value })}>{zones.map(zone => <option key={zone}>{zone}</option>)}</select>
-    <label htmlFor="event-meeting">{t(fields.locationId === 'online' ? 'events.privateLink' : 'events.privatePoint')}</label>{fields.locationId === 'online' ? <input id="event-meeting" type="url" maxLength={2000} value={fields.meetingDetails} onChange={e => change({ meetingDetails: e.target.value })} onInvalid={() => { if (optionsRef.current) optionsRef.current.open = true; }} placeholder="https://…" /> : <textarea id="event-meeting" maxLength={2000} rows={2} value={fields.meetingDetails} onChange={e => change({ meetingDetails: e.target.value, meetingMapUrl: '' })} />}<p className="field-hint">{t(fields.locationId === 'online' ? 'events.privateLinkHint' : 'events.privatePointHint')}</p>
+    <label htmlFor="event-meeting">{t(fields.locationId === 'online' ? 'events.privateLink' : 'events.privatePoint')}</label>{fields.locationId === 'online' ? <input id="event-meeting" type="url" maxLength={2000} value={fields.meetingDetails} onChange={e => change({ meetingDetails: e.target.value })} onInvalid={() => { if (optionsRef.current) optionsRef.current.open = true; }} placeholder="https://…" /> : <textarea id="event-meeting" maxLength={2000} rows={2} value={fields.meetingDetails} onChange={e => change({ meetingDetails: e.target.value })} />}<p className="field-hint">{t(fields.locationId === 'online' ? 'events.privateLinkHint' : 'events.privatePointHint')}</p>
     </details>
     </fieldset><p className="field-hint">{t(config.aiMode === 'openrouter' ? 'events.moderationLive' : 'events.moderation')}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button" disabled={busy || !initial && !!fields.locationId && !locationAccess?.canCreate}>{t(busy ? 'common.saving' : initial ? 'events.save' : 'events.publish')}</button></div></form>
     {discard && <Modal title={t('events.discard')} onClose={() => setDiscard(false)}><p>{t('events.discardHint')}</p><div className="modal-actions"><button className="pixel-button small" onClick={onClose}>{t('events.confirm')}</button></div></Modal>}

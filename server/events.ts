@@ -81,7 +81,7 @@ async function validateFields(db: Db, userId: string, fields: EventFields, requi
     const place = (await db.query('SELECT city_location_id,active FROM places WHERE id=$1', [fields.placeId])).rows[0];
     if (!place || place.city_location_id !== fields.locationId || (!place.active && fields.placeId !== existingPlaceId)) throw new AppError(400, 'PLACE_LOCATION_MISMATCH');
   }
-  if (location.kind === 'city' && !fields.district && !fields.placeId) throw new AppError(400, 'EVENT_DISTRICT_REQUIRED');
+  if (location.kind === 'city' && !fields.district && !fields.placeId && !fields.meetingMapUrl) throw new AppError(400, 'EVENT_DISTRICT_REQUIRED');
   if (fields.meetingMapUrl) {
     try {
       const url = new URL(fields.meetingMapUrl);
