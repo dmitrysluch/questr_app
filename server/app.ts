@@ -20,6 +20,7 @@ import { can, grantMember, requireCapability } from './permissions.ts';
 import { Adventures } from './events.ts';
 import { eventRoutes } from './event-routes.ts';
 import { inviteRoutes } from './invite-routes.ts';
+import { romanceConsentVersion, romanceInputSchema } from '../shared/romance.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
@@ -213,8 +214,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     await requireCapability(pool, currentUser(res).id, 'profile.edit', { type: 'profile', id: currentUser(res).id });
     const input = draftInputSchema.parse(req.body);
     const { rows } = await pool.query(`UPDATE profile_drafts SET display_name=$2,avatar_preset_id=$3,intro_markdown=$4,tags=$5,
-      mode=$6,current_step=$7,spoken_languages=$9,open_to_romance=$10,ask_me_topics=$11,avatar_appearance=$12,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
-    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages, input.openToRomance, JSON.stringify(input.askMeTopics), input.avatarAppearance ? JSON.stringify(input.avatarAppearance) : null]);
+      mode=$6,current_step=$7,spoken_languages=$9,open_to_romance=false,ask_me_topics=$10,avatar_appearance=$11,revision=revision+1,updated_at=now() WHERE user_id=$1 AND revision=$8 RETURNING *`,
+    [currentUser(res).id, input.displayName, input.avatarId, input.introMarkdown, JSON.stringify(input.tags), input.mode, input.currentStep, input.revision, input.spokenLanguages, JSON.stringify(input.askMeTopics), input.avatarAppearance ? JSON.stringify(input.avatarAppearance) : null]);
     if (!rows[0]) throw new AppError(409, 'DRAFT_CONFLICT');
     res.json({ draft: mapDraft(rows[0]) });
   });
@@ -239,9 +240,9 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
         const discovery = await getDiscovery(client, userId);
         if (!discovery.locationIds.length || !discovery.languageCodes.length) throw new AppError(422, 'DISCOVERY_REQUIRED');
       }
-      await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown,open_to_romance,ask_me_topics,avatar_appearance) VALUES($1,$2,$3,$4,$5,$6,$7)
+      await client.query(`INSERT INTO profiles(user_id,display_name,avatar_preset_id,intro_markdown,open_to_romance,ask_me_topics,avatar_appearance) VALUES($1,$2,$3,$4,false,$5,$6)
         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,avatar_preset_id=EXCLUDED.avatar_preset_id,
-        intro_markdown=EXCLUDED.intro_markdown,open_to_romance=EXCLUDED.open_to_romance,ask_me_topics=EXCLUDED.ask_me_topics,avatar_appearance=EXCLUDED.avatar_appearance,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown, draft.openToRomance, JSON.stringify(draft.askMeTopics), draft.avatarAppearance ? JSON.stringify(draft.avatarAppearance) : null]);
+        intro_markdown=EXCLUDED.intro_markdown,open_to_romance=false,ask_me_topics=EXCLUDED.ask_me_topics,avatar_appearance=EXCLUDED.avatar_appearance,revision=profiles.revision+1,updated_at=now()`, [userId, draft.displayName, draft.avatarId, draft.introMarkdown, JSON.stringify(draft.askMeTopics), draft.avatarAppearance ? JSON.stringify(draft.avatarAppearance) : null]);
       await client.query('DELETE FROM profile_tags WHERE user_id=$1', [userId]);
       await client.query('DELETE FROM profile_languages WHERE user_id=$1', [userId]);
       await client.query('INSERT INTO profile_languages(user_id,language_code,position) SELECT $1,code,ordinality-1 FROM unnest($2::text[]) WITH ORDINALITY AS x(code,ordinality)', [userId, draft.spokenLanguages]);
@@ -254,16 +255,54 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     res.json({ profile: await getProfile(pool, userId) });
   });
 
-  app.put('/api/profile/romance', async (req, res) => {
-    const input = z.object({ openToRomance: z.boolean(), revision: z.number().int().nonnegative() }).strict().parse(req.body);
+  async function romanceSettings(userId: string) {
+    const { rows } = await pool.query(`SELECT p.revision,r.gender_code,r.interested_in,r.consent_version
+      FROM profiles p JOIN users u ON u.id=p.user_id AND u.status='active'
+      LEFT JOIN romance_preferences r ON r.user_id=p.user_id WHERE p.user_id=$1`, [userId]);
+    if (!rows[0]) throw new AppError(403, 'PROFILE_REQUIRED');
+    const row = rows[0];
+    return { enabled: !!row.gender_code, gender: row.gender_code ?? null, interestedIn: row.interested_in ?? [], revision: row.revision, consentVersion: row.consent_version ?? null };
+  }
+  async function disableRomance(userId: string) {
+    await transaction(pool, async db => {
+      await requireCapability(db, userId, 'profile.edit', { type: 'profile', id: userId });
+      const profile = (await db.query(`SELECT p.revision FROM profiles p JOIN users u ON u.id=p.user_id AND u.status='active'
+        WHERE p.user_id=$1 FOR UPDATE OF p`, [userId])).rows[0];
+      if (!profile) throw new AppError(403, 'PROFILE_REQUIRED');
+      const deleted = await db.query('DELETE FROM romance_preferences WHERE user_id=$1', [userId]);
+      if (deleted.rowCount) await db.query('UPDATE profiles SET revision=revision+1,updated_at=now() WHERE user_id=$1', [userId]);
+    });
+  }
+  app.get('/api/me/romance', async (_req, res) => {
+    res.json({ romance: await romanceSettings(currentUser(res).id) });
+  });
+  app.put('/api/me/romance', async (req, res) => {
+    const input = romanceInputSchema.parse(req.body);
     const userId = currentUser(res).id;
     await transaction(pool, async db => {
       await requireCapability(db, userId, 'profile.edit', { type: 'profile', id: userId });
-      const profile = (await db.query('SELECT revision FROM profiles WHERE user_id=$1 FOR UPDATE', [userId])).rows[0];
+      const profile = (await db.query(`SELECT p.revision FROM profiles p JOIN users u ON u.id=p.user_id AND u.status='active'
+        WHERE p.user_id=$1 FOR UPDATE OF p`, [userId])).rows[0];
+      if (!(await db.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='adult'", [userId])).rowCount) throw new AppError(403, 'ADULT_CONSENT_REQUIRED');
       if (!profile || profile.revision !== input.revision) throw new AppError(409, 'PROFILE_CONFLICT');
-      await db.query('UPDATE profiles SET open_to_romance=$2,revision=revision+1,updated_at=now() WHERE user_id=$1', [userId, input.openToRomance]);
-      await db.query('UPDATE profile_drafts SET open_to_romance=$2,revision=revision+1,updated_at=now() WHERE user_id=$1', [userId, input.openToRomance]);
+      await db.query(`INSERT INTO romance_preferences(user_id,gender_code,interested_in,consent_version) VALUES($1,$2,$3,$4)
+        ON CONFLICT(user_id) DO UPDATE SET gender_code=EXCLUDED.gender_code,interested_in=EXCLUDED.interested_in,
+        consent_version=EXCLUDED.consent_version,consented_at=now(),updated_at=now()`, [userId, input.gender, input.interestedIn, romanceConsentVersion]);
+      await db.query('UPDATE profiles SET revision=revision+1,updated_at=now() WHERE user_id=$1', [userId]);
     });
+    res.json({ romance: await romanceSettings(userId) });
+  });
+  app.delete('/api/me/romance', async (_req, res) => {
+    const userId = currentUser(res).id;
+    await disableRomance(userId);
+    res.json({ romance: await romanceSettings(userId) });
+  });
+  // Legacy clients may withdraw consent, but cannot turn the old flag into a new opt-in.
+  app.put('/api/profile/romance', async (req, res) => {
+    const input = z.object({ openToRomance: z.boolean(), revision: z.number().int().nonnegative() }).strict().parse(req.body);
+    if (input.openToRomance) throw new AppError(409, 'ROMANCE_SETUP_REQUIRED');
+    const userId = currentUser(res).id;
+    await disableRomance(userId);
     res.json({ profile: await getProfile(pool, userId), draft: await getDraft(pool, userId) });
   });
 

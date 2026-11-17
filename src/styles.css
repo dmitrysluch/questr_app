@@ -579,8 +579,16 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .event-map-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 12px 0; }
 .google-place-widget { min-width: min(100%, 320px); margin: 12px 0; }
 .google-place-widget gmp-place-autocomplete { width: 100%; }
-.romance-control { margin-top: 11px; }
-.romance-button, .romance-badge { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #bd9c91; background: #f7eeea; color: #7f514b; padding: 7px 10px; font-size: 11px; }
-.romance-button .pixel-emoji, .romance-badge .pixel-emoji, .romance-draft .pixel-emoji { width: 18px; height: 18px; flex-basis: 18px; }
-.romance-button.active { background: #ead7d3; border-color: #a6746a; }
-.romance-draft { margin: 20px 0 26px; font-size: 12px; }
+.romance-settings { margin: 20px 0; padding: 18px; }
+.romance-settings h2 { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; font-size: 18px; }
+.romance-settings h2 .pixel-emoji { width: 22px; height: 22px; flex-basis: 22px; }
+.romance-status, .romance-privacy { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.romance-settings fieldset { border: 0; margin: 18px 0; padding: 0; }
+.romance-settings legend { font-weight: 700; margin-bottom: 9px; }
+.romance-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.romance-choice { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--line); background: var(--paper); font-size: 12px; cursor: pointer; }
+.romance-choice:has(input:checked) { border-color: #a6746a; background: #f7eeea; }
+.romance-choice input { margin: 0; accent-color: #a6746a; }
+.romance-consent { margin: 15px 0; font-size: 12px; }
+.romance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+.romance-error { color: #9a4545; font-size: 12px; }

@@ -70,7 +70,7 @@ export interface Proposal {
 }
 export interface Profile {
   displayName: string; avatarId: string; avatarAppearance: AvatarAppearance | null; introMarkdown: string;
-  tags: ProfileTag[]; askMeTopics: string[]; spokenLanguages: string[]; openToRomance: boolean; revision: number; completedAt: string;
+  tags: ProfileTag[]; askMeTopics: string[]; spokenLanguages: string[]; revision: number; completedAt: string;
 }
 export interface AppState {
   user: { id: string; status: 'pending_invite' | 'onboarding' | 'active' | 'blocked'; locale: string };

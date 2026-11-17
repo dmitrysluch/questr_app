@@ -60,6 +60,9 @@ integration('party view shows shared tags, mutual romance and conversation topic
   await apply(guest, event.id);
   assert.deepEqual((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants, []);
   await decide(host, event.id, guest.id, 'accept').expect(200);
+  assert.equal((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants.find((person: any) => person.id === host.id).romanceMatch, false);
+  await host.agent.put('/api/me/romance').send({ revision: (await host.agent.get('/api/me/romance').expect(200)).body.romance.revision, gender: 'man', interestedIn: ['woman'], consent: true }).expect(200);
+  await guest.agent.put('/api/me/romance').send({ revision: (await guest.agent.get('/api/me/romance').expect(200)).body.romance.revision, gender: 'woman', interestedIn: ['man'], consent: true }).expect(200);
   const guestView = (await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event;
   const hostCard = guestView.participants.find((person: any) => person.id === host.id);
   assert.deepEqual(hostCard.avatarAppearance, hostLook);
@@ -71,10 +74,17 @@ integration('party view shows shared tags, mutual romance and conversation topic
   assert.deepEqual(selfCard.matchingTags, []); assert.equal(selfCard.romanceMatch, false);
   const hostView = (await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event;
   assert.deepEqual(hostView.participants.find((person: any) => person.id === guest.id).matchingTags, [custom('record HUNTING'), { kind: 'catalog', code: 'coffee' }]);
+  const publicProfile = (await guest.agent.get(`/api/events/${event.id}/profiles/${host.id}`).expect(200)).body.profile;
+  assert.equal('gender' in publicProfile, false);
+  assert.equal('interestedIn' in publicProfile, false);
+  assert.equal('openToRomance' in publicProfile, false);
   assert.deepEqual((await outsider.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants, []);
-  const guestProfile = (await guest.agent.get('/api/me').expect(200)).body.profile;
-  await guest.agent.put('/api/profile/romance').send({ revision: guestProfile.revision, openToRomance: false }).expect(200);
+  const guestSettings = (await guest.agent.get('/api/me/romance').expect(200)).body.romance;
+  await guest.agent.put('/api/me/romance').send({ revision: guestSettings.revision, gender: 'woman', interestedIn: ['nonbinary'], consent: true }).expect(200);
   assert.equal((await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants.find((person: any) => person.id === guest.id).romanceMatch, false);
+  await guest.agent.delete('/api/me/romance').send({}).expect(200);
+  assert.equal((await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event.participants.find((person: any) => person.id === guest.id).romanceMatch, false);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM romance_preferences WHERE user_id=$1', [guest.id])).rows[0].n, 0);
 });
 
 integration('Telegram Mini App submits applications directly; organizer buttons decide only live applications', async () => {
@@ -306,15 +316,28 @@ integration('calendar exports only authorized meeting points and Telegram remind
   assert.equal((await pool.query("SELECT state FROM bot_outbox WHERE kind='reminder' AND user_id=$1 AND event_id=$2", [guest.id, event.id])).rows[0].state, 'discarded');
   assert.ok(!(await guest.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text.includes('SECRET'));
 });
-integration('romance interest is opt-in, saved on the profile and revision-protected', async () => {
+integration('romance choices are private, consented, revision-protected and deleted on withdrawal', async () => {
   const personA = await person();
-  const original = (await personA.agent.get('/api/me').expect(200)).body.profile;
-  assert.equal(original.openToRomance, false);
-  const updated = (await personA.agent.put('/api/profile/romance').send({ revision: original.revision, openToRomance: true }).expect(200)).body;
-  assert.equal(updated.profile.openToRomance, true);
-  assert.equal(updated.draft.openToRomance, true);
-  await personA.agent.put('/api/profile/romance').send({ revision: original.revision, openToRomance: false }).expect(409);
-  assert.equal((await personA.agent.get('/api/me').expect(200)).body.profile.openToRomance, true);
+  const original = (await personA.agent.get('/api/me/romance').expect(200)).body.romance;
+  assert.equal(original.enabled, false);
+  assert.equal('openToRomance' in (await personA.agent.get('/api/me').expect(200)).body.profile, false);
+  await personA.agent.put('/api/profile/romance').send({ revision: original.revision, openToRomance: true }).expect(409);
+  const stranger = await person('Stranger');
+  assert.equal((await stranger.agent.get('/api/me/romance').expect(200)).body.romance.enabled, false);
+  await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman'] }).expect(400);
+  await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman', 'woman'], consent: true }).expect(400);
+  const updated = (await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman'], consent: true }).expect(200)).body.romance;
+  assert.equal(updated.enabled, true);
+  assert.equal(updated.gender, 'man');
+  assert.deepEqual(updated.interestedIn, ['woman']);
+  assert.equal('gender' in (await personA.agent.get('/api/me').expect(200)).body.profile, false);
+  await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman'], consent: true }).expect(409);
+  const disabled = (await personA.agent.delete('/api/me/romance').send({}).expect(200)).body.romance;
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.gender, null);
+  assert.deepEqual(disabled.interestedIn, []);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM romance_preferences WHERE user_id=$1', [personA.id])).rows[0].n, 0);
+  await personA.agent.put('/api/me/romance').send({ revision: updated.revision, gender: 'man', interestedIn: ['woman'], consent: true }).expect(409);
 });
 integration('editing uses revisions, preserves accepted seats and never puts a private address in notifications', async () => {
   const host = await person(), guest = await person(); const event = await create(host, { capacity: 3 });

@@ -13,6 +13,7 @@ import { botText } from './bot-copy.ts';
 import { callPlatform } from '../shared/event-links.ts';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { toString } from 'mdast-util-to-string';
+import { romanceConsentVersion } from '../shared/romance.ts';
 
 type Db = Pool | PoolClient;
 function normalizeFields<T extends EventFields>(fields: T): T {
@@ -135,10 +136,16 @@ export class Adventures {
       const manage = row.status === 'published' && await can(db, userId, 'events.accept', { type: 'event', id: eventId });
       const chat = await can(db, userId, 'events.group_chat', { type: 'event', id: eventId });
       const rawMembers = (chat || editable) ? (await db.query(`SELECT m.user_id AS id,p.display_name AS "displayName",p.avatar_preset_id AS "avatarId",p.avatar_appearance AS "avatarAppearance",m.role,m.status,(u.status<>'active') AS unavailable,
-        p.ask_me_topics AS "askMeTopics",(p.open_to_romance AND (SELECT open_to_romance FROM profiles WHERE user_id=$3) AND m.user_id<>$3) AS "romanceMatch",
+        p.ask_me_topics AS "askMeTopics",(m.user_id<>$3 AND EXISTS (
+          SELECT 1 FROM romance_preferences viewer JOIN romance_preferences target ON target.user_id=m.user_id
+          WHERE viewer.user_id=$3 AND viewer.consent_version=$4 AND target.consent_version=$4
+            AND target.gender_code=ANY(viewer.interested_in) AND viewer.gender_code=ANY(target.interested_in)
+            AND EXISTS(SELECT 1 FROM user_consents c WHERE c.user_id=viewer.user_id AND c.kind='adult')
+            AND EXISTS(SELECT 1 FROM user_consents c WHERE c.user_id=target.user_id AND c.kind='adult')
+        )) AS "romanceMatch",
         CASE WHEN $2 THEN m.application_text ELSE NULL END AS "applicationText"
         FROM event_memberships m JOIN profiles p ON p.user_id=m.user_id JOIN users u ON u.id=m.user_id
-        WHERE m.event_id=$1 AND (u.status='active' OR $2) AND (m.status='accepted' OR ($2 AND m.status='pending')) ORDER BY m.created_at,m.user_id`, [eventId, manage, userId])).rows : [];
+        WHERE m.event_id=$1 AND (u.status='active' OR $2) AND (m.status='accepted' OR ($2 AND m.status='pending')) ORDER BY m.created_at,m.user_id`, [eventId, manage, userId, romanceConsentVersion])).rows : [];
       const acceptedIds = rawMembers.filter(member => member.status === 'accepted' && !member.unavailable).map(member => member.id);
       const tagRows = acceptedIds.length ? (await db.query(`SELECT user_id,tag_id,custom_label,custom_emoji,locale FROM profile_tags
         WHERE user_id=ANY($1::uuid[]) OR user_id=$2 ORDER BY position`, [acceptedIds, userId])).rows : [];

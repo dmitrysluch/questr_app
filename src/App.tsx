@@ -17,7 +17,7 @@ import { Interview } from './components/Interview.tsx';
 import { AskMeTopics } from './components/AskMeTopics.tsx';
 import { Invites } from './components/Invites.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
-import { PixelEmoji } from './components/PixelEmoji.tsx';
+import { RomanceSettings } from './components/RomanceSettings.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview } from '../shared/content-policy.ts';
 import type { DiscoveryPreferences } from '../shared/discovery.ts';
@@ -214,11 +214,8 @@ export function App() {
           </form>
         </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
-          <ProfileCard profile={state.profile} busy={busy} onRomanceToggle={() => void run(async () => {
-            await flush();
-            await api('/profile/romance', { method: 'PUT', body: { revision: state.profile!.revision, openToRomance: !state.profile!.openToRomance } });
-            await loadState();
-          })} />
+          <ProfileCard profile={state.profile} />
+          <RomanceSettings />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
 
           <div className="page-actions"><button className="outline-button" onClick={() => void go('avatar')} disabled={busy}>{t('avatar.customize')}</button><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
@@ -236,7 +233,6 @@ export function App() {
         <section hidden={currentStep !== 'bio'}>
           <PageHeading title="bio.title" />
           <div className="bio-layout"><div className="bio-main">
-            <label className="checkbox-label romance-draft"><input type="checkbox" checked={draft.openToRomance} onChange={e => edit({ openToRomance: e.target.checked })} /><PixelEmoji emoji="💗" />{t('profile.romance')}</label>
             <div className="section-heading"><h2>{t('bio.tagsTitle')}</h2><span>{t('common.optional')}</span></div>
             <TagPicker value={draft.tags} onChange={tags => edit({ tags })} />
             <AskMeTopics value={draft.askMeTopics} onChange={askMeTopics => edit({ askMeTopics })} reviews={currentTopicReviews} />
@@ -275,7 +271,7 @@ export function App() {
 
     {exitTarget && <Modal title={t('discovery.leaveTitle')} onClose={() => { if (!busy) setExitTarget(null); }}><p>{t('discovery.leaveHint')}</p>{!!error && <p className="field-error" role="alert">{errorText(error)}</p>}<div className="modal-actions"><button className="text-button" disabled={busy} onClick={() => setExitTarget(null)}>{t('common.cancel')}</button><button className="outline-button small" disabled={busy} onClick={() => void finishExit(exitTarget, false)}>{t('discovery.discardAndLeave')}</button><button className="pixel-button small" disabled={busy} onClick={() => void finishExit(exitTarget, true)}>{t('discovery.saveAndLeave')}</button></div></Modal>}
     {editingName && <Modal title={t('avatar.changeName')} onClose={() => setEditingName(false)}><form onSubmit={event => { event.preventDefault(); if (nextName.trim().length >= 2) { edit({ displayName: nextName.trim() }); setEditingName(false); } }}><label htmlFor="display-name">{t('welcome.name')}</label><input id="display-name" value={nextName} onChange={e => setNextName(e.target.value)} minLength={2} maxLength={40} required autoFocus /><div className="modal-actions"><button className="pixel-button small" type="submit">{t('avatar.saveName')}<Check size={15} /></button></div></form></Modal>}
-    {termsOpen && <Modal title={t('terms.title')} onClose={() => setTermsOpen(false)}><div className="terms-body"><p>{t('terms.intro')}</p><ul><li>{t('terms.respect')}</li><li>{t('terms.identity')}</li><li>{t('terms.profile')}</li></ul><p>{t('terms.poc')}</p></div><div className="modal-actions"><button className="pixel-button small" onClick={() => setTermsOpen(false)}>{t('common.close')}</button></div></Modal>}
+    {termsOpen && <Modal title={t('terms.title')} onClose={() => setTermsOpen(false)}><div className="terms-body"><p>{t('terms.intro')}</p><ul><li>{t('terms.respect')}</li><li>{t('terms.identity')}</li><li>{t('terms.profile')}</li></ul><p>{t('terms.poc')}</p><p>{t('terms.romance')}</p></div><div className="modal-actions"><button className="pixel-button small" onClick={() => setTermsOpen(false)}>{t('common.close')}</button></div></Modal>}
   </div>;
 }
 function PageHeading({ title }: { title: TranslationKey }) {

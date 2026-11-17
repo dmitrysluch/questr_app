@@ -8,9 +8,39 @@ async function character(page: Page, name: string, profile: { tags?: ProfileTag[
   const saved = await (await page.request.put('/api/draft', { data: { ...draft, avatarId: 'moss', spokenLanguages: ['en'], introMarkdown: `I am ${name}. Coffee and records are my thing.`, ...profile } })).json();
   expect((await page.request.put('/api/discovery', { data: { revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] } })).status()).toBe(200);
   expect((await page.request.post('/api/profile/publish', { data: { revision: saved.draft.revision } })).status()).toBe(200);
+  if (profile.openToRomance) {
+    const settings = await (await page.request.get('/api/me/romance')).json();
+    expect((await page.request.put('/api/me/romance', { data: { revision: settings.romance.revision, gender: name === 'Record keeper' ? 'man' : 'woman', interestedIn: [name === 'Record keeper' ? 'woman' : 'man'], consent: true } })).status()).toBe(200);
+  }
   return state.user.id as string;
 }
 async function noOverflow(page: Page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
+test('romance settings require consent and can be removed from the character page', async ({ page }) => {
+  await character(page, 'Romance tester');
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Character', exact: true }).click();
+  const settings = page.locator('.romance-settings');
+  await expect(settings).toContainText('Off. No romance signal is shown.');
+  await settings.getByRole('button', { name: 'Set up romance' }).click();
+  await settings.getByRole('group', { name: 'My gender category' }).getByRole('radio', { name: 'Man', exact: true }).check();
+  await settings.getByRole('group', { name: 'I would like a signal with' }).getByRole('checkbox', { name: 'Women', exact: true }).check();
+  const save = settings.getByRole('button', { name: 'Save romance settings' });
+  await expect(save).toBeDisabled();
+  await settings.getByRole('checkbox', { name: 'I agree to use my private choices for mutual romance signals.' }).check();
+  await save.click();
+  await expect(settings).toContainText('On. A heart appears');
+  const owner = await (await page.request.get('/api/me/romance')).json();
+  expect(owner.romance.gender).toBe('man');
+  expect(owner.romance.interestedIn).toEqual(['woman']);
+  const profile = await (await page.request.get('/api/me')).json();
+  expect(profile.profile).not.toHaveProperty('gender');
+  expect(profile.profile).not.toHaveProperty('interestedIn');
+  await settings.getByRole('button', { name: 'Turn off and delete settings' }).click();
+  await expect(settings).toContainText('Off. No romance signal is shown.');
+  const removed = await (await page.request.get('/api/me/romance')).json();
+  expect(removed.romance).toMatchObject({ enabled: false, gender: null, interestedIn: [] });
+  await noOverflow(page);
+});
 test('create an adventure, apply from another character, accept, edit and withdraw', async ({ page, browser }, info) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   const sharedTags: ProfileTag[] = [{ kind: 'catalog', code: 'coffee' }, { kind: 'catalog', code: 'artist_miles_davis' }, { kind: 'catalog', code: 'book_dune' }];
@@ -93,11 +123,11 @@ test('create an adventure, apply from another character, accept, edit and withdr
   await expect(hostCard.locator('.party-match')).toHaveCount(3);
   await expect(hostCard.locator('.party-match').nth(0)).toHaveAttribute('title', 'Shared: Coffee');
   await expect(hostCard.locator('.party-match').nth(1)).toHaveAttribute('title', 'Shared: Miles Davis');
-  await expect(hostCard.locator('.party-match').nth(2)).toHaveAttribute('title', 'Both open to romance');
+  await expect(hostCard.locator('.party-match').nth(2)).toHaveAttribute('title', 'Your romance settings match');
   await hostCard.locator('.party-match').first().click();
   await expect(hostCard.locator('.party-match-label')).toHaveText('Shared: Coffee');
   await hostCard.locator('.party-match').nth(2).click();
-  await expect(hostCard.locator('.party-match-label')).toHaveText('Both open to romance');
+  await expect(hostCard.locator('.party-match-label')).toHaveText('Your romance settings match');
   await hostCard.getByRole('button', { name: 'Ask me' }).click();
   await expect(guest.locator('.party-ask-topics')).toContainText('Ask me how I found my first jazz record.');
   const eventId = hash.split('/')[1];
