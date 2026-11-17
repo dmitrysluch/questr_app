@@ -21,8 +21,11 @@ function locationChoice(location: Location): Choice {
   return { id: location.id, label: location.kind === 'country' ? t('locations.allCountry', { name: locationName(location.id, location.name) }) : locationName(location.id, location.name),
     detail: location.kind === 'city' ? locationName(location.parentId ?? '', location.countryName ?? '') : location.kind === 'online' ? t('locations.global') : t('locations.country') };
 }
-export function LocationPicker({ value, onChange, single = false, citiesOnly = false }: { value: string[]; onChange: (ids: string[]) => void; single?: boolean; citiesOnly?: boolean }) {
+export function LocationPicker({ value, onChange, single = false, citiesOnly = false, collapseWhenSelected = false, label, placeholder }: {
+  value: string[]; onChange: (ids: string[]) => void; single?: boolean; citiesOnly?: boolean; collapseWhenSelected?: boolean; label?: string; placeholder?: string;
+}) {
   const [query, setQuery] = useState('');
+  const [editing, setEditing] = useState(false);
   const [items, setItems] = useState<Location[]>([]);
   const [cache, setCache] = useState<Record<string, Location>>({});
   const [loading, setLoading] = useState(false);
@@ -51,8 +54,10 @@ export function LocationPicker({ value, onChange, single = false, citiesOnly = f
     }, 180);
     return () => { active = false; clearTimeout(timer); };
   }, [query, retry]);
-  return <><SelectionPicker label={t('locations.label')} placeholder={t('locations.search')} value={value} onChange={onChange}
-    query={query} onQuery={setQuery} loading={loading} limit={single ? 1 : 50} replaceOnSelect={single} items={items.filter(item => citiesOnly ? item.kind === 'city' : !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
+  const pickerLabel = label ?? t('locations.label');
+  const collapsed = single && collapseWhenSelected && value.length === 1 && !editing;
+  return <>{collapsed ? <div className="event-location-picker"><span className="event-location-label">{pickerLabel}</span><div className="event-location-current"><strong>{cache[value[0]] ? locationChoice(cache[value[0]]).label : t('common.loading')}</strong><button type="button" className="text-button" onClick={() => setEditing(true)}>{t('events.changeLocation')}</button></div></div> : <>{editing && value.length > 0 && <button type="button" className="text-button event-location-cancel" onClick={() => setEditing(false)}>{t('common.cancel')}</button>}<SelectionPicker label={pickerLabel} placeholder={placeholder ?? t('locations.search')} value={value} onChange={ids => { onChange(ids); if (single && collapseWhenSelected && ids.length) setEditing(false); }}
+    query={query} onQuery={setQuery} loading={loading} focusOnMount={editing && collapseWhenSelected} limit={single ? 1 : 50} replaceOnSelect={single} items={items.filter(item => citiesOnly ? item.kind === 'city' : !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} /></>}
     {!!error && <p className="field-error" role="alert">{errorText(error)} <button type="button" className="text-button" onClick={() => setRetry(old => old + 1)}>{t('common.retry')}</button></p>}</>;
 }
 export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, inline = false, onDirtyChange, onValueChange }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; inline?: boolean; onDirtyChange?: (dirty: boolean) => void; onValueChange?: (value: DiscoveryPreferences) => void }) {

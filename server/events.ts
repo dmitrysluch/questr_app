@@ -33,7 +33,7 @@ const eventProjection = `SELECT e.*,l.name AS location_name,l.kind AS location_k
   JOIN profiles h ON h.user_id=e.created_by JOIN users host_user ON host_user.id=h.user_id`;
 function mapEvent(row: any, userId: string): Adventure {
   return { id: row.id, title: row.title, activitySummary: row.activity_summary || row.description_markdown.slice(0, 240), descriptionMarkdown: row.description_markdown,
-    district: row.district, costEstimate: row.cost_estimate, experienceNotes: row.experience_notes,
+    costEstimate: row.cost_estimate, experienceNotes: row.experience_notes,
     onlinePlatform: row.online_platform, recruitmentOpen: row.recruitment_open,
     location: { id: row.location_id, name: row.location_name, kind: row.location_kind, parentId: row.parent_id, countryName: row.country_name },
     place: row.place_id && row.place_name ? { id: row.place_id, cityLocationId: row.place_city_id, cityName: row.location_name,
@@ -66,7 +66,7 @@ async function validateFields(db: Db, userId: string, fields: EventFields, requi
   if (Date.parse(fields.endsAt) <= Date.parse(fields.startsAt)) throw new AppError(400, 'EVENT_END_INVALID');
   const location = (await db.query("SELECT kind FROM locations WHERE id=$1 AND kind IN ('city','online')", [fields.locationId])).rows[0];
   if (!location) throw new AppError(400, 'EVENT_LOCATION_INVALID');
-  if ([fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.district, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform].some(hasPublicLink)) {
+  if ([fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform].some(hasPublicLink)) {
     throw new AppError(400, 'EVENT_PUBLIC_LINK');
   }
   if (location.kind === 'online') {
@@ -81,7 +81,6 @@ async function validateFields(db: Db, userId: string, fields: EventFields, requi
     const place = (await db.query('SELECT city_location_id,active FROM places WHERE id=$1', [fields.placeId])).rows[0];
     if (!place || place.city_location_id !== fields.locationId || (!place.active && fields.placeId !== existingPlaceId)) throw new AppError(400, 'PLACE_LOCATION_MISMATCH');
   }
-  if (location.kind === 'city' && !fields.district && !fields.placeId && !fields.meetingMapUrl) throw new AppError(400, 'EVENT_DISTRICT_REQUIRED');
   if (fields.meetingMapUrl) {
     try {
       const url = new URL(fields.meetingMapUrl);
@@ -194,7 +193,7 @@ export class Adventures {
     await activeUser(this.pool, userId);
     const fields = normalizeFields(eventFieldsSchema.parse(Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'requestId'))));
     await requireCapability(this.pool, userId, 'events.create', { type: 'location', id: fields.locationId });
-    await this.review([fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.district, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform].join('\n\n'));
+    await this.review([fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform].join('\n\n'));
     const fingerprint = hash(JSON.stringify(fields));
     const eventId = await transaction(this.pool, async db => {
       await activeUser(db, userId);
@@ -205,8 +204,8 @@ export class Adventures {
         return old.id;
       }
       await validateFields(db, userId, fields);
-      const row = (await db.query(`INSERT INTO events(created_by,title,activity_summary,description_markdown,district,cost_estimate,experience_notes,online_platform,location_id,language_code,starts_at,ends_at,time_zone,capacity,place_id,status,request_id,request_hash)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'published',$16,$17) RETURNING id`, [userId, fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.district, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, fields.placeId, input.requestId, fingerprint])).rows[0];
+      const row = (await db.query(`INSERT INTO events(created_by,title,activity_summary,description_markdown,cost_estimate,experience_notes,online_platform,location_id,language_code,starts_at,ends_at,time_zone,capacity,place_id,status,request_id,request_hash)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'published',$15,$16) RETURNING id`, [userId, fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, fields.placeId, input.requestId, fingerprint])).rows[0];
       await db.query('INSERT INTO event_private_details(event_id,meeting_details,meeting_map_url) VALUES($1,$2,$3)', [row.id, fields.meetingDetails, fields.meetingMapUrl]);
       await db.query("INSERT INTO event_memberships(event_id,user_id,role,status) VALUES($1,$2,'host','accepted')", [row.id, userId]);
       await grantEventRole(db, row.id, userId, 'organizer', userId);
@@ -220,7 +219,7 @@ export class Adventures {
     const input = normalizeFields(editEventSchema.parse(body));
     const placeProvided = !!body && typeof body === 'object' && Object.hasOwn(body, 'placeId');
     await requireCapability(this.pool, userId, 'events.edit', { type: 'event', id: eventId });
-    await this.review([input.title, input.activitySummary, input.descriptionMarkdown, input.district, input.costEstimate, input.experienceNotes, input.onlinePlatform].join('\n\n'));
+    await this.review([input.title, input.activitySummary, input.descriptionMarkdown, input.costEstimate, input.experienceNotes, input.onlinePlatform].join('\n\n'));
     await transaction(this.pool, async db => {
       const row = await lockEvent(db, userId, eventId);
       if (!placeProvided) input.placeId = row.place_id;
@@ -230,8 +229,8 @@ export class Adventures {
       await validateFields(db, userId, input, row.location_id !== input.locationId, row.place_id);
       const count = (await db.query("SELECT count(*)::int AS count FROM event_memberships WHERE event_id=$1 AND status='accepted'", [eventId])).rows[0].count;
       if (count > input.capacity) throw new AppError(409, 'EVENT_CAPACITY_TOO_SMALL');
-      await db.query(`UPDATE events SET title=$2,activity_summary=$3,description_markdown=$4,district=$5,cost_estimate=$6,experience_notes=$7,online_platform=$8,location_id=$9,language_code=$10,starts_at=$11,ends_at=$12,time_zone=$13,capacity=$14,place_id=$15,revision=revision+1,updated_at=now() WHERE id=$1`,
-        [eventId, input.title, input.activitySummary, input.descriptionMarkdown, input.district, input.costEstimate, input.experienceNotes, input.onlinePlatform, input.locationId, input.languageCode, input.startsAt, input.endsAt, input.timeZone, input.capacity, input.placeId]);
+      await db.query(`UPDATE events SET title=$2,activity_summary=$3,description_markdown=$4,cost_estimate=$5,experience_notes=$6,online_platform=$7,location_id=$8,language_code=$9,starts_at=$10,ends_at=$11,time_zone=$12,capacity=$13,place_id=$14,revision=revision+1,updated_at=now() WHERE id=$1`,
+        [eventId, input.title, input.activitySummary, input.descriptionMarkdown, input.costEstimate, input.experienceNotes, input.onlinePlatform, input.locationId, input.languageCode, input.startsAt, input.endsAt, input.timeZone, input.capacity, input.placeId]);
       await db.query('INSERT INTO event_private_details(event_id,meeting_details,meeting_map_url) VALUES($1,$2,$3) ON CONFLICT(event_id) DO UPDATE SET meeting_details=EXCLUDED.meeting_details,meeting_map_url=EXCLUDED.meeting_map_url', [eventId, input.meetingDetails, input.meetingMapUrl]);
       if (row.starts_at.getTime() !== Date.parse(input.startsAt)) {
         await db.query("DELETE FROM bot_outbox WHERE event_id=$1 AND kind='reminder' AND state='pending'", [eventId]);

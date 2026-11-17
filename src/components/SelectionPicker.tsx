@@ -3,9 +3,9 @@ import { Search, X } from 'lucide-react';
 import { t } from '../i18n.ts';
 
 export interface Choice { id: string; label: string; detail?: string; source?: 'google' }
-export function SelectionPicker({ label, placeholder, value, items, selected, query, onQuery, onChange, loading = false, pending = false, limit = 50, replaceOnSelect = false }: {
+export function SelectionPicker({ label, placeholder, value, items, selected, query, onQuery, onChange, loading = false, pending = false, focusOnMount = false, limit = 50, replaceOnSelect = false }: {
   label: string; placeholder: string; value: string[]; items: Choice[]; selected: Choice[];
-  query: string; onQuery: (query: string) => void; onChange: (value: string[]) => void; loading?: boolean; pending?: boolean; limit?: number; replaceOnSelect?: boolean;
+  query: string; onQuery: (query: string) => void; onChange: (value: string[]) => void; loading?: boolean; pending?: boolean; focusOnMount?: boolean; limit?: number; replaceOnSelect?: boolean;
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -26,7 +26,7 @@ export function SelectionPicker({ label, placeholder, value, items, selected, qu
       const item = selected.find(item => item.id === code);
       return <button type="button" className="selection-chip" key={code} onClick={() => onChange(value.filter(id => id !== code))} aria-label={t('selection.remove', { name: item?.label ?? code })}>{item?.label ?? code}{item?.source === 'google' && <small className="google-attribution" translate="no"> · Google Maps</small>}<X size={12} aria-hidden="true" /></button>;
     })}</div>}
-    <div className="selection-input"><Search size={16} aria-hidden="true" /><input id={id} ref={input} role="combobox" autoComplete="off" value={query} placeholder={placeholder}
+    <div className="selection-input"><Search size={16} aria-hidden="true" /><input id={id} ref={input} role="combobox" autoComplete="off" autoFocus={focusOnMount} value={query} placeholder={placeholder}
       aria-expanded={open} aria-controls={`${id}-results`} aria-autocomplete="list" aria-activedescendant={open && available[index] ? `${id}-option-${index}` : undefined}
       onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={event => { onQuery(event.target.value); setOpen(true); setActive(0); }}
       onKeyDown={event => {

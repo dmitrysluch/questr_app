@@ -23,7 +23,7 @@ function openBot(event: React.MouseEvent<HTMLAnchorElement>, url: string) {
 function EventFacts({ event }: { event: Adventure }) {
   const place = event.location.kind === 'online' ? event.onlinePlatform || t('events.online') : event.place
     ? [event.place.name, event.place.address, locationName(event.location.id, event.location.name)].join(' · ')
-    : [event.district, locationName(event.location.id, event.location.name)].filter(Boolean).join(' · ');
+    : locationName(event.location.id, event.location.name);
   return <div className="event-facts"><span><CalendarDays size={16} />{eventDate(event)} · {event.timeZone}</span><span><Globe2 size={16} />{place} · {languageName(event.languageCode)}</span><span><Coins size={16} />{event.costEstimate}</span><span><Users size={16} />{t('events.seatsLeft', { count: Math.max(0, event.capacity - event.participantCount) })} · {t('events.count', { count: event.participantCount, capacity: event.capacity })}</span></div>;
 }
 function EventError({ error }: { error: unknown }) {
@@ -165,10 +165,15 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
   </section>;
 }
 function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { config: AppConfig; initial?: AdventureDetail; spokenLanguages: string[]; onClose: () => void; onSaved: (event: AdventureDetail) => void }) {
-  const defaults = useRef<EventFields>({ title: initial?.title ?? '', activitySummary: '', descriptionMarkdown: initial?.descriptionMarkdown ?? '', district: initial?.district ?? '', costEstimate: initial?.costEstimate ?? t('events.defaultCost'), experienceNotes: initial?.experienceNotes ?? t('events.defaultExperience'), onlinePlatform: '', startsAt: initial?.startsAt ?? new Date(Date.now() + 86400000).toISOString(), endsAt: initial?.endsAt ?? new Date(Date.now() + 93600000).toISOString(), timeZone: initial?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, capacity: initial?.capacity ?? 6, languageCode: initial?.languageCode ?? spokenLanguages[0] ?? 'en', locationId: initial?.location.id ?? '', placeId: initial?.place?.id ?? null, meetingDetails: initial?.meetingDetails ?? '', meetingMapUrl: initial?.meetingMapUrl ?? '' });
+  const defaults = useRef<EventFields>({ title: initial?.title ?? '', activitySummary: '', descriptionMarkdown: initial?.descriptionMarkdown ?? '', costEstimate: initial?.costEstimate ?? t('events.defaultCost'), experienceNotes: initial?.experienceNotes ?? t('events.defaultExperience'), onlinePlatform: '', startsAt: initial?.startsAt ?? new Date(Date.now() + 86400000).toISOString(), endsAt: initial?.endsAt ?? new Date(Date.now() + 93600000).toISOString(), timeZone: initial?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, capacity: initial?.capacity ?? 6, languageCode: initial?.languageCode ?? spokenLanguages[0] ?? 'en', locationId: initial?.location.id ?? '', placeId: initial?.place?.id ?? null, meetingDetails: initial?.meetingDetails ?? '', meetingMapUrl: initial?.meetingMapUrl ?? '' });
   const [fields, setFields] = useState(defaults.current);
-  const [localTime, setLocalTime] = useState(wallTime(defaults.current.startsAt, defaults.current.timeZone));
-  const [localEndTime, setLocalEndTime] = useState(wallTime(defaults.current.endsAt, defaults.current.timeZone));
+  const initialWall = useRef({ start: wallTime(defaults.current.startsAt, defaults.current.timeZone), end: wallTime(defaults.current.endsAt, defaults.current.timeZone) });
+  const [startDate, setStartDate] = useState(initialWall.current.start.slice(0, 10));
+  const [startClock, setStartClock] = useState(initialWall.current.start.slice(11, 16));
+  const [endDate, setEndDate] = useState(initialWall.current.end.slice(0, 10));
+  const [endClock, setEndClock] = useState(initialWall.current.end.slice(11, 16));
+  const [showEndDate, setShowEndDate] = useState(initialWall.current.start.slice(0, 10) !== initialWall.current.end.slice(0, 10));
+  const [focusPlace, setFocusPlace] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [discard, setDiscard] = useState(false);
@@ -178,7 +183,6 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
   const privateMeeting = useRef({
     offlineLocationId: initial?.location.kind === 'city' ? initial.location.id : '',
     offlinePlaceId: initial?.location.kind === 'city' ? initial.place?.id ?? null : null,
-    offlineDistrict: initial?.location.kind === 'city' ? initial.district : '',
     offlineDetails: initial?.location.kind === 'city' ? initial.meetingDetails ?? '' : '',
     offlineMapUrl: initial?.location.kind === 'city' ? initial.meetingMapUrl ?? '' : '',
     onlineLink: initial?.location.kind === 'online' ? initial.meetingDetails ?? '' : '',
@@ -186,13 +190,33 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
   const requestId = useRef(crypto.randomUUID());
   const zones = [...new Set(['UTC', fields.timeZone, ...Intl.supportedValuesOf('timeZone')])].sort();
   const change = (patch: Partial<EventFields>) => setFields(old => ({ ...old, ...patch }));
+  const startWall = `${startDate}T${startClock}`;
+  const endWall = `${endDate}T${endClock}`;
+  function moveStart(nextDate: string, nextClock: string) {
+    const before = Date.parse(`${startWall}:00Z`);
+    const after = Date.parse(`${nextDate}T${nextClock}:00Z`);
+    const oldEnd = Date.parse(`${endWall}:00Z`);
+    setStartDate(nextDate); setStartClock(nextClock);
+    if (Number.isFinite(before) && Number.isFinite(after) && Number.isFinite(oldEnd)) {
+      const shiftedEnd = new Date(oldEnd + after - before).toISOString().slice(0, 16);
+      setEndDate(shiftedEnd.slice(0, 10)); setEndClock(shiftedEnd.slice(11, 16));
+      if (shiftedEnd.slice(0, 10) !== nextDate) setShowEndDate(true);
+    }
+  }
+  function changeEndClock(nextClock: string) {
+    setEndClock(nextClock);
+    if (endDate === startDate && nextClock && nextClock <= startClock) {
+      const nextDay = Date.parse(`${startDate}T00:00:00Z`) + 86400000;
+      if (Number.isFinite(nextDay)) { setEndDate(new Date(nextDay).toISOString().slice(0, 10)); setShowEndDate(true); }
+    }
+  }
   function changeLocation(nextId: string) {
+    setFocusPlace(Boolean(nextId && nextId !== 'online'));
     const saved = privateMeeting.current;
     if (fields.locationId === 'online') saved.onlineLink = fields.meetingDetails;
     else if (fields.locationId) {
       saved.offlineLocationId = fields.locationId;
       saved.offlinePlaceId = fields.placeId;
-      saved.offlineDistrict = fields.district;
       saved.offlineDetails = fields.meetingDetails;
       saved.offlineMapUrl = fields.meetingMapUrl;
     }
@@ -200,9 +224,9 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
     if (nextId === 'online') change({ locationId: nextId, placeId: null, meetingDetails: saved.onlineLink, meetingMapUrl: '' });
     else {
       if (nextId !== saved.offlineLocationId) {
-        saved.offlineLocationId = nextId; saved.offlinePlaceId = null; saved.offlineDistrict = ''; saved.offlineDetails = ''; saved.offlineMapUrl = '';
+        saved.offlineLocationId = nextId; saved.offlinePlaceId = null; saved.offlineDetails = ''; saved.offlineMapUrl = '';
       }
-      change({ locationId: nextId, placeId: saved.offlinePlaceId, district: saved.offlineDistrict, meetingDetails: saved.offlineDetails, meetingMapUrl: saved.offlineMapUrl });
+      change({ locationId: nextId, placeId: saved.offlinePlaceId, meetingDetails: saved.offlineDetails, meetingMapUrl: saved.offlineMapUrl });
     }
   }
   useEffect(() => {
@@ -214,12 +238,12 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
       .catch(problem => { if (active) setError(problem); });
     return () => { active = false; };
   }, [fields.locationId, initial]);
-  function close() { if (busy) return; if (JSON.stringify(fields) !== JSON.stringify(defaults.current) || localTime !== wallTime(defaults.current.startsAt, defaults.current.timeZone) || localEndTime !== wallTime(defaults.current.endsAt, defaults.current.timeZone)) setDiscard(true); else onClose(); }
+  function close() { if (busy) return; if (JSON.stringify(fields) !== JSON.stringify(defaults.current) || startWall !== initialWall.current.start || endWall !== initialWall.current.end) setDiscard(true); else onClose(); }
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(null);
     try {
       let instant: string, endInstant: string;
-      try { instant = wallTimeToInstant(localTime, fields.timeZone); endInstant = wallTimeToInstant(localEndTime, fields.timeZone); } catch (error) { throw { code: error instanceof Error ? error.message : 'EVENT_TIME_INVALID' }; }
+      try { instant = wallTimeToInstant(startWall, fields.timeZone); endInstant = wallTimeToInstant(endWall, fields.timeZone); } catch (error) { throw { code: error instanceof Error ? error.message : 'EVENT_TIME_INVALID' }; }
       if (Date.parse(endInstant) <= Date.parse(instant)) throw { code: 'EVENT_END_INVALID' };
       if (!fields.locationId) throw { code: 'EVENT_LOCATION_INVALID' };
       if (!initial && !locationAccess?.canCreate) throw { code: 'PERMISSION_DENIED' };
@@ -230,15 +254,17 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
   }
   return <Modal wide title={t(initial ? 'events.edit' : 'events.create')} onClose={close}><form className="event-form" onSubmit={event => void submit(event)}><fieldset disabled={busy}>
     <label htmlFor="event-title">{t('events.title')}</label><input id="event-title" required minLength={3} maxLength={160} value={fields.title} onChange={e => change({ title: e.target.value })} autoFocus />
-    <label htmlFor="event-description">{t('events.description')}</label><textarea id="event-description" required minLength={10} maxLength={12000} rows={5} value={fields.descriptionMarkdown} onChange={e => change({ descriptionMarkdown: e.target.value })} /><p className="field-hint">{t('events.descriptionHint')}</p>{[fields.title, fields.descriptionMarkdown, fields.district, fields.costEstimate, fields.experienceNotes].some(hasPublicLink) && <p className="field-error">{t('events.publicCallWarning')}</p>}
-    <div className="event-form-grid"><div><label htmlFor="event-when">{t('events.start')}</label><input id="event-when" type="datetime-local" value={localTime} onChange={e => { const old = Date.parse(`${localTime}:00Z`), next = Date.parse(`${e.target.value}:00Z`); if (Number.isFinite(old) && Number.isFinite(next)) setLocalEndTime(new Date(Date.parse(`${localEndTime}:00Z`) + next - old).toISOString().slice(0,16)); setLocalTime(e.target.value); }} required /></div><div><label htmlFor="event-end">{t('events.end')}</label><input id="event-end" type="datetime-local" value={localEndTime} onChange={e => setLocalEndTime(e.target.value)} required /></div></div>
-    <LocationPicker single value={fields.locationId ? [fields.locationId] : []} onChange={ids => changeLocation(ids[0] ?? '')} />
+    <label htmlFor="event-description">{t('events.description')}</label><textarea id="event-description" required minLength={10} maxLength={12000} rows={5} value={fields.descriptionMarkdown} onChange={e => change({ descriptionMarkdown: e.target.value })} /><p className="field-hint">{t('events.descriptionHint')}</p>{[fields.title, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes].some(hasPublicLink) && <p className="field-error">{t('events.publicCallWarning')}</p>}
+    <div className="event-date"><label htmlFor="event-date">{t('events.date')}</label><input id="event-date" type="date" value={startDate} onChange={e => moveStart(e.target.value, startClock)} required /></div>
+    <div className="event-time-range"><div><label htmlFor="event-start-time">{t('events.start')}</label><input id="event-start-time" type="time" value={startClock} onChange={e => moveStart(startDate, e.target.value)} required /></div><div><label htmlFor="event-end-time">{t('events.end')}</label><input id="event-end-time" type="time" value={endClock} onChange={e => changeEndClock(e.target.value)} required /></div></div>
+    {showEndDate ? <div className="event-end-date"><label htmlFor="event-end-date">{t('events.endDate')}</label><input id="event-end-date" type="date" min={startDate} value={endDate} onChange={e => setEndDate(e.target.value)} required /></div> : <button type="button" className="text-button event-end-date-toggle" onClick={() => { const nextDay = Date.parse(`${startDate}T00:00:00Z`) + 86400000; if (Number.isFinite(nextDay)) setEndDate(new Date(nextDay).toISOString().slice(0, 10)); setShowEndDate(true); }}>{t('events.differentEndDate')}</button>}
+    <LocationPicker single collapseWhenSelected label={t('events.cityOrOnline')} placeholder={t('events.searchLocation')} value={fields.locationId ? [fields.locationId] : []} onChange={ids => changeLocation(ids[0] ?? '')} />
     {!initial && fields.locationId && locationAccess && !locationAccess.canCreate && <p className="field-error" role="alert">{t(locationAccess.hasRole ? 'events.createLimitReached' : 'events.createLocationDenied')}</p>}
-    {fields.locationId && fields.locationId !== 'online' && <><PlacePicker cityId={fields.locationId} placeId={fields.placeId} meetingMapUrl={fields.meetingMapUrl} selected={initial?.place} googleKey={config.googleMapsBrowserKey} onPick={pick => {
-      if (pick?.kind === 'saved') change({ placeId: pick.id, meetingMapUrl: '', district: '' });
-      else if (pick?.kind === 'google') change({ placeId: null, meetingMapUrl: pick.mapUrl, district: '' });
+    {fields.locationId && fields.locationId !== 'online' && <PlacePicker key={fields.locationId} cityId={fields.locationId} placeId={fields.placeId} meetingMapUrl={fields.meetingMapUrl} selected={initial?.place} googleKey={config.googleMapsBrowserKey} focusOnMount={focusPlace} onPick={pick => {
+      if (pick?.kind === 'saved') change({ placeId: pick.id, meetingMapUrl: '' });
+      else if (pick?.kind === 'google') change({ placeId: null, meetingMapUrl: pick.mapUrl });
       else change({ placeId: null, meetingMapUrl: '' });
-    }} />{!fields.placeId && !fields.meetingMapUrl && <><label htmlFor="event-district">{t('events.district')}</label><input id="event-district" required maxLength={120} value={fields.district} onChange={e => change({ district: e.target.value })} /></>}</>}
+    }} />}
     <div className="event-form-grid"><div><label htmlFor="event-language">{t('events.language')}</label><select id="event-language" value={fields.languageCode} onChange={e => change({ languageCode: e.target.value })}>{languages.map(l => <option key={l.code} value={l.code}>{languageName(l.code)} · {l.native}</option>)}</select></div><div><label htmlFor="event-capacity">{t('events.capacity')}</label><input id="event-capacity" type="number" min={2} max={50} required value={fields.capacity} onChange={e => change({ capacity: Number(e.target.value) })} /><p className="field-hint">{t('events.capacityHint')}</p></div></div>
     <details className="event-options" ref={optionsRef} open={optionsOpen} onToggle={event => setOptionsOpen(event.currentTarget.open)}><summary>{t('events.moreOptions')}<small>{t('events.moreOptionsHint', { cost: fields.costEstimate.trim() || t('events.defaultCost'), experience: fields.experienceNotes.trim() || t('events.defaultExperience'), zone: fields.timeZone })}</small></summary>
     <div className="event-form-grid"><div><label htmlFor="event-cost">{t('events.cost')}</label><input id="event-cost" maxLength={120} value={fields.costEstimate} onChange={e => change({ costEstimate: e.target.value })} placeholder={t('events.costPlaceholder')} /></div><div><label htmlFor="event-experience">{t('events.experience')}</label><input id="event-experience" maxLength={240} value={fields.experienceNotes} onChange={e => change({ experienceNotes: e.target.value })} placeholder={t('events.experiencePlaceholder')} /></div></div>

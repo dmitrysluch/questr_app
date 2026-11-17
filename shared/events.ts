@@ -11,7 +11,6 @@ export const eventFieldsSchema = z.object({
   title: z.string().trim().min(3).max(160),
   activitySummary: z.string().trim().max(240).default(''),
   descriptionMarkdown: z.string().trim().min(10).max(12000),
-  district: z.string().trim().max(120),
   costEstimate: z.string().trim().min(2).max(120),
   experienceNotes: z.string().trim().min(2).max(240),
   onlinePlatform: z.string().trim().max(120).default(''),
@@ -43,7 +42,7 @@ export interface EventPerson {
   unavailable?: boolean; applicationText?: string; matchingTags: ProfileTag[]; romanceMatch: boolean; askMeTopics: string[];
 }
 export interface Adventure {
-  id: string; title: string; activitySummary: string; descriptionMarkdown: string; district: string; costEstimate: string;
+  id: string; title: string; activitySummary: string; descriptionMarkdown: string; costEstimate: string;
   experienceNotes: string; onlinePlatform: string; recruitmentOpen: boolean; location: Location; languageCode: string;
   place: Place | null;
   startsAt: string; endsAt: string; timeZone: string; capacity: number; participantCount: number; revision: number;

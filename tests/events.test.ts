@@ -24,11 +24,11 @@ test('call links are recognized only on Zoom hosts; Google Maps links encode the
   assert.equal(link.searchParams.get('query_place_id'), 'place-id');
 });
 test('event inputs reject unknown authority fields and invalid sizes/zones', () => {
-  const data = { title: 'Coffee crawl', activitySummary: 'A walk between three coffee shops.', descriptionMarkdown: 'A walk with coffee stops.', district: 'Downtown', costEstimate: 'About ₪30', experienceNotes: 'No experience needed', onlinePlatform: '', startsAt: '2030-01-15T17:30:00Z', endsAt: '2030-01-15T19:30:00Z', timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 6, meetingDetails: 'Private cafe entrance', requestId: crypto.randomUUID() };
+  const data = { title: 'Coffee crawl', activitySummary: 'A walk between three coffee shops.', descriptionMarkdown: 'A walk with coffee stops.', costEstimate: 'About ₪30', experienceNotes: 'No experience needed', onlinePlatform: '', startsAt: '2030-01-15T17:30:00Z', endsAt: '2030-01-15T19:30:00Z', timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 6, meetingDetails: 'Private cafe entrance', requestId: crypto.randomUUID() };
   assert.ok(createEventSchema.safeParse(data).success);
   const optional = createEventSchema.parse({ ...data, activitySummary: undefined, meetingDetails: undefined, onlinePlatform: undefined });
   assert.equal(optional.activitySummary, ''); assert.equal(optional.meetingDetails, ''); assert.equal(optional.onlinePlatform, '');
-  for (const change of [{ capacity: 1 }, { capacity: 51 }, { timeZone: 'Moon/Crater' }, { createdBy: crypto.randomUUID() }, { languageCode: 'xx' }]) assert.equal(createEventSchema.safeParse({ ...data, ...change }).success, false);
+  for (const change of [{ capacity: 1 }, { capacity: 51 }, { timeZone: 'Moon/Crater' }, { createdBy: crypto.randomUUID() }, { district: 'Downtown' }, { languageCode: 'xx' }]) assert.equal(createEventSchema.safeParse({ ...data, ...change }).success, false);
 });
 test('public event fields identify links that belong in private meeting details', () => {
   assert.equal(hasPublicLink('Join us at https://meet.example/secret'), true);

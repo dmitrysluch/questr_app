@@ -556,6 +556,17 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .event-form select:focus { outline: 2px solid #b7845b; outline-offset: 2px; }
 .event-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .event-form-grid > div { min-width: 0; }
+.event-time-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.event-time-range > div { min-width: 0; }
+.event-time-range input { font-size: 16px; padding: 12px 10px; }
+.event-end-date-toggle { margin-top: 10px; }
+.event-end-date input { max-width: 260px; }
+.event-location-picker { margin-top: 18px; }
+.event-location-label { display: block; margin-bottom: 9px; }
+.event-location-current { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 46px; padding: 8px 12px; border: 1px solid #d5cbbb; background: #fffdf8; }
+.event-location-current strong { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.event-location-current button { flex-shrink: 0; }
+.event-location-cancel { display: block; margin: 8px 0 0 auto; }
 .event-options { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 15px; }
 .event-options summary { cursor: pointer; color: var(--ink); font-weight: 700; }
 .event-options summary small { display: block; margin: 4px 0 0 20px; font-size: 11px; font-weight: 400; color: var(--muted); }

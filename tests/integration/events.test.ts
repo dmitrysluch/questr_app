@@ -29,7 +29,7 @@ async function person(name = 'Moss', profile: { tags?: ProfileTag[]; askMeTopics
   await agent.post('/api/profile/publish').send({ revision: draft.revision }).expect(200);
   return { agent, id: state.user.id as string, cookie: auth.headers['set-cookie'][0].split(';')[0] as string };
 }
-function fields(extra = {}) { const start = Date.now() + 86400000; return { title: 'Coffee and records', activitySummary: 'Bring a record and listen over coffee.', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', district: 'Downtown', costEstimate: 'About ₪25', experienceNotes: 'No experience needed', onlinePlatform: 'Zoom', startsAt: new Date(start).toISOString(), endsAt: new Date(start + 7200000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
+function fields(extra = {}) { const start = Date.now() + 86400000; return { title: 'Coffee and records', activitySummary: 'Bring a record and listen over coffee.', descriptionMarkdown: 'Meet for coffee and bring a favourite record.', costEstimate: 'About ₪25', experienceNotes: 'No experience needed', onlinePlatform: 'Zoom', startsAt: new Date(start).toISOString(), endsAt: new Date(start + 7200000).toISOString(), timeZone: 'Asia/Jerusalem', locationId: 'city:294801', languageCode: 'en', capacity: 2, meetingDetails: 'Secret door 42, private meeting place', requestId: randomUUID(), ...extra }; }
 const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (await who.agent.post('/api/events').send(fields(extra)).expect(201)).body.event;
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
@@ -44,7 +44,7 @@ integration('manual public places are admin-owned and never reveal private meeti
   assert.equal(place.name, input.name);
   assert.deepEqual((await guest.agent.get('/api/places?cityId=city:294801&q=record').expect(200)).body.places.map((item: any) => item.id), [place.id]);
   assert.deepEqual((await guest.agent.get('/api/places?cityId=city:293397').expect(200)).body.places, []);
-  const event = await create(host, { placeId: place.id, district: '', meetingDetails: 'Private apartment, door 42' });
+  const event = await create(host, { placeId: place.id, meetingDetails: 'Private apartment, door 42' });
   assert.equal(event.place.id, place.id);
   assert.equal(event.place.address, input.address);
   assert.match((await guest.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text, /Record Room Cafe/);
@@ -64,8 +64,11 @@ integration('manual public places are admin-owned and never reveal private meeti
 
 integration('a Google search pick is a private meeting point and needs no public venue', async () => {
   const host = await person('Host'), guest = await person('Guest');
+  const noVenue = await create(host, { meetingDetails: '' });
+  assert.equal(noVenue.place, null);
+  assert.equal('district' in noVenue, false);
   const meetingMapUrl = googleMapsSearch('meeting point', 'ChIJtestPrivatePoint');
-  const event = await create(host, { district: '', meetingDetails: '', meetingMapUrl });
+  const event = await create(host, { meetingDetails: '', meetingMapUrl });
   assert.equal(event.place, null);
   assert.equal(event.meetingMapUrl, meetingMapUrl);
   const publicEvent = (await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event;

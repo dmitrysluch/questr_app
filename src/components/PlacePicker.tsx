@@ -15,8 +15,8 @@ function googleId(mapUrl: string): string | null {
   catch { return mapUrl; }
 }
 
-export function PlacePicker({ cityId, placeId, meetingMapUrl, selected, googleKey, onPick }: {
-  cityId: string; placeId: string | null; meetingMapUrl: string; selected?: Place | null; googleKey: string;
+export function PlacePicker({ cityId, placeId, meetingMapUrl, selected, googleKey, focusOnMount = false, onPick }: {
+  cityId: string; placeId: string | null; meetingMapUrl: string; selected?: Place | null; googleKey: string; focusOnMount?: boolean;
   onPick: (pick: Pick) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -112,7 +112,7 @@ export function PlacePicker({ cityId, placeId, meetingMapUrl, selected, googleKe
   }
   return <><SelectionPicker label={t('places.pickPlace')} placeholder={t('places.search')} value={value ? [value] : []}
     selected={selectedChoices} items={[...savedChoices, ...googleChoices]} query={query} onQuery={next => { if (!next) session.current = null; setQuery(next); }}
-    onChange={ids => void choose(ids)} loading={picking} pending={savedLoading || googleLoading} replaceOnSelect limit={1} />
+    onChange={ids => void choose(ids)} loading={picking} pending={savedLoading || googleLoading} focusOnMount={focusOnMount} replaceOnSelect limit={1} />
     {!googleKey && <p className="field-hint">{t('places.googleNotConfigured')}</p>}
     {currentGoogleId && <p className="field-hint">{t('places.googlePrivate')}</p>}
     {!!savedError && <p className="field-error" role="alert">{errorText(savedError)}</p>}

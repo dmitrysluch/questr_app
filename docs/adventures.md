@@ -64,7 +64,7 @@ start time resets unsent reminders; cancellation clears queued reminders.
 - Creation publishes directly. The existing `events.create` budget allows 2 per
   rolling 7 days. Failed transactions spend nothing. A UUID plus payload hash
   makes retried creation return the same adventure without spending again.
-- Public event cards show a short summary derived from the description, district
+- Public event cards show a short summary derived from the description, city
   or known online platform, approximate cost, experience requirements and remaining places.
   Full descriptions may use Markdown, but public event fields reject links;
   exact meeting addresses and call URLs belong in private meeting details.
