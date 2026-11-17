@@ -130,6 +130,9 @@ integration('Telegram Mini App submits applications directly; organizer buttons 
 
 integration('creation is atomic, idempotent, budgeted and validates geography, time and content', async () => {
   const host = await person(); const body = fields();
+  const initialAccess = (await host.agent.get('/api/events/create-access').expect(200)).body;
+  assert.equal(initialAccess.hasRole, true); assert.equal(initialAccess.canCreate, true);
+  assert.deepEqual(initialAccess.budget, { maxUses: 2, used: 0, windowDays: 7 });
   const results = await Promise.all([host.agent.post('/api/events').send(body), host.agent.post('/api/events').send(body)]);
   assert.deepEqual(results.map(r => r.status), [201, 201]); assert.equal(results[0].body.event.id, results[1].body.event.id);
   assert.equal(results[0].body.event.participantCount, 1); assert.equal(results[0].body.event.canChat, true);
@@ -146,6 +149,19 @@ integration('creation is atomic, idempotent, budgeted and validates geography, t
   const edited = await host.agent.put(`/api/events/${online.id}`).send({ ...editBody, revision: online.revision }).expect(200);
   assert.equal(edited.body.event.onlinePlatform, 'Zoom');
   await host.agent.post('/api/events').send(fields()).expect(429);
+  const exhausted = (await host.agent.get('/api/events/create-access').expect(200)).body;
+  assert.equal(exhausted.hasRole, true); assert.equal(exhausted.canCreate, false);
+  assert.equal(exhausted.budget.used, 2);
+});
+integration('creation access follows location-scoped roles before the form is opened', async () => {
+  const host = await person();
+  await pool.query("UPDATE role_assignments SET revoked_at=now() WHERE user_id=$1 AND role_code='event_creator'", [host.id]);
+  assert.equal((await host.agent.get('/api/events/create-access').expect(200)).body.hasRole, false);
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,location_id,reason) VALUES($1,'event_creator','country:IL','Test scope')", [host.id]);
+  assert.equal((await host.agent.get('/api/events/create-access').expect(200)).body.canCreate, true);
+  assert.equal((await host.agent.get('/api/events/create-access?locationId=city:294801').expect(200)).body.canCreate, true);
+  assert.equal((await host.agent.get('/api/events/create-access?locationId=online').expect(200)).body.hasRole, false);
+  await host.agent.post('/api/events').send(fields({ locationId: 'online', meetingDetails: '' })).expect(403);
 });
 integration('discovery applies location ancestry and language together without exposing private details', async () => {
   const host = await person(), guest = await person();

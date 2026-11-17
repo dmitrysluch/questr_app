@@ -52,10 +52,10 @@ export function LocationPicker({ value, onChange, single = false }: { value: str
     return () => { active = false; clearTimeout(timer); };
   }, [query, retry]);
   return <><SelectionPicker label={t('locations.label')} placeholder={t('locations.search')} value={value} onChange={onChange}
-    query={query} onQuery={setQuery} loading={loading} limit={single ? 1 : 50} items={items.filter(item => !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
+    query={query} onQuery={setQuery} loading={loading} limit={single ? 1 : 50} replaceOnSelect={single} items={items.filter(item => !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
     {!!error && <p className="field-error" role="alert">{errorText(error)} <button type="button" className="text-button" onClick={() => setRetry(old => old + 1)}>{t('common.retry')}</button></p>}</>;
 }
-export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, inline = false, onDirtyChange }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; inline?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
+export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, inline = false, onDirtyChange, onValueChange }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; inline?: boolean; onDirtyChange?: (dirty: boolean) => void; onValueChange?: (value: DiscoveryPreferences) => void }) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -63,7 +63,7 @@ export function DiscoverySettings({ initial, spokenLanguages, onSaved, required 
   const dirty = JSON.stringify(value) !== JSON.stringify(initial);
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   const complete = value.locationIds.length > 0 && value.languageCodes.length > 0;
-  const edit = (change: Partial<DiscoveryPreferences>) => { setValue(old => ({ ...old, ...change })); setSaved(false); };
+  const edit = (change: Partial<DiscoveryPreferences>) => { const next = { ...value, ...change }; setValue(next); onValueChange?.(next); setSaved(false); };
   async function save() {
     if (required && !complete) return;
     setBusy(true); setError(null);

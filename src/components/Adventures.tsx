@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, CalendarDays, Globe2, Plus, RefreshCw, Users, LockKeyhole, Coins } from 'lucide-react';
 import type { AppConfig, Profile } from '../../shared/schema.ts';
 import { languages, type DiscoveryPreferences } from '../../shared/discovery.ts';
-import { wallTime, wallTimeToInstant, hasPublicLink, type Adventure, type AdventureDetail, type AdventureList, type EventFields, type CharacterConnection, type EventProfile } from '../../shared/events.ts';
+import { wallTime, wallTimeToInstant, hasPublicLink, type Adventure, type AdventureDetail, type AdventureList, type EventFields, type CharacterConnection, type EventProfile, type EventCreationAccess } from '../../shared/events.ts';
 import { googleMapsSearch } from '../../shared/event-links.ts';
 import { api, apiBlob, ApiError, hasTelegramSession } from '../api.ts';
 import { t, errorText, getLocale, languageName, locationName, type TranslationKey } from '../i18n.ts';
@@ -33,6 +33,7 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
   const [personId, setPersonId] = useState(location.hash.split('/')[3] ?? '');
   const [view, setView] = useState<'discover' | 'mine'>('discover');
   const [list, setList] = useState<AdventureList>({ events: [], nextOffset: null });
+  const [creationAccess, setCreationAccess] = useState<EventCreationAccess | null>(null);
   const [detail, setDetail] = useState<AdventureDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -67,7 +68,7 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
         const character = personId ? await api<EventProfile>(`/events/${id}/profiles/${personId}`) : null;
         if (current === generation.current) { setDetail(result.event); if (character) { setProfile(character.profile); setConnection(character.connection); } }
       }
-      else { const result = await api<AdventureList>(`/events?view=${view}&offset=${offset}`); if (current === generation.current) setList(old => offset ? { ...result, events: [...old.events, ...result.events] } : result); }
+      else { const [result, access] = await Promise.all([api<AdventureList>(`/events?view=${view}&offset=${offset}`), api<EventCreationAccess>('/events/create-access')]); if (current === generation.current) { setList(old => offset ? { ...result, events: [...old.events, ...result.events] } : result); setCreationAccess(access); } }
       if (current === generation.current) setError(null);
     } catch (error) { if (current === generation.current) { setError(error); if (id) { setDetail(null); setProfile(null); setConnection(null); } } }
     finally { if (current === generation.current) setLoading(false); }
@@ -121,7 +122,8 @@ export function Adventures({ config, discovery, spokenLanguages, onDiscovery }: 
   }
   const callLink = detail?.canChat && detail.location.kind === 'online' ? detail.meetingDetails : null;
   return <section className="adventures">
-    <div className="adventure-heading">{id ? <button className="text-button" onClick={() => personId ? location.replace(`#adventures/${id}`) : go()}><ArrowLeft size={16} />{t(personId ? 'events.backToAdventure' : 'events.back')}</button> : <h1>{t('nav.adventures')}</h1>}{!personId && <div className="event-actions"><button className="icon-button" disabled={loading || busy} aria-label={t('events.refresh')} onClick={() => void reload()}><RefreshCw size={18} /></button>{!id && <button className="pixel-button small" onClick={() => setEditor('new')}><Plus size={16} />{t('events.create')}</button>}</div>}</div>
+    <div className="adventure-heading">{id ? <button className="text-button" onClick={() => personId ? location.replace(`#adventures/${id}`) : go()}><ArrowLeft size={16} />{t(personId ? 'events.backToAdventure' : 'events.back')}</button> : <h1>{t('nav.adventures')}</h1>}{!personId && <div className="event-actions"><button className="icon-button" disabled={loading || busy} aria-label={t('events.refresh')} onClick={() => void reload()}><RefreshCw size={18} /></button>{!id && creationAccess?.hasRole && <button className="pixel-button small" disabled={!creationAccess.canCreate} onClick={() => setEditor('new')}><Plus size={16} />{t('events.create')}</button>}</div>}</div>
+    {!id && creationAccess?.hasRole && creationAccess.budget && <p className="event-create-budget">{t('events.createBudget', { left: Math.max(0, creationAccess.budget.maxUses - creationAccess.budget.used), max: creationAccess.budget.maxUses, days: creationAccess.budget.windowDays })}</p>}
     {!id && <><div className="event-tabs"><button className={view === 'discover' ? 'active' : ''} onClick={() => setView('discover')}>{t('events.discover')}</button><button className={view === 'mine' ? 'active' : ''} onClick={() => setView('mine')}>{t('events.mine')}</button></div>{view === 'discover' && <DiscoverySettings initial={discovery} spokenLanguages={spokenLanguages} onSaved={onDiscovery} />}</>}
     {!editor && !confirmation && !application && !connectionPurpose && <EventError error={error} />}
     {personId ? profile ? <><ProfileCard profile={profile} />{config.authMode === 'telegram' && connection && (connection.status !== 'unavailable' || connection.botRequired) ? <div className="profile-connection">
@@ -168,9 +170,42 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [discard, setDiscard] = useState(false);
+  const [locationAccess, setLocationAccess] = useState<EventCreationAccess | null>(null);
+  const privateMeeting = useRef({
+    offlineLocationId: initial?.location.kind === 'city' ? initial.location.id : '',
+    offlineDetails: initial?.location.kind === 'city' ? initial.meetingDetails ?? '' : '',
+    offlineMapUrl: initial?.location.kind === 'city' ? initial.meetingMapUrl ?? '' : '',
+    onlineLink: initial?.location.kind === 'online' ? initial.meetingDetails ?? '' : '',
+  });
   const requestId = useRef(crypto.randomUUID());
   const zones = [...new Set(['UTC', fields.timeZone, ...Intl.supportedValuesOf('timeZone')])].sort();
   const change = (patch: Partial<EventFields>) => setFields(old => ({ ...old, ...patch }));
+  function changeLocation(nextId: string) {
+    const saved = privateMeeting.current;
+    if (fields.locationId === 'online') saved.onlineLink = fields.meetingDetails;
+    else if (fields.locationId) {
+      saved.offlineLocationId = fields.locationId;
+      saved.offlineDetails = fields.meetingDetails;
+      saved.offlineMapUrl = fields.meetingMapUrl;
+    }
+    if (!nextId) { change({ locationId: '', meetingDetails: '', meetingMapUrl: '' }); return; }
+    if (nextId === 'online') change({ locationId: nextId, meetingDetails: saved.onlineLink, meetingMapUrl: '' });
+    else {
+      if (nextId !== saved.offlineLocationId) {
+        saved.offlineLocationId = nextId; saved.offlineDetails = ''; saved.offlineMapUrl = '';
+      }
+      change({ locationId: nextId, meetingDetails: saved.offlineDetails, meetingMapUrl: saved.offlineMapUrl });
+    }
+  }
+  useEffect(() => {
+    if (initial || !fields.locationId) { setLocationAccess(null); return; }
+    let active = true;
+    setLocationAccess(null);
+    void api<EventCreationAccess>(`/events/create-access?locationId=${encodeURIComponent(fields.locationId)}`)
+      .then(access => { if (active) setLocationAccess(access); })
+      .catch(problem => { if (active) setError(problem); });
+    return () => { active = false; };
+  }, [fields.locationId, initial]);
   const pickedPlace = useCallback(({ mapUrl }: { mapUrl: string }) => change({ meetingMapUrl: mapUrl }), []);
   function close() { if (busy) return; if (JSON.stringify(fields) !== JSON.stringify(defaults.current) || localTime !== wallTime(defaults.current.startsAt, defaults.current.timeZone) || localEndTime !== wallTime(defaults.current.endsAt, defaults.current.timeZone)) setDiscard(true); else onClose(); }
   async function submit(event: FormEvent) {
@@ -180,6 +215,7 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
       try { instant = wallTimeToInstant(localTime, fields.timeZone); endInstant = wallTimeToInstant(localEndTime, fields.timeZone); } catch (error) { throw { code: error instanceof Error ? error.message : 'EVENT_TIME_INVALID' }; }
       if (Date.parse(endInstant) <= Date.parse(instant)) throw { code: 'EVENT_END_INVALID' };
       if (!fields.locationId) throw { code: 'EVENT_LOCATION_INVALID' };
+      if (!initial && !locationAccess?.canCreate) throw { code: 'PERMISSION_DENIED' };
       const body = { ...fields, startsAt: instant, endsAt: endInstant, ...(initial ? { revision: initial.revision } : { requestId: requestId.current }) };
       const result = await api<{ event: AdventureDetail }>(initial ? `/events/${initial.id}` : '/events', { method: initial ? 'PUT' : 'POST', body });
       onSaved(result.event);
@@ -190,13 +226,14 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
     <label htmlFor="event-description">{t('events.description')}</label><textarea id="event-description" required minLength={10} maxLength={12000} rows={5} value={fields.descriptionMarkdown} onChange={e => change({ descriptionMarkdown: e.target.value })} /><p className="field-hint">{t('events.descriptionHint')}</p>{[fields.title, fields.descriptionMarkdown, fields.district, fields.costEstimate, fields.experienceNotes].some(hasPublicLink) && <p className="field-error">{t('events.publicCallWarning')}</p>}
     <div className="event-form-grid"><div><label htmlFor="event-when">{t('events.start')}</label><input id="event-when" type="datetime-local" value={localTime} onChange={e => { const old = Date.parse(`${localTime}:00Z`), next = Date.parse(`${e.target.value}:00Z`); if (Number.isFinite(old) && Number.isFinite(next)) setLocalEndTime(new Date(Date.parse(`${localEndTime}:00Z`) + next - old).toISOString().slice(0,16)); setLocalTime(e.target.value); }} required /></div><div><label htmlFor="event-end">{t('events.end')}</label><input id="event-end" type="datetime-local" value={localEndTime} onChange={e => setLocalEndTime(e.target.value)} required /></div></div>
     <label htmlFor="event-zone">{t('events.zone')}</label><select id="event-zone" value={fields.timeZone} onChange={e => change({ timeZone: e.target.value })}>{zones.map(zone => <option key={zone}>{zone}</option>)}</select>
-    <LocationPicker single value={fields.locationId ? [fields.locationId] : []} onChange={ids => change({ locationId: ids[0] ?? '', meetingMapUrl: ids[0] === 'online' ? '' : fields.meetingMapUrl })} />
+    <LocationPicker single value={fields.locationId ? [fields.locationId] : []} onChange={ids => changeLocation(ids[0] ?? '')} />
+    {!initial && fields.locationId && locationAccess && !locationAccess.canCreate && <p className="field-error" role="alert">{t(locationAccess.hasRole ? 'events.createLimitReached' : 'events.createLocationDenied')}</p>}
     {fields.locationId && fields.locationId !== 'online' && <><label htmlFor="event-district">{t('events.district')}</label><input id="event-district" required maxLength={120} value={fields.district} onChange={e => change({ district: e.target.value })} /></>}
     <div className="event-form-grid"><div><label htmlFor="event-cost">{t('events.cost')}</label><input id="event-cost" required minLength={2} maxLength={120} value={fields.costEstimate} onChange={e => change({ costEstimate: e.target.value })} placeholder={t('events.costPlaceholder')} /></div><div><label htmlFor="event-experience">{t('events.experience')}</label><input id="event-experience" required minLength={2} maxLength={240} value={fields.experienceNotes} onChange={e => change({ experienceNotes: e.target.value })} placeholder={t('events.experiencePlaceholder')} /></div></div>
     <div className="event-form-grid"><div><label htmlFor="event-language">{t('events.language')}</label><select id="event-language" value={fields.languageCode} onChange={e => change({ languageCode: e.target.value })}>{languages.map(l => <option key={l.code} value={l.code}>{languageName(l.code)} · {l.native}</option>)}</select></div><div><label htmlFor="event-capacity">{t('events.capacity')}</label><input id="event-capacity" type="number" min={2} max={50} required value={fields.capacity} onChange={e => change({ capacity: Number(e.target.value) })} /><p className="field-hint">{t('events.capacityHint')}</p></div></div>
     <label htmlFor="event-meeting">{t(fields.locationId === 'online' ? 'events.privateLink' : 'events.privatePoint')}</label>{fields.locationId === 'online' ? <input id="event-meeting" type="url" maxLength={2000} value={fields.meetingDetails} onChange={e => change({ meetingDetails: e.target.value })} placeholder="https://…" /> : <textarea id="event-meeting" maxLength={2000} rows={2} value={fields.meetingDetails} onChange={e => change({ meetingDetails: e.target.value, meetingMapUrl: '' })} />}<p className="field-hint">{t(fields.locationId === 'online' ? 'events.privateLinkHint' : 'events.privatePointHint')}</p>
     {fields.locationId && fields.locationId !== 'online' && <><div className="event-map-actions">{config.googleMapsBrowserKey && <GooglePlacePicker keyValue={config.googleMapsBrowserKey} onPick={pickedPlace} />}<a className="text-button" href={googleMapsSearch(`${fields.meetingDetails || ''} ${initial?.location.name ?? ''}`.trim() || 'meeting point')} target="_blank" rel="noreferrer">{t('events.findGoogleMaps')}</a></div><label htmlFor="event-map-url">{t('events.mapLink')}</label><input id="event-map-url" type="url" value={fields.meetingMapUrl} onChange={e => change({ meetingMapUrl: e.target.value })} placeholder="https://maps.app.goo.gl/…" /><p className="field-hint">{t('events.mapLinkHint')}</p></>}
-    </fieldset><p className="field-hint">{t(config.aiMode === 'openrouter' ? 'events.moderationLive' : 'events.moderation')}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button" disabled={busy}>{t(busy ? 'common.saving' : initial ? 'events.save' : 'events.publish')}</button></div></form>
+    </fieldset><p className="field-hint">{t(config.aiMode === 'openrouter' ? 'events.moderationLive' : 'events.moderation')}</p><EventError error={error} /><div className="modal-actions"><button className="pixel-button" disabled={busy || !initial && !!fields.locationId && !locationAccess?.canCreate}>{t(busy ? 'common.saving' : initial ? 'events.save' : 'events.publish')}</button></div></form>
     {discard && <Modal title={t('events.discard')} onClose={() => setDiscard(false)}><p>{t('events.discardHint')}</p><div className="modal-actions"><button className="pixel-button small" onClick={onClose}>{t('events.confirm')}</button></div></Modal>}
   </Modal>;
 }

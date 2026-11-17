@@ -480,6 +480,7 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .admin-user-footer span { font-size: 11px; color: var(--muted); }
 .adventure-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .adventure-heading h1 { font-size: 30px; }
+.event-create-budget { margin: -16px 0 20px; color: var(--muted); font-size: 12px; }
 .event-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
 .event-tabs { display: flex; gap: 25px; margin-bottom: 24px; }
 .adventures .discovery-settings { margin: 0 0 25px; }

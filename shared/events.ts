@@ -55,6 +55,11 @@ export interface AdventureDetail extends Adventure {
   botUrl: string;
 }
 export interface AdventureList { events: Adventure[]; nextOffset: number | null }
+export interface EventCreationAccess {
+  hasRole: boolean;
+  canCreate: boolean;
+  budget: { maxUses: number; used: number; windowDays: number } | null;
+}
 export interface EventProfile { profile: Profile; connection: CharacterConnection }
 
 export function wallTime(instant: string, timeZone: string): string {

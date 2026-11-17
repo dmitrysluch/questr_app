@@ -20,6 +20,7 @@ import { ContentWarning } from './components/ContentReview.tsx';
 import { PixelEmoji } from './components/PixelEmoji.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview } from '../shared/content-policy.ts';
+import type { DiscoveryPreferences } from '../shared/discovery.ts';
 
 const BioEditor = lazy(() => import('./components/BioEditor.tsx'));
 declare global {
@@ -44,6 +45,8 @@ export function App() {
   const [checkingBio, setCheckingBio] = useState(false);
   const [bioReview, setBioReview] = useState<BioReview | null>(null);
   const [discoveryDirty, setDiscoveryDirty] = useState(false);
+  const [discoveryPending, setDiscoveryPending] = useState<DiscoveryPreferences | null>(null);
+  const [exitTarget, setExitTarget] = useState<'character' | 'adventures' | 'invites' | null>(null);
   const [telegramNeeded, setTelegramNeeded] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
@@ -117,6 +120,22 @@ export function App() {
       setState(old => old ? { ...old, user: { ...old.user, locale: next } } : old);
     });
   }
+  function navigate(target: 'character' | 'adventures' | 'invites') {
+    if (busy) return;
+    if (state?.user.status === 'active' && !showProfile && discoveryDirty) { setExitTarget(target); return; }
+    void finishExit(target, false);
+  }
+  async function finishExit(target: 'character' | 'adventures' | 'invites', saveFilters: boolean) {
+    await run(async () => {
+      await flush();
+      if (saveFilters && discoveryPending) {
+        const result = await api<{ discovery: DiscoveryPreferences }>('/discovery', { method: 'PUT', body: discoveryPending });
+        setState(old => old ? { ...old, discovery: result.discovery } : old);
+      }
+      setExitTarget(null); setDiscoveryDirty(false); setDiscoveryPending(null); setShowProfile(true);
+      location.hash = target;
+    });
+  }
   async function go(step: Draft['currentStep']) {
     if (!draft || busy) return;
     if (step !== 'avatar' && !draft.avatarId) { setError(new ApiError('AVATAR_REQUIRED')); return; }
@@ -169,11 +188,11 @@ export function App() {
   const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character') && !invitesOpen;
 
   return <div className="app-shell">
-    <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR"><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>
+    <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR" onClick={event => { if (state?.user.status === 'active') { event.preventDefault(); navigate('adventures'); } }}><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>
       <div className="header-right">{config?.authMode === 'demo' && <span className="preview-badge">{t('app.demo')}</span>}<select className="locale-switch" aria-label={t('ui.language')} value={locale} disabled={!state || busy} onChange={event => void changeLocale(event.target.value as Locale)}><option value="en">EN</option><option value="ru">RU</option></select><button className="text-button" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
     </header>
     <div className="workspace">
-      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !invitesOpen ? 'active' : ''} aria-current={!adventuresOpen && !invitesOpen ? 'page' : undefined} onClick={() => { location.hash = 'character'; }}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'adventures'; }); }}>{t('nav.adventures')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => { void run(async () => { await flush(); location.hash = 'invites'; }); }}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}</nav>}
+      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !invitesOpen ? 'active' : ''} aria-current={!adventuresOpen && !invitesOpen ? 'page' : undefined} onClick={() => navigate('character')}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => navigate('adventures')}>{t('nav.adventures')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => navigate('invites')}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}</nav>}
       {draft && !showProfile && !adventuresOpen && !invitesOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
         {steps.map((step, index) => <button key={step.id} className={`step ${currentStep === step.id ? 'active' : ''} ${index < stepIndex ? 'done' : ''}`}
           disabled={busy || (step.id !== 'avatar' && !draft.avatarId)} aria-current={currentStep === step.id ? 'step' : undefined} onClick={() => void go(step.id)}>
@@ -239,7 +258,7 @@ export function App() {
           <PageHeading title="steps.discovery" />
           <div className="bio-settings-panel">
             <div className="profile-languages"><LanguagePicker label={t('languages.spoken')} value={draft.spokenLanguages} onChange={spokenLanguages => edit({ spokenLanguages })} /></div>
-            <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} inline required={!state.profile} onDirtyChange={setDiscoveryDirty} onSaved={discovery => { setDiscoveryDirty(false); setState(old => old ? { ...old, discovery } : old); }} />
+            <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} inline required={!state.profile} onDirtyChange={setDiscoveryDirty} onValueChange={setDiscoveryPending} onSaved={discovery => { setDiscoveryDirty(false); setDiscoveryPending(null); setState(old => old ? { ...old, discovery } : old); }} />
           </div>
           <div className="page-actions"><button className="text-button" onClick={() => void go('bio')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right">{currentStep === 'discovery' && <SaveStatus state={saveState} />}<button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t(checkingBio ? 'content.checking' : 'bio.preview')}<ArrowRight size={17} /></button></div></div>
         </section>
@@ -254,6 +273,7 @@ export function App() {
       </main>
     </div>
 
+    {exitTarget && <Modal title={t('discovery.leaveTitle')} onClose={() => { if (!busy) setExitTarget(null); }}><p>{t('discovery.leaveHint')}</p>{!!error && <p className="field-error" role="alert">{errorText(error)}</p>}<div className="modal-actions"><button className="text-button" disabled={busy} onClick={() => setExitTarget(null)}>{t('common.cancel')}</button><button className="outline-button small" disabled={busy} onClick={() => void finishExit(exitTarget, false)}>{t('discovery.discardAndLeave')}</button><button className="pixel-button small" disabled={busy} onClick={() => void finishExit(exitTarget, true)}>{t('discovery.saveAndLeave')}</button></div></Modal>}
     {editingName && <Modal title={t('avatar.changeName')} onClose={() => setEditingName(false)}><form onSubmit={event => { event.preventDefault(); if (nextName.trim().length >= 2) { edit({ displayName: nextName.trim() }); setEditingName(false); } }}><label htmlFor="display-name">{t('welcome.name')}</label><input id="display-name" value={nextName} onChange={e => setNextName(e.target.value)} minLength={2} maxLength={40} required autoFocus /><div className="modal-actions"><button className="pixel-button small" type="submit">{t('avatar.saveName')}<Check size={15} /></button></div></form></Modal>}
     {termsOpen && <Modal title={t('terms.title')} onClose={() => setTermsOpen(false)}><div className="terms-body"><p>{t('terms.intro')}</p><ul><li>{t('terms.respect')}</li><li>{t('terms.identity')}</li><li>{t('terms.profile')}</li></ul><p>{t('terms.poc')}</p></div><div className="modal-actions"><button className="pixel-button small" onClick={() => setTermsOpen(false)}>{t('common.close')}</button></div></Modal>}
   </div>;

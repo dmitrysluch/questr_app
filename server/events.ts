@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
-import { createEventSchema, editEventSchema, applicationSchema, connectionRequestSchema, eventFieldsSchema, hasPublicLink, type Adventure, type AdventureDetail, type EventFields, type CharacterConnection } from '../shared/events.ts';
+import { createEventSchema, editEventSchema, applicationSchema, connectionRequestSchema, eventFieldsSchema, hasPublicLink, type Adventure, type AdventureDetail, type EventFields, type CharacterConnection, type EventCreationAccess } from '../shared/events.ts';
 import { AppError } from './errors.ts';
 import { hash } from './auth.ts';
 import { transaction } from './db.ts';
@@ -91,6 +91,21 @@ async function grantEventRole(db: PoolClient, eventId: string, userId: string, r
 }
 export class Adventures {
   constructor(public pool: Pool, private reviewer: ContentReviewer) {}
+  async creationAccess(userId: string, locationId?: string): Promise<EventCreationAccess> {
+    await activeUser(this.pool, userId);
+    const hasRole = locationId
+      ? await can(this.pool, userId, 'events.create', { type: 'location', id: locationId })
+      : !!(await this.pool.query(`SELECT 1 FROM role_assignments a JOIN role_capabilities c ON c.role_code=a.role_code
+          WHERE a.user_id=$1 AND c.capability='events.create' AND NOT c.own_profile_only
+            AND a.event_id IS NULL AND a.profile_id IS NULL
+            AND a.revoked_at IS NULL AND a.valid_from<=now() AND (a.valid_until IS NULL OR a.valid_until>now()) LIMIT 1`, [userId])).rowCount;
+    const row = (await this.pool.query(`SELECT b.max_uses,b.window_seconds,
+      (SELECT count(*)::int FROM capability_usage u WHERE u.user_id=b.user_id AND u.capability=b.capability
+        AND u.used_at>now()-make_interval(secs=>b.window_seconds)) AS used
+      FROM capability_budgets b WHERE b.user_id=$1 AND b.capability='events.create'`, [userId])).rows[0];
+    const budget = row ? { maxUses: row.max_uses as number, used: row.used as number, windowDays: row.window_seconds / 86400 as number } : null;
+    return { hasRole, canCreate: hasRole && !!budget && budget.used < budget.maxUses, budget };
+  }
   async review(text: string) {
     const review = await reviewContent(this.pool, this.reviewer, text);
     if (review.status === 'blocked') throw new AppError(422, 'EVENT_CONTENT_REQUIRES_CHANGES', { excerpts: review.spans.map(span => text.slice(span.start, span.end)) });

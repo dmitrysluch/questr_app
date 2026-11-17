@@ -3,9 +3,9 @@ import { Search, X } from 'lucide-react';
 import { t } from '../i18n.ts';
 
 export interface Choice { id: string; label: string; detail?: string }
-export function SelectionPicker({ label, placeholder, value, items, selected, query, onQuery, onChange, loading = false, limit = 50 }: {
+export function SelectionPicker({ label, placeholder, value, items, selected, query, onQuery, onChange, loading = false, limit = 50, replaceOnSelect = false }: {
   label: string; placeholder: string; value: string[]; items: Choice[]; selected: Choice[];
-  query: string; onQuery: (query: string) => void; onChange: (value: string[]) => void; loading?: boolean; limit?: number;
+  query: string; onQuery: (query: string) => void; onChange: (value: string[]) => void; loading?: boolean; limit?: number; replaceOnSelect?: boolean;
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -17,8 +17,8 @@ export function SelectionPicker({ label, placeholder, value, items, selected, qu
     if (open) document.getElementById(`${id}-option-${index}`)?.scrollIntoView({ block: 'nearest' });
   }, [index, open, id]);
   function choose(item: Choice) {
-    if (loading || value.length >= limit) return;
-    onChange([...value, item.id]); onQuery(''); setActive(0); setOpen(false); input.current?.focus();
+    if (loading || (!replaceOnSelect && value.length >= limit)) return;
+    onChange(replaceOnSelect ? [item.id] : [...value, item.id]); onQuery(''); setActive(0); setOpen(false); input.current?.focus();
   }
   return <div className="selection-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false); }}>
     <label htmlFor={id}>{label}</label>
@@ -40,7 +40,7 @@ export function SelectionPicker({ label, placeholder, value, items, selected, qu
       {query && <button type="button" className="selection-clear" aria-label={t('tags.clear')} onClick={() => { onQuery(''); input.current?.focus(); }}><X size={15} /></button>}
     </div>
     {open && <div className="selection-results" id={`${id}-results`} role="listbox" aria-label={label} aria-busy={loading}>
-      {loading ? <p role="status">{t('common.loading')}</p> : value.length >= limit ? <p>{t('selection.limit', { count: limit })}</p> : !available.length ? <p>{t('selection.empty')}</p> : available.map((item, position) => <div
+      {loading ? <p role="status">{t('common.loading')}</p> : !replaceOnSelect && value.length >= limit ? <p>{t('selection.limit', { count: limit })}</p> : !available.length ? <p>{t('selection.empty')}</p> : available.map((item, position) => <div
         key={item.id} id={`${id}-option-${position}`} role="option" aria-selected={index === position} className={index === position ? 'active' : ''}
         onMouseDown={event => event.preventDefault()} onMouseEnter={() => setActive(position)} onClick={() => choose(item)}>
         <span>{item.label}</span>{item.detail && <small dir="auto">{item.detail}</small>}

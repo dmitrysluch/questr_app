@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Adventures } from './events.ts';
 import { eventCalendar } from './event-calendar.ts';
 import { preferredLocale } from '../shared/locale.ts';
+import { locationIdSchema } from '../shared/discovery.ts';
 
 export function eventRoutes(events: Adventures) {
   const router = Router();
@@ -10,6 +11,10 @@ export function eventRoutes(events: Adventures) {
   router.get('/', async (req, res) => {
     const query = z.object({ view: z.enum(['discover', 'mine']).default('discover'), offset: z.coerce.number().int().min(0).max(100000).default(0) }).strict().parse(req.query);
     res.json(await events.list(res.locals.user.id, query.view, query.offset));
+  });
+  router.get('/create-access', async (req, res) => {
+    const query = z.object({ locationId: locationIdSchema.optional() }).strict().parse(req.query);
+    res.json(await events.creationAccess(res.locals.user.id, query.locationId));
   });
   router.post('/', async (req, res) => res.status(201).json({ event: await events.create(res.locals.user.id, req.body) }));
   router.get('/:id', async (req, res) => res.json({ event: await events.detail(res.locals.user.id, id(req.params.id)) }));
