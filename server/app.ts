@@ -21,6 +21,7 @@ import { Adventures } from './events.ts';
 import { eventRoutes } from './event-routes.ts';
 import { inviteRoutes } from './invite-routes.ts';
 import { romanceConsentVersion, romanceInputSchema } from '../shared/romance.ts';
+import { placeRoutes } from './place-routes.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
@@ -208,6 +209,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   });
   app.use('/api/events', (req, res, next) => { if (req.method !== 'GET') throttle(`events:${currentUser(res).id}`, 20); next(); });
   app.use('/api/events', eventRoutes(new Adventures(pool, reviewer)));
+  app.use('/api/places', placeRoutes(pool));
   app.use('/api/invites', (req, res, next) => { if (req.method !== 'GET') throttle(`invites:${currentUser(res).id}`, 30); next(); });
   app.use('/api/invites', inviteRoutes(pool));
   app.put('/api/draft', async (req, res) => {

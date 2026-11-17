@@ -21,7 +21,7 @@ function locationChoice(location: Location): Choice {
   return { id: location.id, label: location.kind === 'country' ? t('locations.allCountry', { name: locationName(location.id, location.name) }) : locationName(location.id, location.name),
     detail: location.kind === 'city' ? locationName(location.parentId ?? '', location.countryName ?? '') : location.kind === 'online' ? t('locations.global') : t('locations.country') };
 }
-export function LocationPicker({ value, onChange, single = false }: { value: string[]; onChange: (ids: string[]) => void; single?: boolean }) {
+export function LocationPicker({ value, onChange, single = false, citiesOnly = false }: { value: string[]; onChange: (ids: string[]) => void; single?: boolean; citiesOnly?: boolean }) {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<Location[]>([]);
   const [cache, setCache] = useState<Record<string, Location>>({});
@@ -52,7 +52,7 @@ export function LocationPicker({ value, onChange, single = false }: { value: str
     return () => { active = false; clearTimeout(timer); };
   }, [query, retry]);
   return <><SelectionPicker label={t('locations.label')} placeholder={t('locations.search')} value={value} onChange={onChange}
-    query={query} onQuery={setQuery} loading={loading} limit={single ? 1 : 50} replaceOnSelect={single} items={items.filter(item => !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
+    query={query} onQuery={setQuery} loading={loading} limit={single ? 1 : 50} replaceOnSelect={single} items={items.filter(item => citiesOnly ? item.kind === 'city' : !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} />
     {!!error && <p className="field-error" role="alert">{errorText(error)} <button type="button" className="text-button" onClick={() => setRetry(old => old + 1)}>{t('common.retry')}</button></p>}</>;
 }
 export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, inline = false, onDirtyChange, onValueChange }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; inline?: boolean; onDirtyChange?: (dirty: boolean) => void; onValueChange?: (value: DiscoveryPreferences) => void }) {

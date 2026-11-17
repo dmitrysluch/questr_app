@@ -18,7 +18,9 @@ function fold(line: string) {
 const utc = (value: string) => new Date(value).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
 export function eventCalendar(event: AdventureDetail, locale: Locale = 'en'): string {
   const russian = locale === 'ru';
-  const location = event.meetingDetails && event.location.kind === 'city' ? event.meetingDetails : event.location.kind === 'online' && russian ? 'Онлайн' : event.location.name;
+  const location = event.meetingDetails && event.location.kind === 'city' ? event.meetingDetails
+    : event.place ? `${event.place.name}, ${event.place.address}`
+    : event.location.kind === 'online' && russian ? 'Онлайн' : event.location.name;
   const description = event.descriptionMarkdown
     + (event.meetingDetails && event.location.kind === 'online' ? `\n\n${russian ? 'Ссылка на звонок' : 'Call link'}: ${event.meetingDetails}` : '')
     + (event.meetingMapUrl ? `\n\n${russian ? 'Точка на карте' : 'Map pin'}: ${event.meetingMapUrl}` : '');

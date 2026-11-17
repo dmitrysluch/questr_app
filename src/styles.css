@@ -464,6 +464,16 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .invite-actions { display: flex; align-items: center; gap: 12px; }
 .invite-revoke { justify-self: start; }
 .admin-inviters { margin-top: 36px; }
+.admin-places { margin-top: 36px; }
+.admin-place-form { display: grid; gap: 8px; padding: 18px; max-width: 680px; }
+.admin-place-form .selection-picker { margin-bottom: 8px; }
+.admin-place-form label:not(.checkbox-label) { font-size: 11px; }
+.admin-place-form .checkbox-label { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.admin-place-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.admin-place-search { display: block; width: 100%; max-width: 680px; margin-top: 20px; }
+.admin-place-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.admin-place-list li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.admin-place-list button { text-align: left; }
 .admin-search { display: flex; gap: 8px; max-width: 520px; margin-bottom: 18px; }
 .admin-search input { flex: 1; }
 .admin-user-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }

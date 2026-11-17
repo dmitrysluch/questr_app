@@ -24,16 +24,20 @@ function normalizeFields<T extends EventFields>(fields: T): T {
   };
 }
 const eventProjection = `SELECT e.*,l.name AS location_name,l.kind AS location_kind,l.parent_id,p.name AS country_name,
+  v.name AS place_name,v.address AS place_address,v.city_location_id AS place_city_id,v.active AS place_active,v.revision AS place_revision,
   h.display_name AS host_name,h.avatar_preset_id AS host_avatar,h.avatar_appearance AS host_appearance,
   (SELECT count(*)::int FROM event_memberships m WHERE m.event_id=e.id AND m.status='accepted') AS participant_count,
   (SELECT status FROM event_memberships WHERE event_id=e.id AND user_id=$1) AS my_status
   FROM events e JOIN locations l ON l.id=e.location_id LEFT JOIN locations p ON p.id=l.parent_id
+  LEFT JOIN places v ON v.id=e.place_id
   JOIN profiles h ON h.user_id=e.created_by JOIN users host_user ON host_user.id=h.user_id`;
 function mapEvent(row: any, userId: string): Adventure {
   return { id: row.id, title: row.title, activitySummary: row.activity_summary || row.description_markdown.slice(0, 240), descriptionMarkdown: row.description_markdown,
     district: row.district, costEstimate: row.cost_estimate, experienceNotes: row.experience_notes,
     onlinePlatform: row.online_platform, recruitmentOpen: row.recruitment_open,
     location: { id: row.location_id, name: row.location_name, kind: row.location_kind, parentId: row.parent_id, countryName: row.country_name },
+    place: row.place_id && row.place_name ? { id: row.place_id, cityLocationId: row.place_city_id, cityName: row.location_name,
+      name: row.place_name, address: row.place_address, active: row.place_active, revision: row.place_revision } : null,
     languageCode: row.language_code, startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), timeZone: row.time_zone,
     capacity: row.capacity, participantCount: row.participant_count, revision: row.revision, status: row.status,
     host: { id: row.created_by, displayName: row.host_name, avatarId: row.host_avatar, avatarAppearance: row.host_appearance }, myStatus: row.my_status ?? null, isHost: row.created_by === userId };
@@ -57,7 +61,7 @@ async function lockEvent(db: PoolClient, userId: string, eventId: string) {
 function recruiting(row: any) {
   if (row.status !== 'published' || row.starts_at.getTime() <= Date.now()) throw new AppError(409, 'EVENT_CLOSED');
 }
-async function validateFields(db: Db, userId: string, fields: EventFields, requireCreate = true) {
+async function validateFields(db: Db, userId: string, fields: EventFields, requireCreate = true, existingPlaceId: string | null = null) {
   if (Date.parse(fields.startsAt) <= Date.now()) throw new AppError(400, 'EVENT_TIME_PAST');
   if (Date.parse(fields.endsAt) <= Date.parse(fields.startsAt)) throw new AppError(400, 'EVENT_END_INVALID');
   const location = (await db.query("SELECT kind FROM locations WHERE id=$1 AND kind IN ('city','online')", [fields.locationId])).rows[0];
@@ -66,13 +70,18 @@ async function validateFields(db: Db, userId: string, fields: EventFields, requi
     throw new AppError(400, 'EVENT_PUBLIC_LINK');
   }
   if (location.kind === 'online') {
+    if (fields.placeId) throw new AppError(400, 'PLACE_LOCATION_MISMATCH');
     if (fields.meetingMapUrl) throw new AppError(400, 'EVENT_MAP_INVALID');
     if (fields.meetingDetails) {
       try { const url = new URL(fields.meetingDetails); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }
       catch { throw new AppError(400, 'EVENT_LINK_INVALID'); }
     }
   }
-  if (location.kind === 'city' && !fields.district) throw new AppError(400, 'EVENT_DISTRICT_REQUIRED');
+  if (fields.placeId) {
+    const place = (await db.query('SELECT city_location_id,active FROM places WHERE id=$1', [fields.placeId])).rows[0];
+    if (!place || place.city_location_id !== fields.locationId || (!place.active && fields.placeId !== existingPlaceId)) throw new AppError(400, 'PLACE_LOCATION_MISMATCH');
+  }
+  if (location.kind === 'city' && !fields.district && !fields.placeId) throw new AppError(400, 'EVENT_DISTRICT_REQUIRED');
   if (fields.meetingMapUrl) {
     try {
       const url = new URL(fields.meetingMapUrl);
@@ -196,8 +205,8 @@ export class Adventures {
         return old.id;
       }
       await validateFields(db, userId, fields);
-      const row = (await db.query(`INSERT INTO events(created_by,title,activity_summary,description_markdown,district,cost_estimate,experience_notes,online_platform,location_id,language_code,starts_at,ends_at,time_zone,capacity,status,request_id,request_hash)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'published',$15,$16) RETURNING id`, [userId, fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.district, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, input.requestId, fingerprint])).rows[0];
+      const row = (await db.query(`INSERT INTO events(created_by,title,activity_summary,description_markdown,district,cost_estimate,experience_notes,online_platform,location_id,language_code,starts_at,ends_at,time_zone,capacity,place_id,status,request_id,request_hash)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'published',$16,$17) RETURNING id`, [userId, fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.district, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, fields.placeId, input.requestId, fingerprint])).rows[0];
       await db.query('INSERT INTO event_private_details(event_id,meeting_details,meeting_map_url) VALUES($1,$2,$3)', [row.id, fields.meetingDetails, fields.meetingMapUrl]);
       await db.query("INSERT INTO event_memberships(event_id,user_id,role,status) VALUES($1,$2,'host','accepted')", [row.id, userId]);
       await grantEventRole(db, row.id, userId, 'organizer', userId);
@@ -209,18 +218,20 @@ export class Adventures {
   }
   async edit(userId: string, eventId: string, body: unknown) {
     const input = normalizeFields(editEventSchema.parse(body));
+    const placeProvided = !!body && typeof body === 'object' && Object.hasOwn(body, 'placeId');
     await requireCapability(this.pool, userId, 'events.edit', { type: 'event', id: eventId });
     await this.review([input.title, input.activitySummary, input.descriptionMarkdown, input.district, input.costEstimate, input.experienceNotes, input.onlinePlatform].join('\n\n'));
     await transaction(this.pool, async db => {
       const row = await lockEvent(db, userId, eventId);
+      if (!placeProvided) input.placeId = row.place_id;
       await requireCapability(db, userId, 'events.edit', { type: 'event', id: eventId });
       recruiting(row);
       if (row.revision !== input.revision) throw new AppError(409, 'EVENT_CONFLICT');
-      await validateFields(db, userId, input, row.location_id !== input.locationId);
+      await validateFields(db, userId, input, row.location_id !== input.locationId, row.place_id);
       const count = (await db.query("SELECT count(*)::int AS count FROM event_memberships WHERE event_id=$1 AND status='accepted'", [eventId])).rows[0].count;
       if (count > input.capacity) throw new AppError(409, 'EVENT_CAPACITY_TOO_SMALL');
-      await db.query(`UPDATE events SET title=$2,activity_summary=$3,description_markdown=$4,district=$5,cost_estimate=$6,experience_notes=$7,online_platform=$8,location_id=$9,language_code=$10,starts_at=$11,ends_at=$12,time_zone=$13,capacity=$14,revision=revision+1,updated_at=now() WHERE id=$1`,
-        [eventId, input.title, input.activitySummary, input.descriptionMarkdown, input.district, input.costEstimate, input.experienceNotes, input.onlinePlatform, input.locationId, input.languageCode, input.startsAt, input.endsAt, input.timeZone, input.capacity]);
+      await db.query(`UPDATE events SET title=$2,activity_summary=$3,description_markdown=$4,district=$5,cost_estimate=$6,experience_notes=$7,online_platform=$8,location_id=$9,language_code=$10,starts_at=$11,ends_at=$12,time_zone=$13,capacity=$14,place_id=$15,revision=revision+1,updated_at=now() WHERE id=$1`,
+        [eventId, input.title, input.activitySummary, input.descriptionMarkdown, input.district, input.costEstimate, input.experienceNotes, input.onlinePlatform, input.locationId, input.languageCode, input.startsAt, input.endsAt, input.timeZone, input.capacity, input.placeId]);
       await db.query('INSERT INTO event_private_details(event_id,meeting_details,meeting_map_url) VALUES($1,$2,$3) ON CONFLICT(event_id) DO UPDATE SET meeting_details=EXCLUDED.meeting_details,meeting_map_url=EXCLUDED.meeting_map_url', [eventId, input.meetingDetails, input.meetingMapUrl]);
       if (row.starts_at.getTime() !== Date.parse(input.startsAt)) {
         await db.query("DELETE FROM bot_outbox WHERE event_id=$1 AND kind='reminder' AND state='pending'", [eventId]);

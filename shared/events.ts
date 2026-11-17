@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { languageCodeSchema, locationIdSchema, type Location } from './discovery.ts';
 import type { Profile, ProfileTag } from './schema.ts';
 import type { AvatarAppearance } from './avatar.ts';
+import type { Place } from './places.ts';
 
 export const timeZoneSchema = z.string().max(100).refine(zone => {
   try { new Intl.DateTimeFormat('en', { timeZone: zone }); return true; } catch { return false; }
@@ -15,6 +16,7 @@ export const eventFieldsSchema = z.object({
   experienceNotes: z.string().trim().min(2).max(240),
   onlinePlatform: z.string().trim().max(120).default(''),
   locationId: locationIdSchema,
+  placeId: z.uuid().nullable().default(null),
   languageCode: languageCodeSchema,
   startsAt: z.iso.datetime({ offset: true }),
   endsAt: z.iso.datetime({ offset: true }),
@@ -43,6 +45,7 @@ export interface EventPerson {
 export interface Adventure {
   id: string; title: string; activitySummary: string; descriptionMarkdown: string; district: string; costEstimate: string;
   experienceNotes: string; onlinePlatform: string; recruitmentOpen: boolean; location: Location; languageCode: string;
+  place: Place | null;
   startsAt: string; endsAt: string; timeZone: string; capacity: number; participantCount: number; revision: number;
   status: 'draft' | 'published' | 'cancelled' | 'completed';
   host: Pick<EventPerson, 'id' | 'displayName' | 'avatarId' | 'avatarAppearance'>;

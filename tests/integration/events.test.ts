@@ -33,6 +33,34 @@ const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (a
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
 
+integration('manual public places are admin-owned and never reveal private meeting instructions', async () => {
+  const curator = await person('Curator'), host = await person('Host'), guest = await person('Guest');
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Place catalog test')", [curator.id]);
+  const input = { cityLocationId: 'city:294801', name: 'Record Room Cafe', address: '12 Music Street', active: true };
+  await host.agent.post('/api/places/admin').send(input).expect(403);
+  await host.agent.get('/api/places/admin').expect(403);
+  const place = (await curator.agent.post('/api/places/admin').send(input).expect(201)).body.place;
+  assert.equal(place.name, input.name);
+  assert.deepEqual((await guest.agent.get('/api/places?cityId=city:294801&q=record').expect(200)).body.places.map((item: any) => item.id), [place.id]);
+  assert.deepEqual((await guest.agent.get('/api/places?cityId=city:293397').expect(200)).body.places, []);
+  const event = await create(host, { placeId: place.id, district: '', meetingDetails: 'Private apartment, door 42' });
+  assert.equal(event.place.id, place.id);
+  assert.equal(event.place.address, input.address);
+  assert.match((await guest.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text, /Record Room Cafe/);
+  assert.equal((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.meetingDetails, null);
+  assert.ok(!JSON.stringify((await guest.agent.get('/api/events').expect(200)).body).includes('Private apartment'));
+  await host.agent.post('/api/events').send(fields({ placeId: place.id, locationId: 'city:293397' })).expect(400);
+  await curator.agent.put(`/api/places/admin/${place.id}`).send({ ...input, cityLocationId: 'city:293397', revision: place.revision }).expect(400);
+  const archived = (await curator.agent.put(`/api/places/admin/${place.id}`).send({ ...input, active: false, revision: place.revision }).expect(200)).body.place;
+  assert.equal(archived.active, false);
+  assert.deepEqual((await guest.agent.get('/api/places?cityId=city:294801').expect(200)).body.places, []);
+  assert.equal((await guest.agent.get(`/api/events/${event.id}`).expect(200)).body.event.place.name, input.name);
+  const { requestId: _requestId, ...legacyEdit } = fields({ title: 'Coffee and records again' });
+  const updated = (await host.agent.put(`/api/events/${event.id}`).send({ ...legacyEdit, revision: event.revision }).expect(200)).body.event;
+  assert.equal(updated.place.id, place.id);
+  await host.agent.post('/api/events').send(fields({ placeId: place.id })).expect(400);
+});
+
 integration('application note is optional and the host notification omits empty text', async () => {
   const host = await person('Host'), guest = await person('Quiet guest');
   const event = await create(host);
