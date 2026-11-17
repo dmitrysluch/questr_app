@@ -512,8 +512,10 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .party-section, .applications { margin-top: 32px; }
 .party-grid { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; padding: 2px 4px 12px 2px; }
 .party-person { flex: 0 0 132px; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 8px 12px; border: 1px solid var(--line); background: var(--paper); text-align: center; }
-.party-matches { height: 24px; display: flex; justify-content: center; gap: 4px; }
-.party-match { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; background: #f3eee4; border: 1px solid #e4d8c6; }
+.party-matches { height: 32px; display: flex; justify-content: center; gap: 4px; }
+.party-match { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: #f3eee4; border: 1px solid #e4d8c6; cursor: pointer; }
+.party-match[aria-expanded='true'] { border-color: var(--accent); background: #e9ddd0; }
+.party-match-label { width: 100%; font-size: 10px; line-height: 1.3; color: var(--sage); overflow-wrap: anywhere; }
 .party-match .pixel-emoji { width: 18px; height: 18px; flex-basis: 18px; }
 .party-match:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .party-person .person-button { width: 100%; flex-direction: column; gap: 7px; text-align: center; justify-content: flex-start; }
@@ -541,6 +543,9 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .event-form select:focus { outline: 2px solid #b7845b; outline-offset: 2px; }
 .event-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .event-form-grid > div { min-width: 0; }
+.event-options { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 15px; }
+.event-options summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+.event-options summary small { display: block; margin: 4px 0 0 20px; font-size: 11px; font-weight: 400; color: var(--muted); }
 .event-form .selection-picker { margin-top: 18px; }
 .flagged-excerpt { background: #edd9d5; color: #955b52; margin: 12px 0; padding: 10px 14px; overflow-wrap: anywhere; }
 @media (max-width: 600px) {

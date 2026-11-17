@@ -33,6 +33,20 @@ const create = async (who: Awaited<ReturnType<typeof person>>, extra = {}) => (a
 const apply = async (who: Awaited<ReturnType<typeof person>>, id: string) => who.agent.post(`/api/events/${id}/applications`).send({ message: 'I would love to bring my new jazz record.' }).expect(200);
 const decide = (who: Awaited<ReturnType<typeof person>>, id: string, target: string, action: string) => who.agent.post(`/api/events/${id}/members/${target}`).send({ action });
 
+integration('application note is optional and the host notification omits empty text', async () => {
+  const host = await person('Host'), guest = await person('Quiet guest');
+  const event = await create(host);
+  const applied = (await guest.agent.post(`/api/events/${event.id}/applications`).send({}).expect(200)).body.event;
+  assert.equal(applied.myStatus, 'pending');
+  const applicant = (await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event.applications[0];
+  assert.equal(applicant.id, guest.id);
+  assert.equal(applicant.applicationText, '');
+  const notification = (await pool.query("SELECT body FROM bot_outbox WHERE event_id=$1 AND kind='application' AND application_user_id=$2", [event.id, guest.id])).rows[0];
+  assert.equal(notification.body, `New application for ${event.title} from Quiet guest.`);
+  await guest.agent.post(`/api/events/${event.id}/applications`).send({ message: 'x' }).expect(400);
+  assert.equal((await host.agent.get(`/api/events/${event.id}`).expect(200)).body.event.applications.length, 1);
+});
+
 integration('party view shows shared tags, mutual romance and conversation topics only to the accepted party', async () => {
   const custom = (label: string): ProfileTag => ({ kind: 'custom', label, emoji: '💿', locale: 'en' });
   const hostLook = { ...appearanceForPreset('moss'), hairColor: 'blue' as const, headwear: 'headphones' as const };

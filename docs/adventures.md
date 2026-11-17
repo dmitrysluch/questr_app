@@ -15,17 +15,20 @@ An empty language selection includes every language in the chosen locations.
 My adventures includes hosted adventures, applications and accessible history,
 regardless of discovery filters. To try an application, open a separate browser
 profile/incognito session, save a second character and open the same adventure URL.
-The application form is in the Mini App in both demo and Telegram modes. The
-applicant does not need to start the bot to submit. The host can open the
-applicant's character directly from the notification, then accept in the
-Mini App or from the Telegram buttons; the applicant can then see
-the meeting details. Refresh
-reloads immediately; visible pages also refresh every 20 seconds and on focus.
+Apply sends an application directly from the Mini App in both demo and Telegram
+modes. A note can be added first, but is optional. The applicant does not need to
+start the bot to submit. The host can open the applicant's character directly
+from the notification, then accept in the Mini App or from the Telegram buttons;
+the applicant can then see the meeting details. Refresh reloads immediately;
+visible pages also refresh every 20 seconds and on focus.
 
 An adventure has a Markdown description, one city or Online, one language, start
 and end instants and an IANA time zone, and party size (2–50, **including the host**).
 The card summary is generated from the public description, so hosts write only
-one required description. Private meeting details can be added later. Offline hosts can choose a place with Google Places
+one required description. Cost defaults to Free and experience to Beginners
+welcome; hosts can change either under Meeting details & more, together with
+the time zone and private meeting point. Private meeting details can be added
+later. Offline hosts can choose a place with Google Places
 when `GOOGLE_MAPS_BROWSER_KEY` is configured, or enter a venue and Maps link
 manually. The picker stores a Place ID in the Maps link; hosts write their own
 meeting instructions because Places names and addresses cannot be persisted as
@@ -64,8 +67,8 @@ start time resets unsent reminders; cancellation clears queued reminders.
 - Organizers can close or reopen applications without cancelling the event.
   Pending applications can still be decided after closure; new ones cannot be sent.
 - Applications are pending until the host accepts or declines. A pending request
-  reserves no seat. There is one application per person/event; declined, removed
-  or withdrawn applicants cannot repeatedly contact the host through that event.
+  reserves no seat. There is one active application per person/event; withdrawn
+  applicants may apply again, but declined or removed applicants cannot.
   A separate provisional first-contact limit allows 10 applications per day.
 - Event-row locks serialize acceptance, editing, leaving and cancellation. Two
   accepts for the last seat cannot both succeed. Editing requires a revision and
@@ -115,9 +118,9 @@ it does not relax the existing explicit-sexual-content policy.
    `message` and `callback_query` updates. The bot worker starts only in Telegram mode with a configured
    webhook secret. The existing invitation and signed Mini App login still apply.
 4. As two real test users, start the host's bot and finish registration. Apply from
-   the adventure page in the Mini App: write the first message in the form and
-   submit it there. The applicant does not need to start the bot. The typed first
-   contact is reviewed before delivery. The host notification contains the
+   the adventure page in the Mini App with one tap, or add an optional note first.
+   The applicant does not need to start the bot. Any typed note is reviewed before
+   delivery. The host notification contains the
    application, Accept/Decline buttons and a character button that opens the
    applicant's profile inside the Mini App. Every decision rechecks live permissions,
    event capacity and application status.

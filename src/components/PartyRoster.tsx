@@ -10,6 +10,7 @@ export function PartyRoster({ people, busy, canManage, onProfile, onRemove }: {
   onProfile: (id: string) => void; onRemove: (id: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<{ personId: string; key: string; label: string } | null>(null);
   const selected = people.find(person => person.id === selectedId && !person.unavailable && person.askMeTopics.length > 0);
   return <section className="party-section">
     <h2>{t('events.party')}</h2>
@@ -19,10 +20,12 @@ export function PartyRoster({ people, busy, canManage, onProfile, onRemove }: {
           {person.matchingTags.slice(0, person.romanceMatch ? 2 : 3).map(tag => {
             const { label, emoji } = tagDisplay(tag);
             const tooltip = t('events.sharedTag', { name: label });
-            return <span key={tag.kind === 'catalog' ? tag.code : tag.label} className="party-match" role="img" aria-label={tooltip} title={tooltip} tabIndex={0}><PixelEmoji emoji={emoji} /></span>;
+            const key = tag.kind === 'catalog' ? tag.code : tag.label;
+            return <button type="button" key={key} className="party-match" aria-label={tooltip} aria-expanded={selectedMatch?.personId === person.id && selectedMatch.key === key} title={tooltip} onClick={() => setSelectedMatch(selectedMatch?.personId === person.id && selectedMatch.key === key ? null : { personId: person.id, key, label: tooltip })}><PixelEmoji emoji={emoji} /></button>;
           })}
-          {person.romanceMatch && <span className="party-match" role="img" aria-label={t('events.romanceMatch')} title={t('events.romanceMatch')} tabIndex={0}><PixelEmoji emoji="💗" /></span>}
+          {person.romanceMatch && <button type="button" className="party-match" aria-label={t('events.romanceMatch')} aria-expanded={selectedMatch?.personId === person.id && selectedMatch.key === 'romance'} title={t('events.romanceMatch')} onClick={() => setSelectedMatch(selectedMatch?.personId === person.id && selectedMatch.key === 'romance' ? null : { personId: person.id, key: 'romance', label: t('events.romanceMatch') })}><PixelEmoji emoji="💗" /></button>}
         </div>
+        {selectedMatch?.personId === person.id && <span className="party-match-label" role="status">{selectedMatch.label}</span>}
         <button className="person-button" disabled={busy || person.unavailable} aria-label={t('events.viewCharacter', { name: person.displayName })} onClick={() => onProfile(person.id)}>
           <Character id={person.avatarId} appearance={person.avatarAppearance} />
           <span className="party-name" dir="auto">{person.displayName}</span>

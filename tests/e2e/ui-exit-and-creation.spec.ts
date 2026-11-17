@@ -55,6 +55,7 @@ test('event location replaces in one selection and keeps offline details separat
   const locations = editor.locator('.selection-results [role=option]');
   await where.fill('Haifa');
   await locations.filter({ hasText: 'Haifa' }).first().click();
+  await editor.locator('summary').click();
   await editor.locator('#event-meeting').fill('Café by the station');
   await where.fill('Online');
   await locations.filter({ hasText: 'Online' }).click();
@@ -72,4 +73,22 @@ test('event location replaces in one selection and keeps offline details separat
   await page.route('**/api/events/create-access', route => route.fulfill({ json: { hasRole: false, canCreate: false, budget: null } }));
   await page.getByRole('button', { name: 'Refresh' }).click();
   await expect(page.getByRole('button', { name: 'Create adventure' })).toHaveCount(0);
+});
+
+test('quick adventure creation uses visible essentials and editable defaults', async ({ page }) => {
+  await publishedCharacter(page);
+  await page.getByRole('button', { name: 'Create adventure' }).click();
+  const editor = page.getByRole('dialog', { name: 'Create adventure' });
+  await expect(editor.locator('.event-options')).not.toHaveAttribute('open');
+  await editor.getByLabel('Adventure title').fill('A slow café afternoon');
+  await editor.getByLabel('What will the party do?').fill('Bring a book or just come chat over coffee.');
+  await editor.getByLabel('Starts').fill('2030-06-15T19:30');
+  await editor.getByLabel('Ends').fill('2030-06-15T21:30');
+  await editor.getByRole('combobox', { name: 'Where' }).fill('Haifa');
+  await editor.locator('.selection-results [role=option]').filter({ hasText: 'Haifa' }).first().click();
+  await editor.getByLabel('District or area').fill('Downtown');
+  await editor.getByRole('button', { name: 'Publish adventure' }).click();
+  await expect(page.getByRole('heading', { name: 'A slow café afternoon', level: 1 })).toBeVisible();
+  await expect(page.locator('.event-facts')).toContainText('Free');
+  await expect(page.locator('.event-experience')).toContainText('Beginners welcome');
 });

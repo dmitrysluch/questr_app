@@ -26,7 +26,7 @@ export const eventFieldsSchema = z.object({
 export type EventFields = z.infer<typeof eventFieldsSchema>;
 export const createEventSchema = eventFieldsSchema.extend({ requestId: z.uuid() });
 export const editEventSchema = eventFieldsSchema.extend({ revision: z.number().int().nonnegative() });
-export const applicationSchema = z.object({ message: z.string().trim().min(3).max(2000) }).strict();
+export const applicationSchema = z.object({ message: z.string().trim().max(2000).refine(message => !message || message.length >= 3).default('') }).strict();
 export const connectionRequestSchema = z.object({
   purpose: z.enum(['chat', 'contact']),
   message: z.string().trim().min(3).max(3000),

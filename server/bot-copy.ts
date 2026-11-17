@@ -1,6 +1,6 @@
 import { preferredLocale, type Locale } from '../shared/locale.ts';
 
-type Key = 'updated' | 'newApplication' | 'accepted' | 'declined' | 'removed' | 'left' | 'cancelled' | 'completed'
+type Key = 'updated' | 'newApplication' | 'newApplicationNoNote' | 'accepted' | 'declined' | 'removed' | 'left' | 'cancelled' | 'completed'
   | 'finishCharacter' | 'topicChatLive' | 'topicChatDemo' | 'topicPending' | 'topicApplyLive' | 'topicApplyDemo'
   | 'topicReady' | 'topicPreparing' | 'applyInApp' | 'dmTopicReady' | 'dmTopicPreparing'
   | 'notAccepting' | 'chooseTopic' | 'applicationSent' | 'alreadyPending' | 'chatClosed' | 'botHelp' | 'commandsInAllChats' | 'offTopicText'
@@ -14,6 +14,7 @@ const copy: Record<Locale, Record<Key, string>> = {
   en: {
     updated: 'Adventure updated: {title}. Open QUESTR to check the latest time and meeting details.',
     newApplication: 'New application for {title} from {name}:\n\n{message}',
+    newApplicationNoNote: 'New application for {title} from {name}.',
     acceptButton: 'Accept', declineButton: 'Decline', applicationAccepted: 'Accepted.', applicationDeclined: 'Declined.', applicationChanged: 'This application is no longer pending. Open QUESTR for the current party.',
     accepted: '{title}: you are in the party. Open QUESTR for meeting details and the party chat.',
     declined: '{title}: your application was declined.', removed: '{title}: you are no longer in this party.',
@@ -34,7 +35,7 @@ const copy: Record<Locale, Record<Key, string>> = {
     topicApplyDemo: '{title}\n\nWrite one short text message about this adventure to apply (3–2000 characters, no links or attachments). This local demo uses a limited content check without an AI provider.',
     notAccepting: 'This adventure is not accepting applications.',
     chooseTopic: 'Open an adventure in QUESTR and use its bot button to choose a topic.',
-    applicationSent: 'Application sent. The host will review your character and message.',
+    applicationSent: 'Application sent. The host will review your character.',
     alreadyPending: 'Your application is already waiting for the host.', chatClosed: 'This party chat is closed to you.',
     botHelp: '/chats — your adventures and party topics. /people — people you can message.',
     commandsInAllChats: 'Bot commands work in All messages. Use the adventure topics for chat.',
@@ -72,6 +73,7 @@ const copy: Record<Locale, Record<Key, string>> = {
   ru: {
     updated: 'Вылазка «{title}» обновлена. Открой QUESTR, чтобы проверить время и детали встречи.',
     newApplication: 'Новая заявка на вылазку «{title}» от {name}:\n\n{message}',
+    newApplicationNoNote: 'Новая заявка на вылазку «{title}» от {name}.',
     acceptButton: 'Принять', declineButton: 'Отклонить', applicationAccepted: 'Принято.', applicationDeclined: 'Отклонено.', applicationChanged: 'Статус заявки уже изменился. Открой QUESTR, чтобы увидеть состав группы.',
     accepted: '«{title}»: ты принят(а) в группу. Детали встречи и чат доступны в QUESTR.',
     declined: '«{title}»: твоя заявка отклонена.', removed: '«{title}»: ты больше не в группе.',
@@ -92,7 +94,7 @@ const copy: Record<Locale, Record<Key, string>> = {
     topicApplyDemo: '«{title}»\n\nНапиши короткое сообщение о вылазке для заявки (3–2000 символов, без ссылок и вложений). В локальном демо действует ограниченная проверка без ИИ-провайдера.',
     notAccepting: 'На эту вылазку больше не принимают заявки.',
     chooseTopic: 'Открой вылазку в QUESTR и нажми кнопку бота, чтобы выбрать тему.',
-    applicationSent: 'Заявка отправлена. Организатор прочитает твоё сообщение и посмотрит персонажа.',
+    applicationSent: 'Заявка отправлена. Организатор посмотрит твоего персонажа.',
     alreadyPending: 'Твоя заявка уже ждёт ответа организатора.', chatClosed: 'Чат этой группы тебе недоступен.',
     botHelp: '/chats — вылазки и темы групп. /people — люди, которым можно написать.',
     commandsInAllChats: 'Команды бота работают в «Все сообщения». Для общения используй темы вылазок.',

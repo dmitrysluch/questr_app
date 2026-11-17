@@ -228,7 +228,7 @@ export class Adventures {
     const input = applicationSchema.parse(body);
     if (hasPublicLink(input.message)) throw new AppError(400, 'APPLICATION_LINK_NOT_ALLOWED');
     await readRow(this.pool, userId, eventId);
-    await this.review(input.message);
+    if (input.message) await this.review(input.message);
     await transaction(this.pool, async db => {
       const row = await lockEvent(db, userId, eventId);
       const old = (await db.query('SELECT * FROM event_memberships WHERE event_id=$1 AND user_id=$2', [eventId, userId])).rows[0];
@@ -251,7 +251,7 @@ export class Adventures {
       await audit(db, eventId, userId, 'applied');
       const applicant = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [userId])).rows[0];
       await queueBot(db, { key: `event:${eventId}:apply:${userId}:${attemptId}`, userId: row.created_by, eventId, applicationUserId: userId, applicationAttemptId: attemptId,
-        kind: 'application', body: botText(await recipientLocale(db, row.created_by), 'newApplication', { title: row.title, name: applicant.display_name, message: input.message }) });
+        kind: 'application', body: botText(await recipientLocale(db, row.created_by), input.message ? 'newApplication' : 'newApplicationNoNote', { title: row.title, name: applicant.display_name, message: input.message }) });
     });
     return this.detail(userId, eventId);
   }

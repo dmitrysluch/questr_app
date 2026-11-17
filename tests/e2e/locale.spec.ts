@@ -10,7 +10,6 @@ test('Russian interface, catalog search, manual switch and reload', async ({ pag
   await page.getByLabel('Мне уже есть 18 лет.').check();
   await page.getByLabel('Я принимаю правила сообщества.').check();
   await page.getByRole('button', { name: 'Создать персонажа' }).click();
-  await page.getByRole('tab', { name: 'Готовые' }).click();
   await page.getByRole('button', { name: 'Выбрать Moss' }).click();
   await page.getByRole('button', { name: 'Продолжить' }).click();
   const interests = page.getByRole('combobox', { name: 'Поиск интересов' });
