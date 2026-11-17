@@ -5,13 +5,17 @@ import { api, ApiError } from '../api.ts';
 import { errorText, getLocale, languageName, locationName, t } from '../i18n.ts';
 import { SelectionPicker, type Choice } from './SelectionPicker.tsx';
 
-export function LanguagePicker({ value, onChange, label }: { value: string[]; onChange: (codes: string[]) => void; label: string }) {
+export function LanguagePicker({ value, onChange, label, single = false, collapseWhenSelected = false }: {
+  value: string[]; onChange: (codes: string[]) => void; label: string; single?: boolean; collapseWhenSelected?: boolean;
+}) {
   const [query, setQuery] = useState('');
-  const languageChoices = languages.map(language => ({ id: language.code, label: languageName(language.code), detail: language.native, english: language.label }))
+  const [editing, setEditing] = useState(false);
+  const languageChoices = languages.map(language => ({ id: language.code, label: languageName(language.code), native: language.native, english: language.label }))
     .sort((a, b) => a.label.localeCompare(b.label, getLocale()));
   const search = normalizeSearch(query);
-  const items = languageChoices.filter(item => normalizeSearch(`${item.label}${item.detail}${item.english}${item.id}`).includes(search));
-  return <SelectionPicker label={label} placeholder={t('languages.search')} value={value} onChange={onChange} selected={languageChoices} items={items} query={query} onQuery={setQuery} />;
+  const items = languageChoices.filter(item => normalizeSearch(`${item.label}${item.native}${item.english}${item.id}`).includes(search));
+  if (single && collapseWhenSelected && value.length === 1 && !editing) return <div className="event-location-picker"><span className="event-location-label">{label}</span><div className="event-location-current"><strong>{languageChoices.find(item => item.id === value[0])?.label ?? value[0]}</strong><button type="button" className="text-button" aria-label={t('events.changeLanguage')} onClick={() => { setQuery(''); setEditing(true); }}>{t('events.changeLocation')}</button></div></div>;
+  return <>{editing && <button type="button" className="text-button event-location-cancel" onClick={() => { setQuery(''); setEditing(false); }}>{t('common.cancel')}</button>}<SelectionPicker label={label} placeholder={t('languages.search')} value={single && collapseWhenSelected ? [] : value} onChange={codes => { onChange(codes); if (single && collapseWhenSelected && codes.length) setEditing(false); }} selected={languageChoices} items={items} query={query} onQuery={setQuery} focusOnMount={editing} limit={single ? 1 : 50} replaceOnSelect={single} /></>;
 }
 export function SpokenLanguages({ codes }: { codes: string[] }) {
   if (!codes.length) return null;

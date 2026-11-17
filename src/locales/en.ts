@@ -95,6 +95,7 @@ export const en = {
   "events.cityOrOnline": "City or online",
   "events.searchLocation": "Search city or Online…",
   "events.changeLocation": "Change",
+  "events.changeLanguage": "Change language",
   "events.privatePoint": "Meeting point or directions (optional)",
   "events.privateLink": "Call link (optional)",
   "events.privatePointHint": "Add it now or later. Only the accepted party can see it.",

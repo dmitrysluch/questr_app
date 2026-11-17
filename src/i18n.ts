@@ -2,6 +2,7 @@ import { en } from './locales/en.ts';
 import { ru } from './locales/ru.ts';
 import { tagLabelsRu } from './locales/tags-ru.ts';
 import { preferredLocale, supportedLocales, type Locale } from '../shared/locale.ts';
+import languageData from '../shared/languages.json';
 
 export type TranslationKey = keyof typeof en;
 export { supportedLocales };
@@ -25,7 +26,11 @@ const displayNames = {
 };
 function upperFirst(value: string): string { return value.charAt(0).toLocaleUpperCase(locale) + value.slice(1); }
 export function languageName(code: string): string {
-  try { return upperFirst(displayNames[locale].language.of(code) ?? code); } catch { return code; }
+  const fallback = languageData.find(language => language.code === code)?.label ?? code;
+  try {
+    const name = displayNames[locale].language.of(code);
+    return upperFirst(name && name.toLowerCase() !== code.toLowerCase() ? name : fallback);
+  } catch { return fallback; }
 }
 export function tagName(code: string, fallback: string): string {
   return locale === 'ru' ? tagLabelsRu[code] ?? fallback : fallback;

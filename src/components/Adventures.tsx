@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, CalendarDays, Globe2, Plus, RefreshCw, Users, LockKeyhole, Coins } from 'lucide-react';
 import type { AppConfig, Profile } from '../../shared/schema.ts';
-import { languages, type DiscoveryPreferences } from '../../shared/discovery.ts';
+import type { DiscoveryPreferences } from '../../shared/discovery.ts';
 import { wallTime, wallTimeToInstant, hasPublicLink, type Adventure, type AdventureDetail, type AdventureList, type EventFields, type CharacterConnection, type EventProfile, type EventCreationAccess } from '../../shared/events.ts';
 import { googleMapsSearch } from '../../shared/event-links.ts';
 import { api, apiBlob, ApiError, hasTelegramSession } from '../api.ts';
 import { t, errorText, getLocale, languageName, locationName, type TranslationKey } from '../i18n.ts';
-import { DiscoverySettings, LocationPicker } from './Discovery.tsx';
+import { DiscoverySettings, LanguagePicker, LocationPicker } from './Discovery.tsx';
 import { Character } from './Character.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ProfileCard } from './ProfileCard.tsx';
@@ -265,7 +265,7 @@ function EventEditor({ config, initial, spokenLanguages, onClose, onSaved }: { c
       else if (pick?.kind === 'google') change({ placeId: null, meetingMapUrl: pick.mapUrl });
       else change({ placeId: null, meetingMapUrl: '' });
     }} />}
-    <div className="event-form-grid"><div><label htmlFor="event-language">{t('events.language')}</label><select id="event-language" value={fields.languageCode} onChange={e => change({ languageCode: e.target.value })}>{languages.map(l => <option key={l.code} value={l.code}>{languageName(l.code)} · {l.native}</option>)}</select></div><div><label htmlFor="event-capacity">{t('events.capacity')}</label><input id="event-capacity" type="number" min={2} max={50} required value={fields.capacity} onChange={e => change({ capacity: Number(e.target.value) })} /><p className="field-hint">{t('events.capacityHint')}</p></div></div>
+    <div className="event-form-grid"><div><LanguagePicker single collapseWhenSelected label={t('events.language')} value={[fields.languageCode]} onChange={codes => { if (codes[0]) change({ languageCode: codes[0] }); }} /></div><div><label htmlFor="event-capacity">{t('events.capacity')}</label><input id="event-capacity" type="number" min={2} max={50} required value={fields.capacity} onChange={e => change({ capacity: Number(e.target.value) })} /><p className="field-hint">{t('events.capacityHint')}</p></div></div>
     <details className="event-options" ref={optionsRef} open={optionsOpen} onToggle={event => setOptionsOpen(event.currentTarget.open)}><summary>{t('events.moreOptions')}<small>{t('events.moreOptionsHint', { cost: fields.costEstimate.trim() || t('events.defaultCost'), experience: fields.experienceNotes.trim() || t('events.defaultExperience'), zone: fields.timeZone })}</small></summary>
     <div className="event-form-grid"><div><label htmlFor="event-cost">{t('events.cost')}</label><input id="event-cost" maxLength={120} value={fields.costEstimate} onChange={e => change({ costEstimate: e.target.value })} placeholder={t('events.costPlaceholder')} /></div><div><label htmlFor="event-experience">{t('events.experience')}</label><input id="event-experience" maxLength={240} value={fields.experienceNotes} onChange={e => change({ experienceNotes: e.target.value })} placeholder={t('events.experiencePlaceholder')} /></div></div>
     <label htmlFor="event-zone">{t('events.zone')}</label><select id="event-zone" value={fields.timeZone} onChange={e => change({ timeZone: e.target.value })}>{zones.map(zone => <option key={zone}>{zone}</option>)}</select>

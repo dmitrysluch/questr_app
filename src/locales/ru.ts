@@ -97,6 +97,7 @@ export const ru: Record<keyof typeof en, string> = {
   'events.cityOrOnline': 'Город или онлайн',
   'events.searchLocation': 'Найти город или Онлайн…',
   'events.changeLocation': 'Изменить',
+  'events.changeLanguage': 'Изменить язык',
   'events.privatePoint': 'Место встречи или как добраться (необязательно)',
   'events.privateLink': 'Ссылка на звонок (необязательно)',
   'events.privatePointHint': 'Можно добавить сейчас или позже. Видно только принятой группе.',
