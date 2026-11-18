@@ -34,8 +34,7 @@ export function loadConfig(): Config {
     googleMapsBrowserKey: process.env.GOOGLE_MAPS_BROWSER_KEY ?? '',
     brevoApiKey: process.env.BREVO_API_KEY ?? '', brevoSenderEmail: process.env.BREVO_SENDER_EMAIL ?? '',
     metricsPath: process.env.METRICS_PATH ?? '', metricsToken: process.env.METRICS_TOKEN ?? '',
-    // The project key is public. Local demo stays out of production analytics by default.
-    posthogProjectKey: process.env.POSTHOG_PROJECT_KEY ?? (authMode === 'telegram' ? 'phc_rCnNZfAvo2qGUSvNge7yCyTwFsxa8Gde23TDkJCR2Fit' : ''),
+    posthogProjectKey: process.env.POSTHOG_PROJECT_KEY ?? '',
   };
   if (config.authMode === 'telegram' && !config.botToken) throw new Error('TELEGRAM_BOT_TOKEN is required in telegram mode');
   if (config.aiMode === 'openrouter' && !config.openrouterApiKey) throw new Error('OPENROUTER_API_KEY is required in openrouter mode');

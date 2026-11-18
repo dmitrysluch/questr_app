@@ -1,6 +1,6 @@
 # Product analytics
 
-QUESTR sends explicit browser events to the EU PostHog project using the public project key supplied for the project. Telegram mode enables it by default. Local demo mode leaves it off unless `POSTHOG_PROJECT_KEY` is set. Set `POSTHOG_PROJECT_KEY=` to disable it in any deployment, or set another public project key to use a separate PostHog project. No PostHog server secret is required for this integration.
+QUESTR sends explicit browser events to PostHog's EU endpoint only when `POSTHOG_PROJECT_KEY` is set in the server environment. An unset or empty value disables analytics in every mode, including Telegram. Use a separate project key for local or staging environments if they need analytics. The browser integration does not need a PostHog server secret.
 
 The SDK keeps its identity in browser local storage without a cookie, identifies registered users with the internal UUID, and sends no name or email as person properties. It does not capture clicks, forms, page URLs, session recordings, exceptions, heatmaps or performance data. A final event filter drops unexpected event types and all properties outside a small allowlist. Browser ingestion targets `https://eu.i.posthog.com`; content security policy, if added, must allow that endpoint.
 

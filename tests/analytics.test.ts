@@ -2,6 +2,30 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { CaptureResult } from 'posthog-js/dist/module.slim.no-external';
 import { filterAnalyticsEvent } from '../src/analytics.ts';
+import { loadConfig } from '../server/config.ts';
+
+test('product analytics is opt-in for both Telegram and demo deployments', () => {
+  const names = ['AUTH_MODE', 'AI_MODE', 'TELEGRAM_BOT_TOKEN', 'APP_ORIGIN', 'COOKIE_SECURE', 'POSTHOG_PROJECT_KEY'] as const;
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  try {
+    process.env.AUTH_MODE = 'telegram';
+    process.env.AI_MODE = 'demo';
+    process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+    process.env.APP_ORIGIN = 'http://localhost:5173';
+    process.env.COOKIE_SECURE = 'false';
+    delete process.env.POSTHOG_PROJECT_KEY;
+    assert.equal(loadConfig().posthogProjectKey, '');
+    process.env.AUTH_MODE = 'demo';
+    assert.equal(loadConfig().posthogProjectKey, '');
+    process.env.POSTHOG_PROJECT_KEY = 'phc_test_only';
+    assert.equal(loadConfig().posthogProjectKey, 'phc_test_only');
+  } finally {
+    for (const name of names) {
+      const value = previous[name];
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  }
+});
 
 test('product events retain only approved aggregate properties and SDK identifiers', () => {
   const event: CaptureResult = {
