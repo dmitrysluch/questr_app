@@ -12,6 +12,7 @@ import { can } from '../../server/permissions.ts';
 
 const connection = process.env.TEST_DATABASE_URL;
 const locationCatalogPath = fileURLToPath(new URL('../fixtures/locations.json', import.meta.url));
+const communityCatalogPath = fileURLToPath(new URL('../fixtures/communities.json', import.meta.url));
 let root: Pool, pool: Pool, app: Express;
 const database = `questr_test_${randomUUID().replaceAll('-', '')}`;
 before(async () => {
@@ -19,7 +20,7 @@ before(async () => {
   root = createPool(connection);
   await root.query(`CREATE DATABASE "${database}"`);
   const url = new URL(connection); url.pathname = `/${database}`;
-  pool = createPool(url.toString()); await migrate(pool, locationCatalogPath);
+  pool = createPool(url.toString()); await migrate(pool, locationCatalogPath, communityCatalogPath);
   app = createApp(pool, { ...loadConfig(), authMode: 'demo', aiMode: 'demo' });
 });
 after(async () => {

@@ -15,7 +15,6 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 import { toString } from 'mdast-util-to-string';
 import { romanceConsentVersion } from '../shared/romance.ts';
 import { hasCommunityAccess, requireCommunityAccess } from './communities.ts';
-import { communities } from '../shared/communities.ts';
 
 type Db = Pool | PoolClient;
 function normalizeFields<T extends EventFields>(fields: T): T {
@@ -68,7 +67,7 @@ async function validateFields(db: Db, userId: string, fields: EventFields, requi
   if (Date.parse(fields.endsAt) <= Date.parse(fields.startsAt)) throw new AppError(400, 'EVENT_END_INVALID');
   const location = (await db.query("SELECT kind FROM locations WHERE id=$1 AND kind IN ('city','online')", [fields.locationId])).rows[0];
   if (!location) throw new AppError(400, 'EVENT_LOCATION_INVALID');
-  if (fields.communityId && !communities.some(community => community.id === fields.communityId)) throw new AppError(400, 'COMMUNITY_INVALID');
+  if (fields.communityId && !(await db.query('SELECT 1 FROM communities WHERE id=$1', [fields.communityId])).rowCount) throw new AppError(400, 'COMMUNITY_INVALID');
   await requireCommunityAccess(db, userId, fields.communityId);
   if ([fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform].some(hasPublicLink)) {
     throw new AppError(400, 'EVENT_PUBLIC_LINK');

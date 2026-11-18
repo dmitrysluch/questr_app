@@ -15,6 +15,7 @@ import { appearanceForPreset } from '../../shared/avatar.ts';
 
 const connection = process.env.TEST_DATABASE_URL;
 const locationCatalogPath = fileURLToPath(new URL('../fixtures/locations.json', import.meta.url));
+const communityCatalogPath = fileURLToPath(new URL('../fixtures/communities.json', import.meta.url));
 let admin: Pool, pool: Pool, app: Express;
 const database = `questr_test_${randomUUID().replaceAll('-', '')}`;
 before(async () => {
@@ -23,7 +24,7 @@ before(async () => {
   await admin.query(`CREATE DATABASE "${database}"`);
   const url = new URL(connection); url.pathname = `/${database}`;
   pool = createPool(url.toString());
-  await migrate(pool, locationCatalogPath); await migrate(pool, locationCatalogPath);
+  await migrate(pool, locationCatalogPath, communityCatalogPath); await migrate(pool, locationCatalogPath, communityCatalogPath);
   app = createApp(pool, { ...loadConfig(), authMode: 'demo', aiMode: 'demo' });
 });
 after(async () => {
@@ -33,6 +34,15 @@ after(async () => {
   await admin.end();
 });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
+integration('community catalog API serves the external tree after authentication', async () => {
+  const agent = request.agent(app);
+  await agent.get('/api/communities').expect(401);
+  await agent.post('/api/auth/demo').send({}).expect(200);
+  const { communities } = (await agent.get('/api/communities').expect(200)).body;
+  assert.deepEqual(communities.map((community: { id: string }) => community.id),
+    ['university_students', 'israeli_university_students', 'ariel_students']);
+  assert.equal(communities[2].name.en, 'Ariel students from external config');
+});
 integration('browser language starts the interface, and an explicit choice survives another login', async () => {
   const agent = request.agent(app);
   await agent.post('/api/auth/demo').send({ browserLanguage: 'ru-RU' }).expect(200);

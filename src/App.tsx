@@ -24,6 +24,8 @@ import { RomanceSettings } from './components/RomanceSettings.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview } from '../shared/content-policy.ts';
 import type { DiscoveryPreferences } from '../shared/discovery.ts';
+import { parseCommunities, type Community } from '../shared/communities.ts';
+import { CommunityCatalog } from './community-catalog.tsx';
 
 const BioEditor = lazy(() => import('./components/BioEditor.tsx'));
 declare global {
@@ -42,6 +44,7 @@ export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [locale, setInterfaceLocale] = useState<Locale>(getLocale());
   const [state, setState] = useState<AppState | null>(null);
+  const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -96,7 +99,8 @@ export function App() {
         if (active) {
           const target = new URLSearchParams(location.search).get('route');
           if (target && /^adventures\/[0-9a-f-]{36}(?:\/character\/[0-9a-f-]{36})?$/i.test(target)) location.hash = target;
-          await loadState();
+          const [catalog] = await Promise.all([api<{ communities: Community[] }>('/communities'), loadState()]);
+          if (active) setCommunities(parseCommunities(catalog));
         }
       } catch (e) { if (active) setError(e); }
       finally { if (active) setLoading(false); }
@@ -191,7 +195,7 @@ export function App() {
   const communitiesOpen = state?.user.status === 'active' && state.permissions.admin && route.startsWith('#communities');
   const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character') && !invitesOpen && !communitiesOpen;
 
-  return <div className="app-shell">
+  return <CommunityCatalog.Provider value={communities}><div className="app-shell">
     <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR" onClick={event => { if (state?.user.status === 'active') { event.preventDefault(); navigate('adventures'); } }}><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>
       <div className="header-right">{config?.authMode === 'demo' && <span className="preview-badge">{t('app.demo')}</span>}<select className="locale-switch" aria-label={t('ui.language')} value={locale} disabled={!state || busy} onChange={event => void changeLocale(event.target.value as Locale)}><option value="en">EN</option><option value="ru">RU</option></select><button className="text-button" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
     </header>
@@ -280,7 +284,7 @@ export function App() {
     {exitTarget && <Modal title={t('discovery.leaveTitle')} onClose={() => { if (!busy) setExitTarget(null); }}><p>{t('discovery.leaveHint')}</p>{!!error && <p className="field-error" role="alert">{errorText(error)}</p>}<div className="modal-actions"><button className="text-button" disabled={busy} onClick={() => setExitTarget(null)}>{t('common.cancel')}</button><button className="outline-button small" disabled={busy} onClick={() => void finishExit(exitTarget, false)}>{t('discovery.discardAndLeave')}</button><button className="pixel-button small" disabled={busy} onClick={() => void finishExit(exitTarget, true)}>{t('discovery.saveAndLeave')}</button></div></Modal>}
     {editingName && <Modal title={t('avatar.changeName')} onClose={() => setEditingName(false)}><form onSubmit={event => { event.preventDefault(); if (nextName.trim().length >= 2) { edit({ displayName: nextName.trim() }); setEditingName(false); } }}><label htmlFor="display-name">{t('welcome.name')}</label><input id="display-name" value={nextName} onChange={e => setNextName(e.target.value)} minLength={2} maxLength={40} required autoFocus /><div className="modal-actions"><button className="pixel-button small" type="submit">{t('avatar.saveName')}<Check size={15} /></button></div></form></Modal>}
     {termsOpen && <Modal title={t('terms.title')} onClose={() => setTermsOpen(false)}><div className="terms-body"><p>{t('terms.intro')}</p><ul><li>{t('terms.respect')}</li><li>{t('terms.identity')}</li><li>{t('terms.profile')}</li></ul><p>{t('terms.poc')}</p><p>{t('terms.romance')}</p></div><div className="modal-actions"><button className="pixel-button small" onClick={() => setTermsOpen(false)}>{t('common.close')}</button></div></Modal>}
-  </div>;
+  </div></CommunityCatalog.Provider>;
 }
 function PageHeading({ title }: { title: TranslationKey }) {
   return <div className="page-heading"><h1>{t(title)}</h1></div>;

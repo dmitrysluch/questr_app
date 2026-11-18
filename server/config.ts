@@ -1,5 +1,5 @@
 export interface Config {
-  databaseUrl: string; port: number; appOrigin: string; locationCatalogPath: string;
+  databaseUrl: string; port: number; appOrigin: string; locationCatalogPath: string; communityCatalogPath: string;
   authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter';
   openrouterApiKey: string; openrouterModel: string; openrouterQuestionModel: string; openrouterReviewModel: string;
   openrouterReasoningEffort: ReasoningEffort; openrouterQuestionReasoningEffort: ReasoningEffort; openrouterReviewReasoningEffort: ReasoningEffort; botToken: string;
@@ -18,6 +18,7 @@ export function loadConfig(): Config {
   const config: Config = {
     databaseUrl: process.env.DATABASE_URL ?? 'postgresql://questr:questr_local@localhost:55432/questr',
     locationCatalogPath: process.env.LOCATION_CATALOG_PATH ?? './local/locations.json',
+    communityCatalogPath: process.env.COMMUNITY_CATALOG_PATH ?? './local/communities.json',
     port: Number(process.env.PORT ?? 5181), appOrigin: process.env.APP_ORIGIN ?? 'http://localhost:5173',
     authMode: authMode as Config['authMode'], aiMode: aiMode as Config['aiMode'],
     openrouterApiKey: process.env.OPENROUTER_API_KEY ?? '', openrouterModel: process.env.OPENROUTER_MODEL ?? 'openai/gpt-6.1-terra',

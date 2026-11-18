@@ -10,7 +10,7 @@ Accepted parties show a scrollable row of character avatars. Each character open
 
 The [geography and access design](docs/discovery-and-access.md) describes the implemented location catalog, filter matching, scoped roles, expiring grants and transactional usage budgets. The [adventures v1 guide](docs/adventures.md) covers creation, discovery, applications, accepted parties, private meeting details, start/end times, calendar export, reminders and the Telegram relay. Reputation automation is not implemented yet.
 
-Communities are configured in `shared/communities.json`; membership is granted by invites and stored in PostgreSQL. The catalog is validated at startup, and database seeding rejects removal or reparenting of an existing ID without an explicit migration. Names can be edited in JSON. Admins can inspect the read-only tree and IDs in the **Communities** workspace tab. A member of a child community can see adventures posted to its ancestors, while a parent membership does not open child adventures. Community adventures are hidden from nonmembers in discovery, direct links, applications and party chats. A published adventure's community cannot be changed. Profiles show invite-granted communities beside interest tags.
+Communities are configured by the external JSON file at `COMMUNITY_CATALOG_PATH`; membership is granted by invites and stored in PostgreSQL. The catalog is validated at startup, and database seeding rejects removal or reparenting of an existing ID without an explicit migration. Names can be edited in JSON. The Mini App reads the resulting tree from the API. Admins can inspect the read-only tree and IDs in the **Communities** workspace tab. A member of a child community can see adventures posted to its ancestors, while a parent membership does not open child adventures. Community adventures are hidden from nonmembers in discovery, direct links, applications and party chats. A published adventure's community cannot be changed. Profiles show invite-granted communities beside interest tags.
 
 ## Interface and interests
 
@@ -26,6 +26,14 @@ Emoji remain Unicode in storage and are rendered locally on a 16×16 canvas with
 
 Requirements: Node.js 22.12+ and Docker. Commands below use Compose v2. If your machine exposes Compose as `docker-compose`, use that spelling instead.
 
+Prepare `local/communities.json` with a `communities` array. Each entry needs a stable `id`, an optional parent ID (`null` for a root), and English/Russian names:
+
+```json
+{"communities":[{"id":"university_students","parentId":null,"name":{"en":"University students","ru":"Студенты вузов"}}]}
+```
+
+For an existing database, copy the currently deployed `shared/communities.json` to the external file before deploying this version. Existing community IDs cannot be removed or reparented without a database migration. The previous catalog is also available from git history: `git show 27365b6:shared/communities.json > local/communities.json`.
+
 ```sh
 cp .env.example .env
 npm ci
@@ -34,9 +42,9 @@ docker compose up -d db
 npm run dev
 ```
 
-Open **http://localhost:5173**. The API runs on port 5181; PostgreSQL runs on localhost:55432. Migrations and catalog seeds run automatically at server startup. `LOCATION_CATALOG_PATH` points to an external JSON file of countries, cities and Online. The import command generates one in `local/locations.json`; this file is ignored by git. You can instead supply your own catalog at that path. Existing location IDs must remain stable; removed entries stay in PostgreSQL so existing references continue to work. Changing a location's kind or parent requires an explicit database migration.
+Both catalogs are required at startup and ignored by git. Set `COMMUNITY_CATALOG_PATH` to another file if needed. The API runs on port 5181; PostgreSQL runs on localhost:55432. `LOCATION_CATALOG_PATH` points to an external JSON file of countries, cities and Online. The import command generates one in `local/locations.json`. Existing location IDs must remain stable; removed entries stay in PostgreSQL so existing references continue to work. Changing a location's kind or parent requires an explicit database migration. Open **http://localhost:5173** after starting the app.
 
-The default configuration is intentionally usable without credentials:
+With the catalog files in place, the default configuration needs no API credentials:
 
 - `AUTH_MODE=demo` creates a browser session and its own single-use invitation. Reopening the same browser restores the profile. An incognito window is a separate account.
 - `AI_MODE=demo` uses explicitly labeled, local, topic-based follow-up questions. This is a demo flow, not a live language model.
@@ -47,7 +55,7 @@ To run the entire application in Docker instead:
 docker compose up -d --build
 ```
 
-Open **http://localhost:5180**. This serves the production frontend and API from one origin. Compose mounts the host file named by `LOCATION_CATALOG_PATH` read-only at `/etc/questr/locations.json`. For a non-Compose deployment, mount the file yourself and set `LOCATION_CATALOG_PATH` to its path inside the container. The PostgreSQL volume keeps data across container restarts. `docker compose down` stops the containers and preserves that volume.
+Open **http://localhost:5180**. This serves the production frontend and API from one origin. Compose mounts both host catalog files read-only at `/etc/questr/locations.json` and `/etc/questr/communities.json`. For a non-Compose deployment, mount both files and set `LOCATION_CATALOG_PATH` and `COMMUNITY_CATALOG_PATH` to their paths inside the container. The PostgreSQL volume keeps data across container restarts. `docker compose down` stops the containers and preserves that volume.
 
 ## Connect the interviewer through OpenRouter
 

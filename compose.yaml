@@ -20,9 +20,11 @@ services:
       - "127.0.0.1:5180:3001"
     volumes:
       - ${LOCATION_CATALOG_PATH:-./local/locations.json}:/etc/questr/locations.json:ro
+      - ${COMMUNITY_CATALOG_PATH:-./local/communities.json}:/etc/questr/communities.json:ro
     environment:
       DATABASE_URL: postgresql://questr:questr_local@db:5432/questr
       LOCATION_CATALOG_PATH: /etc/questr/locations.json
+      COMMUNITY_CATALOG_PATH: /etc/questr/communities.json
       PORT: 3001
       APP_ORIGIN: ${APP_ORIGIN_DOCKER:-http://localhost:5180}
       AUTH_MODE: ${AUTH_MODE:-demo}

@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import catalog from './communities.json';
 
 export interface Community {
   id: string;
@@ -13,7 +12,6 @@ const communitySchema = z.object({
   name: z.object({ en: z.string().trim().min(1), ru: z.string().trim().min(1) }).strict(),
 }).strict();
 
-// Validate the checked-in catalog before either the server or the Mini App uses it.
 // Parents are ordered before children so database seeding does not depend on JSON order.
 export function parseCommunities(value: unknown): Community[] {
   const input = z.object({ communities: z.array(communitySchema).min(1) }).strict().parse(value).communities;
@@ -41,11 +39,8 @@ export function parseCommunities(value: unknown): Community[] {
 }
 
 // Stable IDs and parentage are guarded against accidental changes in migrate.ts.
-// Memberships live in PostgreSQL; names and the tree live in JSON.
-export const communities = parseCommunities(catalog);
-const byId = new Map(communities.map(community => [community.id, community]));
-
-export function communityAncestors(id: string): string[] {
+export function communityAncestors(communities: readonly Community[], id: string): string[] {
+  const byId = new Map(communities.map(community => [community.id, community]));
   const result: string[] = [];
   const seen = new Set<string>();
   let current = byId.get(id);

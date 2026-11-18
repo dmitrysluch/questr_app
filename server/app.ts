@@ -24,6 +24,7 @@ import { redeemInvite } from './invite-redemption.ts';
 import { romanceConsentVersion, romanceInputSchema } from '../shared/romance.ts';
 import { placeRoutes } from './place-routes.ts';
 import { emailInviteRoutes, type EmailSender } from './email-invites.ts';
+import { parseCommunities } from '../shared/communities.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
@@ -180,6 +181,10 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     const review = draft ? await storedReview(pool, reviewer, draft.introMarkdown) : null;
     const topicReviews = draft ? await Promise.all(draft.askMeTopics.map(topic => storedReview(pool, reviewer, topic))) : [];
     res.json({ user, permissions: { admin, inviteCreate }, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown, askMeTopics: draft.askMeTopics, topicReviews: topicReviews.every(Boolean) ? topicReviews : undefined } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null, emailRegistrationAllowed: !!emailRegistration.rowCount });
+  });
+  app.get('/api/communities', async (_req, res) => {
+    const { rows } = await pool.query('SELECT id,parent_id AS "parentId",name_en AS en,name_ru AS ru FROM communities ORDER BY id');
+    res.json({ communities: parseCommunities({ communities: rows.map(row => ({ id: row.id, parentId: row.parentId, name: { en: row.en, ru: row.ru } })) }) });
   });
   app.put('/api/locale', async (req, res) => {
     const { locale } = z.object({ locale: z.enum(['en', 'ru']) }).strict().parse(req.body);

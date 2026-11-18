@@ -20,7 +20,7 @@
       "id": "ariel_students",
       "parentId": "israeli_university_students",
       "name": {
-        "en": "Ariel University students",
+        "en": "Ariel students from external config",
         "ru": "Студенты Ариэльского университета"
       }
     }

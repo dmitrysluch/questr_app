@@ -5,7 +5,8 @@ import { api } from '../api.ts';
 import { errorText, getLocale, t } from '../i18n.ts';
 import { PlacesAdmin } from './PlacesAdmin.tsx';
 import { EmailDomainsAdmin } from './EmailDomainsAdmin.tsx';
-import { communities, communityAncestors } from '../../shared/communities.ts';
+import { communityAncestors } from '../../shared/communities.ts';
+import { useCommunities } from '../community-catalog.tsx';
 
 type Listing = { invites: InviteRecord[]; total: number; budget: InviteBudget | null; admin: boolean; grantOptions: { eventCreator: boolean; maxInviteDepth: number } };
 const empty: Listing = { invites: [], total: 0, budget: null, admin: false, grantOptions: { eventCreator: false, maxInviteDepth: 0 } };
@@ -16,6 +17,7 @@ function newCode() {
 }
 
 export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
+  const communities = useCommunities();
   const [listing, setListing] = useState<Listing>(empty);
   const [users, setUsers] = useState<InviterAccount[]>([]);
   const [search, setSearch] = useState('');
@@ -92,7 +94,7 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
             {Array.from({ length: listing.grantOptions.maxInviteDepth + 1 }, (_, depth) => <option key={depth} value={depth}>{t(`invites.depth.${depth}` as 'invites.depth.0' | 'invites.depth.1' | 'invites.depth.2')}</option>)}
           </select>
           <small className="hint">{t('invites.depthHint')}</small>
-          {admin && <fieldset className="invite-community-grants"><legend>{t('communities.label')}</legend>{communities.map(community => <label className="checkbox-label" key={community.id} style={{ paddingInlineStart: `${12 * (communityAncestors(community.id).length - 1)}px` }}><input type="checkbox" checked={communityIds.includes(community.id)} disabled={busy} onChange={event => { setCommunityIds(old => event.target.checked ? [...old, community.id] : old.filter(id => id !== community.id)); pending.current = null; }} />{community.name[getLocale()]}</label>)}</fieldset>}
+          {admin && <fieldset className="invite-community-grants"><legend>{t('communities.label')}</legend>{communities.map(community => <label className="checkbox-label" key={community.id} style={{ paddingInlineStart: `${12 * (communityAncestors(communities, community.id).length - 1)}px` }}><input type="checkbox" checked={communityIds.includes(community.id)} disabled={busy} onChange={event => { setCommunityIds(old => event.target.checked ? [...old, community.id] : old.filter(id => id !== community.id)); pending.current = null; }} />{community.name[getLocale()]}</label>)}</fieldset>}
         </div>
         <button className="pixel-button" disabled={busy || !budget || budget.used >= budget.maxUses} onClick={() => void issue()}>{busy ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}{t('invites.create')}</button>
         {issuedCode && <div className="issued-invite" role="status"><span>{t('invites.copyNow')}</span><code>{issuedCode.code}</code><button className="outline-button small" onClick={() => void navigator.clipboard.writeText(issuedCode.code).catch(setError)}><ClipboardCopy size={15} />{t('invites.copy')}</button></div>}

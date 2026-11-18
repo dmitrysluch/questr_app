@@ -4,7 +4,8 @@ import type { AppConfig, Profile } from '../../shared/schema.ts';
 import type { DiscoveryPreferences } from '../../shared/discovery.ts';
 import { wallTime, wallTimeToInstant, hasPublicLink, type Adventure, type AdventureDetail, type AdventureList, type EventFields, type CharacterConnection, type EventProfile, type EventCreationAccess } from '../../shared/events.ts';
 import { googleMapsSearch } from '../../shared/event-links.ts';
-import { communities, communityAncestors } from '../../shared/communities.ts';
+import { communityAncestors } from '../../shared/communities.ts';
+import { useCommunities } from '../community-catalog.tsx';
 import { api, apiBlob, ApiError, hasTelegramSession } from '../api.ts';
 import { t, errorText, getLocale, languageName, locationName, type TranslationKey } from '../i18n.ts';
 import { DiscoverySettings, LanguagePicker, LocationPicker } from './Discovery.tsx';
@@ -22,6 +23,7 @@ function openBot(event: React.MouseEvent<HTMLAnchorElement>, url: string) {
   if (telegram?.openTelegramLink) { event.preventDefault(); telegram.openTelegramLink(url); }
 }
 function EventFacts({ event }: { event: Adventure }) {
+  const communities = useCommunities();
   const place = event.location.kind === 'online' ? event.onlinePlatform || t('events.online') : event.place
     ? [event.place.name, event.place.address, locationName(event.location.id, event.location.name)].join(' · ')
     : locationName(event.location.id, event.location.name);
@@ -167,8 +169,9 @@ export function Adventures({ config, discovery, spokenLanguages, communityIds, o
   </section>;
 }
 function EventEditor({ config, initial, spokenLanguages, communityIds, onClose, onSaved }: { config: AppConfig; initial?: AdventureDetail; spokenLanguages: string[]; communityIds: string[]; onClose: () => void; onSaved: (event: AdventureDetail) => void }) {
+  const communities = useCommunities();
   const defaults = useRef<EventFields>({ title: initial?.title ?? '', activitySummary: '', descriptionMarkdown: initial?.descriptionMarkdown ?? '', costEstimate: initial?.costEstimate ?? t('events.defaultCost'), experienceNotes: initial?.experienceNotes ?? t('events.defaultExperience'), onlinePlatform: '', startsAt: initial?.startsAt ?? new Date(Date.now() + 86400000).toISOString(), endsAt: initial?.endsAt ?? new Date(Date.now() + 93600000).toISOString(), timeZone: initial?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone, capacity: initial?.capacity ?? 6, languageCode: initial?.languageCode ?? spokenLanguages[0] ?? 'en', communityId: initial?.communityId ?? null, locationId: initial?.location.id ?? '', placeId: initial?.place?.id ?? null, meetingDetails: initial?.meetingDetails ?? '', meetingMapUrl: initial?.meetingMapUrl ?? '' });
-  const allowedCommunityIds = new Set(communityIds.flatMap(communityAncestors));
+  const allowedCommunityIds = new Set(communityIds.flatMap(id => communityAncestors(communities, id)));
   const [fields, setFields] = useState(defaults.current);
   const initialWall = useRef({ start: wallTime(defaults.current.startsAt, defaults.current.timeZone), end: wallTime(defaults.current.endsAt, defaults.current.timeZone) });
   const [startDate, setStartDate] = useState(initialWall.current.start.slice(0, 10));

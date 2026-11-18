@@ -6,7 +6,6 @@ import { transaction } from './db.ts';
 import { AppError } from './errors.ts';
 import { can, consumeCapability, requireCapability } from './permissions.ts';
 import type { InviteBudget, InviteRecord, InviterAccount } from '../shared/schema.ts';
-import { communities } from '../shared/communities.ts';
 import { redeemInvite } from './invite-redemption.ts';
 
 const issueSchema = z.object({
@@ -15,7 +14,7 @@ const issueSchema = z.object({
   expiresInDays: z.number().int().min(1).max(30),
   eventCreator: z.boolean().optional(),
   inviteDepth: z.number().int().min(0).max(2).optional(),
-  communityIds: z.array(z.string().refine(value => communities.some(community => community.id === value))).max(20)
+  communityIds: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)).max(20)
     .refine(ids => new Set(ids).size === ids.length).default([]),
 }).strict();
 const accessSchema = z.object({
@@ -88,6 +87,7 @@ export function inviteRoutes(pool: Pool) {
       const inviteDepth = input.inviteDepth ?? 0;
       if (eventCreator && !allowed.eventCreator || inviteDepth > allowed.maxInviteDepth) throw new AppError(403, 'PERMISSION_DENIED');
       if (input.communityIds.length && !admin) throw new AppError(403, 'PERMISSION_DENIED');
+      if (input.communityIds.length && (await db.query('SELECT id FROM communities WHERE id=ANY($1::text[])', [input.communityIds])).rowCount !== input.communityIds.length) throw new AppError(400, 'COMMUNITY_INVALID');
       const result = await consumeCapability(db, userId, 'invite.create', { type: 'global' }, input.requestId);
       if (result === 'replay') {
         const old = (await db.query('SELECT id,token_hash,expires_at,grants_event_creation,invite_depth,expiry_days FROM invites WHERE created_by=$1 AND issuance_request_id=$2', [userId, input.requestId])).rows[0];

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { communities } from '../../shared/communities.ts';
+import { useCommunities } from '../community-catalog.tsx';
 import { api } from '../api.ts';
 import { errorText, getLocale, t } from '../i18n.ts';
 
@@ -7,6 +7,7 @@ type DomainRule = { domain: string; enabled: boolean; allowRegistration: boolean
 const blank = (): DomainRule => ({ domain: '', enabled: true, allowRegistration: true, communityIds: [] });
 
 export function EmailDomainsAdmin() {
+  const communities = useCommunities();
   const [rules, setRules] = useState<DomainRule[]>([]);
   const [draft, setDraft] = useState<DomainRule>(blank);
   const [busy, setBusy] = useState(false);

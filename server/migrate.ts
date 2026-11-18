@@ -7,10 +7,11 @@ import { avatars, tags } from '../shared/catalog.ts';
 import languageData from '../shared/languages.json';
 import { loadLocationCatalog } from './location-catalog.ts';
 import { normalizeSearch } from '../shared/discovery.ts';
-import { communities, communityAncestors } from '../shared/communities.ts';
+import { communityAncestors } from '../shared/communities.ts';
+import { loadCommunityCatalog } from './community-catalog.ts';
 
-export async function migrate(pool: Pool, locationCatalogPath: string) {
-  const locationData = await loadLocationCatalog(locationCatalogPath);
+export async function migrate(pool: Pool, locationCatalogPath: string, communityCatalogPath: string) {
+  const [locationData, communities] = await Promise.all([loadLocationCatalog(locationCatalogPath), loadCommunityCatalog(communityCatalogPath)]);
   await transaction(pool, async client => {
     await client.query("SELECT pg_advisory_xact_lock(81720311)");
     await client.query('CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
@@ -31,7 +32,7 @@ export async function migrate(pool: Pool, locationCatalogPath: string) {
       ON CONFLICT(id) DO UPDATE SET name_en=EXCLUDED.name_en,name_ru=EXCLUDED.name_ru`,
     [community.id, community.parentId, community.name.en, community.name.ru]);
     await client.query('DELETE FROM community_closure');
-    for (const community of communities) for (const [depth, ancestor] of communityAncestors(community.id).entries()) {
+    for (const community of communities) for (const [depth, ancestor] of communityAncestors(communities, community.id).entries()) {
       await client.query('INSERT INTO community_closure(ancestor_id,descendant_id,depth) VALUES($1,$2,$3)', [ancestor, community.id, depth]);
     }
     const existingLocations = (await client.query('SELECT id,kind,parent_id FROM locations WHERE id = ANY($1::text[])', [locationData.map(location => location.id)])).rows;
@@ -68,6 +69,6 @@ export async function migrate(pool: Pool, locationCatalogPath: string) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const config = loadConfig();
   const pool = createPool(config.databaseUrl);
-  try { await migrate(pool, config.locationCatalogPath); console.log('QUESTR database is up to date.'); }
+  try { await migrate(pool, config.locationCatalogPath, config.communityCatalogPath); console.log('QUESTR database is up to date.'); }
   finally { await pool.end(); }
 }

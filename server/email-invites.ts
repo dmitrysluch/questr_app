@@ -8,7 +8,6 @@ import { hash } from './auth.ts';
 import { transaction } from './db.ts';
 import { AppError } from './errors.ts';
 import { grantMember, requireCapability } from './permissions.ts';
-import { communities } from '../shared/communities.ts';
 
 export type EmailSender = (email: string, code: string, locale: string) => Promise<void>;
 
@@ -29,7 +28,7 @@ function normalizeEmail(value: string): { email: string; domain: string } {
 const emailSchema = z.object({ email: z.string().trim().min(3).max(254) }).strict();
 const verifySchema = emailSchema.extend({ code: z.string().regex(/^\d{8}$/) }).strict();
 const ruleSchema = z.object({ domain: z.string().trim().min(4).max(253), enabled: z.boolean(), allowRegistration: z.boolean(),
-  communityIds: z.array(z.string().refine(id => communities.some(item => item.id === id))).max(20)
+  communityIds: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)).max(20)
     .refine(ids => new Set(ids).size === ids.length) }).strict();
 
 export function brevoSender(config: Config): EmailSender {
@@ -157,6 +156,7 @@ export function emailInviteRoutes(pool: Pool, config: Config, throttle: (key: st
     if (input.enabled && !input.allowRegistration && !input.communityIds.length) throw new AppError(400, 'EMAIL_RULE_EMPTY');
     await transaction(pool, async db => {
       await requireCapability(db, userId, 'admin', { type: 'global' });
+      if (input.communityIds.length && (await db.query('SELECT id FROM communities WHERE id=ANY($1::text[])', [input.communityIds])).rowCount !== input.communityIds.length) throw new AppError(400, 'COMMUNITY_INVALID');
       await db.query(`INSERT INTO email_invite_domains(domain,allow_registration,enabled,updated_by)
         VALUES($1,$2,$3,$4) ON CONFLICT(domain) DO UPDATE SET allow_registration=EXCLUDED.allow_registration,
         enabled=EXCLUDED.enabled,updated_by=EXCLUDED.updated_by,updated_at=now()`,

@@ -36,7 +36,7 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     const adminNav = page.getByRole('navigation', { name: 'Workspace' });
     await adminNav.getByRole('button', { name: 'Communities' }).click();
     await expect(page.locator('.admin-community-node')).toHaveCount(3);
-    await expect(page.locator('.admin-community-node').nth(2)).toContainText('Ariel University students');
+    await expect(page.locator('.admin-community-node').nth(2)).toContainText('Ariel students from external config');
     await expect(page.locator('.admin-community-node').nth(2)).toContainText('ariel_students');
     await expect(page.locator('.admin-community-node + ul')).toHaveCount(2);
     await adminNav.getByRole('button', { name: 'Admin' }).click();
@@ -50,7 +50,7 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await newest.getByRole('button', { name: 'Revoke', exact: true }).click();
     await newest.getByRole('button', { name: 'Confirm revoke' }).click();
     await expect(newest.locator('.invite-status.revoked')).toBeVisible();
-    await page.locator('.invite-issue').getByLabel('Ariel University students', { exact: true }).check();
+    await page.locator('.invite-issue').getByLabel('Ariel students from external config', { exact: true }).check();
     await page.getByRole('button', { name: 'Create invite' }).click();
     const communityCode = await page.locator('.issued-invite code').innerText();
 
@@ -61,7 +61,7 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character' }).click();
     await guest.getByRole('textbox', { name: 'Invite code' }).fill(communityCode);
     await guest.getByRole('button', { name: 'Apply invite' }).click();
-    await expect(guest.locator('.community-badge')).toHaveText('✦ Ariel University students');
+    await expect(guest.locator('.community-badge')).toHaveText('✦ Ariel students from external config');
     await guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Adventures' }).click();
     await guest.getByRole('button', { name: 'Create adventure' }).click();
     await guest.getByRole('dialog').getByLabel('Community').selectOption('ariel_students');
