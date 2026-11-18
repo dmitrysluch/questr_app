@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Globe2, Languages, Check } from 'lucide-react';
-import { languages, normalizeSearch, type DiscoveryPreferences, type Location } from '../../shared/discovery.ts';
+import { languages, normalizeSearch, type CommunityFilter, type DiscoveryFilter, type DiscoveryPreferences, type Location } from '../../shared/discovery.ts';
+import { communityAncestors } from '../../shared/communities.ts';
+import { useCommunities } from '../community-catalog.tsx';
 import { api, ApiError } from '../api.ts';
 import { errorText, getLocale, languageName, locationName, t } from '../i18n.ts';
 import { SelectionPicker, type Choice } from './SelectionPicker.tsx';
@@ -64,7 +66,38 @@ export function LocationPicker({ value, onChange, single = false, citiesOnly = f
     query={query} onQuery={setQuery} loading={loading} focusOnMount={editing && collapseWhenSelected} limit={single ? 1 : 50} replaceOnSelect={single} items={items.filter(item => citiesOnly ? item.kind === 'city' : !single || item.kind !== 'country').map(locationChoice)} selected={Object.values(cache).map(locationChoice)} /></>}
     {!!error && <p className="field-error" role="alert">{errorText(error)} <button type="button" className="text-button" onClick={() => setRetry(old => old + 1)}>{t('common.retry')}</button></p>}</>;
 }
-export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, inline = false, onDirtyChange, onValueChange }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; inline?: boolean; onDirtyChange?: (dirty: boolean) => void; onValueChange?: (value: DiscoveryPreferences) => void }) {
+export function CommunityFilterPicker({ value, onChange }: { value: CommunityFilter; onChange: (value: CommunityFilter) => void }) {
+  const communities = useCommunities();
+  const names = new Map(communities.map(item => [item.id, item.name[getLocale()]]));
+  const selected = value.mode === 'community' ? `community:${value.communityId}` : value.mode;
+  return <label className="community-filter">{t('discovery.community')}
+    <select value={selected} onChange={event => {
+      const next = event.target.value;
+      onChange(next === 'all' || next === 'mine' ? { mode: next } : { mode: 'community', communityId: next.slice('community:'.length) });
+    }}>
+      <option value="all">{t('discovery.communityAll')}</option>
+      <option value="mine">{t('discovery.communityMine')}</option>
+      {communities.map(item => <option key={item.id} value={`community:${item.id}`}>
+        {communityAncestors(communities, item.id).reverse().map(id => names.get(id)).join(' › ')}
+      </option>)}
+    </select>
+  </label>;
+}
+export function AdhocDiscoveryFilters({ defaults, value, onChange }: { defaults: DiscoveryPreferences; value: DiscoveryFilter | null; onChange: (value: DiscoveryFilter | null) => void }) {
+  const current = value ?? defaults;
+  const edit = (change: Partial<DiscoveryFilter>) => onChange({ locationIds: current.locationIds, languageCodes: current.languageCodes, communityFilter: current.communityFilter, ...change });
+  return <details className="discovery-settings adhoc-discovery">
+    <summary><Globe2 size={17} aria-hidden="true" />{t('discovery.thisSearch')}{value && <span className="filter-active-dot" aria-label={t('discovery.temporaryActive')} />}</summary>
+    <div className="discovery-body">
+      <p className="field-hint">{t('discovery.temporaryHint')}</p>
+      <LocationPicker value={current.locationIds} onChange={locationIds => edit({ locationIds })} />
+      <LanguagePicker label={t('discovery.languages')} value={current.languageCodes} onChange={languageCodes => edit({ languageCodes })} />
+      <CommunityFilterPicker value={current.communityFilter} onChange={communityFilter => edit({ communityFilter })} />
+      {value && <button type="button" className="text-button discovery-reset" onClick={() => onChange(null)}>{t('discovery.resetToDefaults')}</button>}
+    </div>
+  </details>;
+}
+export function DiscoverySettings({ initial, spokenLanguages, onSaved, required = false, inline = false, onDirtyChange, onValueChange, title }: { initial: DiscoveryPreferences; spokenLanguages: string[]; onSaved: (preferences: DiscoveryPreferences) => void; required?: boolean; inline?: boolean; onDirtyChange?: (dirty: boolean) => void; onValueChange?: (value: DiscoveryPreferences) => void; title?: string }) {
   const [value, setValue] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -94,6 +127,7 @@ export function DiscoverySettings({ initial, spokenLanguages, onSaved, required 
         <p className="field-hint">{t('locations.hint')}</p>
         <LanguagePicker label={t('discovery.languages')} value={value.languageCodes} onChange={languageCodes => edit({ languageCodes })} />
         {!!spokenLanguages.length && <button type="button" className="text-button use-spoken" onClick={() => edit({ languageCodes: spokenLanguages })}>{t('discovery.useSpoken')}</button>}
+        <CommunityFilterPicker value={value.communityFilter} onChange={communityFilter => edit({ communityFilter })} />
       </fieldset>
       {required && !complete && <p className="field-hint">{t('discovery.requiredHint')}</p>}
       {!required && !value.locationIds.length && <p className="field-hint">{t('discovery.empty')}</p>}
@@ -102,6 +136,6 @@ export function DiscoverySettings({ initial, spokenLanguages, onSaved, required 
       <div className="discovery-actions"><span role="status">{(saved || required && !dirty && complete) && <><Check size={14} />{t('common.saved')}</>}</span><button type="button" className="pixel-button small" disabled={busy || !dirty || required && !complete} onClick={() => void save()}>{t(busy ? 'common.saving' : 'discovery.save')}</button></div>
       <small className="location-credit">{t('locations.coverage')} <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a></small>
     </div>;
-  return required || inline ? <section className="discovery-settings discovery-onboarding" id={required ? 'onboarding-discovery' : undefined}><h2><Globe2 size={18} aria-hidden="true" />{t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</h2>{body}</section>
-    : <details className="discovery-settings"><summary><Globe2 size={17} aria-hidden="true" />{t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</summary>{body}</details>;
+  return required || inline ? <section className="discovery-settings discovery-onboarding" id={required ? 'onboarding-discovery' : undefined}><h2><Globe2 size={18} aria-hidden="true" />{title ?? t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</h2>{body}</section>
+    : <details className="discovery-settings"><summary><Globe2 size={17} aria-hidden="true" />{title ?? t('discovery.title')}{dirty && <span className="unsaved-dot" aria-label={t('common.unsaved')} />}</summary>{body}</details>;
 }

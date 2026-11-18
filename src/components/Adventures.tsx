@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, CalendarDays, Globe2, Plus, RefreshCw, Users, LockKeyhole, Coins } from 'lucide-react';
 import type { AppConfig, Profile } from '../../shared/schema.ts';
-import type { DiscoveryPreferences } from '../../shared/discovery.ts';
+import type { DiscoveryFilter, DiscoveryPreferences } from '../../shared/discovery.ts';
 import { wallTime, wallTimeToInstant, hasPublicLink, type Adventure, type AdventureDetail, type AdventureList, type EventFields, type CharacterConnection, type EventProfile, type EventCreationAccess } from '../../shared/events.ts';
 import { googleMapsSearch } from '../../shared/event-links.ts';
 import { communityAncestors } from '../../shared/communities.ts';
 import { useCommunities } from '../community-catalog.tsx';
 import { api, apiBlob, ApiError, hasTelegramSession } from '../api.ts';
 import { t, errorText, getLocale, languageName, locationName, type TranslationKey } from '../i18n.ts';
-import { DiscoverySettings, LanguagePicker, LocationPicker } from './Discovery.tsx';
+import { AdhocDiscoveryFilters, DiscoverySettings, LanguagePicker, LocationPicker } from './Discovery.tsx';
 import { Character } from './Character.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ProfileCard } from './ProfileCard.tsx';
@@ -38,6 +38,7 @@ export function Adventures({ config, discovery, spokenLanguages, communityIds, o
   const [id, setId] = useState(location.hash.split('/')[1] ?? '');
   const [personId, setPersonId] = useState(location.hash.split('/')[3] ?? '');
   const [view, setView] = useState<'discover' | 'mine'>('discover');
+  const [adhocFilters, setAdhocFilters] = useState<DiscoveryFilter | null>(null);
   const [list, setList] = useState<AdventureList>({ events: [], nextOffset: null });
   const [creationAccess, setCreationAccess] = useState<EventCreationAccess | null>(null);
   const [detail, setDetail] = useState<AdventureDetail | null>(null);
@@ -74,11 +75,12 @@ export function Adventures({ config, discovery, spokenLanguages, communityIds, o
         const character = personId ? await api<EventProfile>(`/events/${id}/profiles/${personId}`) : null;
         if (current === generation.current) { setDetail(result.event); if (character) { setProfile(character.profile); setConnection(character.connection); } }
       }
-      else { const [result, access] = await Promise.all([api<AdventureList>(`/events?view=${view}&offset=${offset}`), api<EventCreationAccess>('/events/create-access')]); if (current === generation.current) { setList(old => offset ? { ...result, events: [...old.events, ...result.events] } : result); setCreationAccess(access); } }
+      else { const filters = view === 'discover' && adhocFilters ? `&filters=${encodeURIComponent(JSON.stringify(adhocFilters))}` : '';
+        const [result, access] = await Promise.all([api<AdventureList>(`/events?view=${view}&offset=${offset}${filters}`), api<EventCreationAccess>('/events/create-access')]); if (current === generation.current) { setList(old => offset ? { ...result, events: [...old.events, ...result.events] } : result); setCreationAccess(access); } }
       if (current === generation.current) setError(null);
     } catch (error) { if (current === generation.current) { setError(error); if (id) { setDetail(null); setProfile(null); setConnection(null); } } }
     finally { if (current === generation.current) setLoading(false); }
-  }, [id, personId, view, discovery.revision]);
+  }, [id, personId, view, discovery.revision, adhocFilters]);
   useEffect(() => { void reload(); return () => { generation.current++; }; }, [reload]);
   useEffect(() => {
     const refresh = () => { if (!document.hidden && !busy && !editor && !application && !confirmation) void reload(0, true); };
@@ -130,7 +132,7 @@ export function Adventures({ config, discovery, spokenLanguages, communityIds, o
   return <section className="adventures">
     <div className="adventure-heading">{id ? <button className="text-button" onClick={() => personId ? location.replace(`#adventures/${id}`) : go()}><ArrowLeft size={16} />{t(personId ? 'events.backToAdventure' : 'events.back')}</button> : <h1>{t('nav.adventures')}</h1>}{!personId && <div className="event-actions"><button className="icon-button" disabled={loading || busy} aria-label={t('events.refresh')} onClick={() => void reload()}><RefreshCw size={18} /></button>{!id && creationAccess?.hasRole && <button className="pixel-button small" disabled={!creationAccess.canCreate} onClick={() => setEditor('new')}><Plus size={16} />{t('events.create')}</button>}</div>}</div>
     {!id && creationAccess?.hasRole && creationAccess.budget && <p className="event-create-budget">{t('events.createBudget', { left: Math.max(0, creationAccess.budget.maxUses - creationAccess.budget.used), max: creationAccess.budget.maxUses, days: creationAccess.budget.windowDays })}</p>}
-    {!id && <><div className="event-tabs"><button className={view === 'discover' ? 'active' : ''} onClick={() => setView('discover')}>{t('events.discover')}</button><button className={view === 'mine' ? 'active' : ''} onClick={() => setView('mine')}>{t('events.mine')}</button></div>{view === 'discover' && <DiscoverySettings initial={discovery} spokenLanguages={spokenLanguages} onSaved={onDiscovery} />}</>}
+    {!id && <><div className="event-tabs"><button className={view === 'discover' ? 'active' : ''} onClick={() => setView('discover')}>{t('events.discover')}</button><button className={view === 'mine' ? 'active' : ''} onClick={() => setView('mine')}>{t('events.mine')}</button></div>{view === 'discover' && <><AdhocDiscoveryFilters defaults={discovery} value={adhocFilters} onChange={setAdhocFilters} /><DiscoverySettings initial={discovery} spokenLanguages={spokenLanguages} onSaved={onDiscovery} title={t('discovery.savedFilters')} /></>}</>}
     {!editor && !confirmation && !application && !connectionPurpose && <EventError error={error} />}
     {personId ? profile ? <><ProfileCard profile={profile} />{config.authMode === 'telegram' && connection && (connection.status !== 'unavailable' || connection.botRequired) ? <div className="profile-connection">
       {connection.status === 'available' && (inTelegramMiniApp || !connection.botRequired) && <><button className="pixel-button small" onClick={() => { setConnectionPurpose('chat'); setConnectionMessage(''); }}>{t('events.requestChat')}</button><button className="outline-button small" onClick={() => { setConnectionPurpose('contact'); setConnectionMessage(''); }}>{t('events.requestContact')}</button></>}

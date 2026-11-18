@@ -46,6 +46,32 @@ test('leaving character editor offers save, discard and cancel for changed filte
   expect((await (await page.request.get('/api/me')).json()).discovery.locationIds).toEqual(['country:IL', 'online']);
 });
 
+test('community filters persist in the profile while Discover can override them for one search', async ({ page }) => {
+  await publishedCharacter(page);
+  const temporary = page.locator('.adhoc-discovery');
+  await temporary.locator('summary').click();
+  const request = page.waitForRequest(request => request.url().includes('/api/events?') && new URL(request.url()).searchParams.has('filters'));
+  await temporary.getByRole('combobox', { name: 'Community' }).selectOption('mine');
+  const filters = JSON.parse(new URL((await request).url()).searchParams.get('filters')!);
+  expect(filters.communityFilter).toEqual({ mode: 'mine' });
+  expect((await (await page.request.get('/api/me')).json()).discovery.communityFilter).toEqual({ mode: 'all' });
+  await page.reload();
+  await temporary.locator('summary').click();
+  await expect(temporary.getByRole('combobox', { name: 'Community' })).toHaveValue('all');
+
+  await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character' }).click();
+  await page.getByRole('button', { name: 'Edit character' }).click();
+  await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Languages & filters' }).click();
+  const saved = page.locator('.discovery-onboarding');
+  await saved.getByRole('combobox', { name: 'Community' }).selectOption('community:university_students');
+  await saved.getByRole('button', { name: 'Save filters' }).click();
+  await expect.poll(async () => (await (await page.request.get('/api/me')).json()).discovery.communityFilter).toEqual({ mode: 'community', communityId: 'university_students' });
+  await page.reload();
+  const profileFilters = page.locator('.discovery-settings');
+  await profileFilters.locator('summary').click();
+  await expect(profileFilters.getByRole('combobox', { name: 'Community' })).toHaveValue('community:university_students');
+});
+
 test('event location replaces in one selection and keeps offline details separate from call link', async ({ page }) => {
   await publishedCharacter(page);
   await expect(page.getByText('2 of 2 adventures left in 7 days')).toBeVisible();

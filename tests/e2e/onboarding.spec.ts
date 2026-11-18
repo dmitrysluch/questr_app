@@ -406,12 +406,14 @@ test('spoken languages and private country/city/online adventure filters persist
   await expect(page.locator('.profile-languages').getByRole('button', { name: 'Remove English', exact: true })).toBeVisible();
   await spoken.press('Escape');
   const where = page.getByRole('combobox', { name: 'Where', exact: true });
+  await page.getByRole('combobox', { name: 'Community' }).selectOption('mine');
   await page.getByRole('button', { name: 'Use languages I speak' }).click();
   await page.getByRole('button', { name: 'Save filters' }).click();
   await expect(page.getByRole('button', { name: 'Save filters' })).toBeDisabled();
   let state = await (await page.request.get('/api/me')).json();
   expect(state.discovery.locationIds).toEqual(['country:IL']);
   expect(state.discovery.languageCodes).toEqual(['en', 'ru']);
+  expect(state.discovery.communityFilter).toEqual({ mode: 'mine' });
   await page.getByRole('button', { name: 'Remove All Israel' }).click();
   for (const [query, name] of [['Хайфа', /^Haifa/], ['Tel-Aviv', /^Tel Aviv/], ['Online', /^Online/]] as const) {
     await where.fill(query);

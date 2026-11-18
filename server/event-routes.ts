@@ -3,14 +3,18 @@ import { z } from 'zod';
 import { Adventures } from './events.ts';
 import { eventCalendar } from './event-calendar.ts';
 import { preferredLocale } from '../shared/locale.ts';
-import { locationIdSchema } from '../shared/discovery.ts';
+import { discoveryFilterSchema, locationIdSchema } from '../shared/discovery.ts';
+import { AppError } from './errors.ts';
 
 export function eventRoutes(events: Adventures) {
   const router = Router();
   const id = (value: unknown) => z.uuid().parse(value);
   router.get('/', async (req, res) => {
-    const query = z.object({ view: z.enum(['discover', 'mine']).default('discover'), offset: z.coerce.number().int().min(0).max(100000).default(0) }).strict().parse(req.query);
-    res.json(await events.list(res.locals.user.id, query.view, query.offset));
+    const query = z.object({ view: z.enum(['discover', 'mine']).default('discover'), offset: z.coerce.number().int().min(0).max(100000).default(0), filters: z.string().max(6000).optional() }).strict().parse(req.query);
+    let override;
+    try { override = query.filters ? discoveryFilterSchema.parse(JSON.parse(query.filters)) : undefined; }
+    catch (error) { if (error instanceof SyntaxError) throw new AppError(400, 'INVALID_INPUT'); throw error; }
+    res.json(await events.list(res.locals.user.id, query.view, query.offset, override));
   });
   router.get('/create-access', async (req, res) => {
     const query = z.object({ locationId: locationIdSchema.optional() }).strict().parse(req.query);

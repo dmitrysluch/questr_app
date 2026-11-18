@@ -49,11 +49,30 @@ integration('community adventures are visible only to direct members and members
   }
   const arielEvent = await create(ariel, { title: 'Ariel coffee', communityId: 'ariel_students' });
   const israelEvent = await create(israel, { title: 'University coffee', communityId: 'israeli_university_students' });
+  const publicEvent = await create(outsider, { title: 'Public coffee' });
   assert.equal(arielEvent.communityId, 'ariel_students');
   const visibleToAriel = (await ariel.agent.get('/api/events').expect(200)).body.events.map((event: any) => event.id);
   assert.ok(visibleToAriel.includes(arielEvent.id)); assert.ok(visibleToAriel.includes(israelEvent.id));
+  assert.ok(visibleToAriel.includes(publicEvent.id));
   const visibleToIsrael = (await israel.agent.get('/api/events').expect(200)).body.events.map((event: any) => event.id);
   assert.ok(visibleToIsrael.includes(israelEvent.id)); assert.ok(!visibleToIsrael.includes(arielEvent.id));
+  const current = (await ariel.agent.get('/api/me').expect(200)).body.discovery;
+  assert.deepEqual(current.communityFilter, { mode: 'all' });
+  const mine = (await ariel.agent.put('/api/discovery').send({ ...current, communityFilter: { mode: 'mine' } }).expect(200)).body.discovery;
+  assert.deepEqual(mine.communityFilter, { mode: 'mine' });
+  const ids = async (agent: typeof ariel.agent, filters?: object) => (await agent.get('/api/events').query(filters ? { filters: JSON.stringify(filters) } : {}).expect(200)).body.events.map((event: any) => event.id) as string[];
+  assert.deepEqual(new Set(await ids(ariel.agent)), new Set([arielEvent.id, israelEvent.id]));
+  const parent = (await ariel.agent.put('/api/discovery').send({ ...mine, communityFilter: { mode: 'community', communityId: 'university_students' } }).expect(200)).body.discovery;
+  const { revision: _revision, ...filterDefaults } = parent;
+  assert.deepEqual(new Set(await ids(ariel.agent)), new Set([arielEvent.id, israelEvent.id]));
+  assert.deepEqual(await ids(ariel.agent, { ...filterDefaults, communityFilter: { mode: 'community', communityId: 'ariel_students' } }), [arielEvent.id]);
+  assert.deepEqual(new Set(await ids(ariel.agent, { ...filterDefaults, communityFilter: { mode: 'all' } })), new Set([arielEvent.id, israelEvent.id, publicEvent.id]));
+  assert.deepEqual((await ariel.agent.get('/api/me').expect(200)).body.discovery, parent); // An ad hoc filter does not change defaults.
+  assert.deepEqual(await ids(israel.agent, { ...filterDefaults, communityFilter: { mode: 'community', communityId: 'ariel_students' } }), []);
+  assert.deepEqual(await ids(outsider.agent, { ...filterDefaults, communityFilter: { mode: 'community', communityId: 'university_students' } }), []);
+  assert.deepEqual(await ids(ariel.agent, { ...filterDefaults, locationIds: [] }), []);
+  await ariel.agent.get('/api/events').query({ filters: '{broken' }).expect(400);
+  await ariel.agent.get('/api/events').query({ filters: JSON.stringify({ ...filterDefaults, communityFilter: { mode: 'community', communityId: 'unknown_community' } }) }).expect(400);
   assert.ok(!(await outsider.agent.get('/api/events').expect(200)).body.events.some((event: any) => event.id === arielEvent.id));
   await israel.agent.get(`/api/events/${arielEvent.id}`).expect(404);
   await outsider.agent.get(`/api/events/${arielEvent.id}/calendar.ics`).expect(404);

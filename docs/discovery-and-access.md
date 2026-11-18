@@ -10,7 +10,7 @@ from a shared adventure; after consent, the conversation belongs to the pair of 
 - `users.locale` is the interface language (`en` or `ru`), separate from spoken languages.
 - `profile_languages` lists languages a person speaks, using stable language codes.
   Drafts keep their own language selection until the profile is saved.
-- `discovery_preferences` has its own revision and two normalized join tables:
+- `discovery_preferences` has its own revision, a community filter and two normalized join tables:
   `discovery_locations` and `discovery_languages`. These are private to the account;
   they never appear in a profile response or the AI interview input.
 - `locations` is a forest: country → city, plus the independent `online` root.
@@ -35,10 +35,16 @@ leaving languages empty shows events in every language within those locations:
 | No location selection | No configured feed | Implicit worldwide access |
 
 The frontend lets people explicitly copy spoken languages into their adventure
-filters, but subsequent edits stay independent. Selecting a country doesn't
+filters, but subsequent edits stay independent. A community filter can show all
+accessible adventures (the default), only adventures in communities the person
+can access, or adventures in one selected community and its descendants. It never
+grants access: a private adventure still requires membership in its community or
+a child community. Saved filters are set during registration and profile editing;
+Discover also accepts temporary filters that do not change those defaults.
+Selecting a country doesn't
 assert residence, citizenship or willingness to cross a border. No GPS is stored.
 `eventMatchesDiscovery` tests these preferences and published status. The v1 feed
-also applies authorization and future start times. Club visibility is future work.
+also applies authorization and future start times.
 
 ## Roles and capabilities
 

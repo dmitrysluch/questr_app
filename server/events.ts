@@ -15,6 +15,8 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 import { toString } from 'mdast-util-to-string';
 import { romanceConsentVersion } from '../shared/romance.ts';
 import { hasCommunityAccess, requireCommunityAccess } from './communities.ts';
+import { getDiscovery, validateDiscoveryFilter } from './discovery.ts';
+import type { DiscoveryFilter } from '../shared/discovery.ts';
 
 type Db = Pool | PoolClient;
 function normalizeFields<T extends EventFields>(fields: T): T {
@@ -122,19 +124,26 @@ export class Adventures {
     const review = await reviewContent(this.pool, this.reviewer, text);
     if (review.status === 'blocked') throw new AppError(422, 'EVENT_CONTENT_REQUIRES_CHANGES', { excerpts: review.spans.map(span => text.slice(span.start, span.end)) });
   }
-  async list(userId: string, mode: 'discover' | 'mine', offset: number) {
+  async list(userId: string, mode: 'discover' | 'mine', offset: number, override?: DiscoveryFilter) {
     await activeUser(this.pool, userId);
+    if (mode === 'discover' && override) await validateDiscoveryFilter(this.pool, override);
+    const preferences = mode === 'discover' ? override ?? await getDiscovery(this.pool, userId) : null;
+    const community = preferences?.communityFilter;
     const filter = mode === 'mine'
       ? `EXISTS(SELECT 1 FROM event_memberships WHERE event_id=e.id AND user_id=$1)`
       : `e.status='published' AND e.starts_at>now()
-        AND (NOT EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1)
-          OR EXISTS(SELECT 1 FROM discovery_languages WHERE user_id=$1 AND language_code=e.language_code))
-        AND EXISTS(SELECT 1 FROM discovery_locations WHERE user_id=$1 AND (location_id=e.location_id OR location_id=l.parent_id))`;
+        AND (cardinality($4::text[])=0 OR e.language_code=ANY($4::text[]))
+        AND (e.location_id=ANY($3::text[]) OR l.parent_id=ANY($3::text[]))
+        AND ($5::text='all' OR ($5='mine' AND e.community_id IS NOT NULL)
+          OR ($5='community' AND EXISTS(SELECT 1 FROM community_closure c
+            WHERE c.ancestor_id=$6 AND c.descendant_id=e.community_id)))`;
+    const parameters = mode === 'mine' ? [userId, offset] : [userId, offset, preferences!.locationIds, preferences!.languageCodes,
+      community!.mode, community!.mode === 'community' ? community!.communityId : null];
     const { rows } = await this.pool.query(`${eventProjection} WHERE host_user.status='active' AND ${filter}
       AND (e.community_id IS NULL OR EXISTS(SELECT 1 FROM user_community_grants g
         JOIN community_closure c ON c.descendant_id=g.community_id
         WHERE g.user_id=$1 AND c.ancestor_id=e.community_id))
-      ORDER BY e.starts_at ${mode === 'mine' ? 'DESC' : 'ASC'},e.id LIMIT 21 OFFSET $2`, [userId, offset]);
+      ORDER BY e.starts_at ${mode === 'mine' ? 'DESC' : 'ASC'},e.id LIMIT 21 OFFSET $2`, parameters);
     const events: Adventure[] = [];
     for (const row of rows.slice(0, 20)) if (await can(this.pool, userId, 'events.view', { type: 'event', id: row.id })) events.push(mapEvent(row, userId));
     return { events, nextOffset: rows.length > 20 ? offset + 20 : null };
