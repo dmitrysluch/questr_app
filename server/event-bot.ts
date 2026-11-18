@@ -10,6 +10,7 @@ import { queueBot, queuePartyTopic, type BotButton, type BotKeyboard } from './e
 import { botText } from './bot-copy.ts';
 import { relayMarkdown } from './telegram-markdown.ts';
 import { hasPublicLink } from '../shared/events.ts';
+import { dmTopicUrl } from './telegram-links.ts';
 import { ZodError } from 'zod';
 import type { OperationalMetrics } from './metrics.ts';
 
@@ -230,7 +231,7 @@ export class EventBot {
       }
       if (!topic) await queueBot(db, { key: `dm:${dm.id}:resume:${row.update_id}`, userId: row.user_id, dmId: dm.id, kind: 'dm_accept', inTopic: true,
         body: botText(locale, 'dmAccepted', { name: dm.display_name, code: hex(dm.id).slice(0, 8) }) });
-      await reply(botText(locale, topic ? 'dmTopicReady' : 'dmTopicPreparing', { name: dm.display_name, link: topic ? `https://t.me/questr_game/${topic.thread_id}` : '' }));
+      await reply(botText(locale, topic ? 'dmTopicReady' : 'dmTopicPreparing', { name: dm.display_name, link: topic ? await dmTopicUrl(db, row.user_id, dm.id) ?? '' : '' }));
       return true;
     }
     if (command === '/dm' && parts.length === 3) {
@@ -262,7 +263,7 @@ export class EventBot {
       }
       if (!topic && ['draft', 'accepted'].includes(dm.status)) await queueBot(db, { key: `dm:${dm.id}:topic:${row.user_id}`, userId: row.user_id, dmId: dm.id, kind: 'reply', inTopic: true,
         body: botText(locale, dm.status === 'accepted' ? 'dmAccepted' : 'dmStart', { name: person.display_name, title: event.title, code: dm.id.replaceAll('-', '').slice(0, 8) }) });
-      await reply(botText(locale, dm.status === 'pending' ? 'dmWaiting' : topic ? 'dmTopicReady' : 'dmTopicPreparing', { name: person.display_name, link: topic ? `https://t.me/questr_game/${topic.thread_id}` : '' }));
+      await reply(botText(locale, dm.status === 'pending' ? 'dmWaiting' : topic ? 'dmTopicReady' : 'dmTopicPreparing', { name: person.display_name, link: topic ? await dmTopicUrl(db, row.user_id, dm.id) ?? '' : '' }));
       return true;
     }
     if (['/accept', '/decline', '/block'].includes(command) && parts.length === 2) {
@@ -288,13 +289,12 @@ export class EventBot {
     return false;
   }
   private async dmText(db: PoolClient, row: any, locale: string): Promise<boolean> {
-    const redirect = (await db.query(`SELECT p.thread_id FROM dm_topic_redirects r
-      JOIN dm_bot_topics p ON p.conversation_id=r.conversation_id AND p.user_id=r.user_id
+    const redirect = (await db.query(`SELECT r.conversation_id FROM dm_topic_redirects r
       WHERE r.user_id=$1 AND r.thread_id=$2`, [row.user_id, row.thread_id])).rows[0];
     if (redirect) {
-      const link = `https://t.me/questr_game/${redirect.thread_id}`;
+      const link = await dmTopicUrl(db, row.user_id, redirect.conversation_id);
       await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, threadId: Number(row.thread_id),
-        kind: 'reply', inTopic: true, body: botText(locale, 'dmMoved', { link }) });
+        kind: 'reply', inTopic: true, body: botText(locale, 'dmMoved', { link: link ?? 'https://t.me/questr_game' }) });
       return true;
     }
     const mapped = (await db.query('SELECT conversation_id FROM dm_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];

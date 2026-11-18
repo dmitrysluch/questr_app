@@ -15,6 +15,7 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 import { toString } from 'mdast-util-to-string';
 import { romanceConsentVersion } from '../shared/romance.ts';
 import { hasCommunityAccess, requireCommunityAccess } from './communities.ts';
+import { dmTopicUrl } from './telegram-links.ts';
 import { getDiscovery, validateDiscoveryFilter } from './discovery.ts';
 import type { DiscoveryFilter } from '../shared/discovery.ts';
 
@@ -364,13 +365,13 @@ export class Adventures {
     if (!theirs) return { status: 'unavailable', botRequired: false, botUrl };
     const conversation = (await this.pool.query(`SELECT id,status,requested_by FROM dm_conversations
       WHERE first_user_id=LEAST($1::uuid,$2::uuid) AND second_user_id=GREATEST($1::uuid,$2::uuid)`, [userId, targetId])).rows[0];
-    const topic = conversation ? (await this.pool.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [conversation.id, userId])).rows[0] : null;
-    const privateUrl = topic ? `https://t.me/questr_game/${topic.thread_id}` : `${botUrl}?start=dm_${eventId.replaceAll('-', '').slice(0, 16)}_${targetId.replaceAll('-', '')}`;
-    if (await can(this.pool, userId, 'dm.message', { type: 'profile', id: targetId })) return { status: 'accepted', botRequired, botUrl: privateUrl };
-    if (conversation?.status === 'pending') return { status: conversation.requested_by === userId ? 'pending' : 'incoming', botRequired, botUrl: conversation.requested_by === userId ? privateUrl : botUrl };
+    const privateUrl = conversation ? await dmTopicUrl(this.pool, userId, conversation.id) : null;
+    const openUrl = privateUrl ?? `${botUrl}?start=dm_${eventId.replaceAll('-', '').slice(0, 16)}_${targetId.replaceAll('-', '')}`;
+    if (await can(this.pool, userId, 'dm.message', { type: 'profile', id: targetId })) return { status: 'accepted', botRequired, botUrl: openUrl };
+    if (conversation?.status === 'pending') return { status: conversation.requested_by === userId ? 'pending' : 'incoming', botRequired, botUrl: conversation.requested_by === userId ? openUrl : botUrl };
     if (conversation?.status === 'declined' || conversation?.status === 'blocked') return { status: 'closed', botRequired, botUrl };
     if (conversation?.status === 'draft' && conversation.requested_by !== userId) return { status: 'unavailable', botRequired: false, botUrl };
-    return { status: await can(this.pool, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId }) ? 'available' : 'unavailable', botRequired, botUrl: privateUrl };
+    return { status: await can(this.pool, userId, 'dm.send_opener', { type: 'profile', id: targetId, eventId }) ? 'available' : 'unavailable', botRequired, botUrl: openUrl };
   }
   async requestConnection(userId: string, eventId: string, targetId: string, body: unknown) {
     const input = connectionRequestSchema.parse(body);

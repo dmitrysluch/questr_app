@@ -652,6 +652,9 @@ integration('bot commands select party and private topics; consent gates DM deli
   const dm = (await pool.query('SELECT * FROM dm_conversations WHERE event_id=$1 AND requested_by=$2', [event.id, guest.id])).rows[0];
   assert.equal(dm.status, 'draft');
   const thread = Number((await pool.query('SELECT thread_id FROM dm_bot_topics WHERE conversation_id=$1 AND user_id=$2', [dm.id, guest.id])).rows[0].thread_id);
+  const anchor = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE dm_id=$1 AND user_id=$2 AND in_topic AND state='sent' ORDER BY id DESC LIMIT 1", [dm.id, guest.id])).rows[0].telegram_message_id;
+  assert.equal((await guest.agent.get(`/api/events/${event.id}/profiles/${host.id}`).expect(200)).body.connection.botUrl,
+    `https://t.me/questr_game/${thread}/${anchor}`);
   await send(9004, 3002, 'I can bring my jazz records.', thread);
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'pending');
   assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9004:reply'")).rows[0].body, /waiting for a reply/);
@@ -669,6 +672,10 @@ integration('bot commands select party and private topics; consent gates DM deli
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'pending');
   await press(9006, 3001, requestCall.body.reply_markup.inline_keyboard[0][0].callback_data, Number(requestMessage)); await drain();
   assert.equal((await pool.query('SELECT status FROM dm_conversations WHERE id=$1', [dm.id])).rows[0].status, 'accepted');
+  await send(9017, 3002, `/dm ${host.id.replaceAll('-', '').slice(0, 8)}`);
+  const latestDmMessage = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE dm_id=$1 AND user_id=$2 AND in_topic AND state='sent' ORDER BY id DESC LIMIT 1", [dm.id, guest.id])).rows[0].telegram_message_id;
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9017:reply'")).rows[0].body,
+    new RegExp(`https://t.me/questr_game/${thread}/${latestDmMessage}`));
   assert.ok(calls.some(c => c.method === 'sendMessage' && String(c.body.chat_id) === '3001' && c.body.parse_mode === 'MarkdownV2' && c.body.text === '*Guest*:\nI can bring my jazz records\\.'));
   await send(9008, 3002, '/people');
   const allPeople = (await pool.query("SELECT reply_markup FROM bot_outbox WHERE dedupe_key='update:9008:reply'")).rows[0].reply_markup;
@@ -771,7 +778,8 @@ integration('two shared adventures reuse one private topic, consent and block', 
     .send({ update_id: 9807, callback_query: { id: '9807', from: { id: 8102 }, data: oldFriend.callback_data,
       message: { message_id: Number(peopleMenu.telegram_message_id), chat: { id: 8102, type: 'private' } } } }).expect(200);
   assert.equal(await bot.inbox(), true);
-  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9807:reply'")).rows[0].body, new RegExp(`/${originalTopic}$`));
+  const latestMessage = (await pool.query("SELECT telegram_message_id FROM bot_outbox WHERE dm_id=$1 AND user_id=$2 AND in_topic AND state='sent' ORDER BY id DESC LIMIT 1", [conversation.id, guest.id])).rows[0].telegram_message_id;
+  assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9807:reply'")).rows[0].body, new RegExp(`/${originalTopic}/${latestMessage}$`));
   await send(9808, 8102, 'The chat survived both quests.', Number(originalTopic)); await drain();
   assert.equal((await pool.query("SELECT state FROM bot_outbox WHERE kind='dm_relay' AND dm_message_id=(SELECT id FROM dm_messages WHERE telegram_update_id=9808)")).rows[0].state, 'sent');
   await send(9809, 8101, `/block ${conversation.id.replaceAll('-', '')}`);

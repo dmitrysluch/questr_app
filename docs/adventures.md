@@ -167,8 +167,11 @@ Before a public release, add image-content review before relaying photos. The
 current text reviewer does not inspect image pixels. The review-model choice
 can be revisited separately; the current model and text policy remain in place.
 
-The Mini App button uses Telegram's `openTelegramLink` when available. Once a
-topic exists, its `https://t.me/questr_game/<thread_id>` link opens that topic.
+The Mini App button uses Telegram's `openTelegramLink` when available. For a
+private topic with a delivered bot message, QUESTR links to
+`https://t.me/questr_game/<thread_id>/<message_id>` so Telegram can open a
+message inside the topic. Before the first topic message is delivered, it falls
+back to `https://t.me/questr_game/<thread_id>`.
 Before the user starts the bot, the button uses a `/start` deep link; Telegram
 may show its **Start** button first. The bot posts in the new topic so it is also
 visible in the chat list.

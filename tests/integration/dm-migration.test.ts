@@ -17,6 +17,7 @@ test('existing adventure-scoped DMs merge without losing messages or Telegram to
     await admin.query(`CREATE DATABASE "${database}"`);
     const url = new URL(connection!); url.pathname = `/${database}`;
     pool = createPool(url.toString());
+    await pool.query('CREATE TABLE schema_migrations(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
     const dir = fileURLToPath(new URL('../../db/migrations/', import.meta.url));
     for (const name of (await readdir(dir)).filter(name => name.endsWith('.sql') && name < '022_person_direct_messages.sql').sort()) {
       await pool.query(await readFile(resolve(dir, name), 'utf8'));
@@ -46,6 +47,7 @@ test('existing adventure-scoped DMs merge without losing messages or Telegram to
       VALUES('old-request',$1,$2,'Request from second adventure','dm_request')`, [host, duplicate]);
 
     await pool.query(await readFile(resolve(dir, '022_person_direct_messages.sql'), 'utf8'));
+    await pool.query("INSERT INTO schema_migrations(name) VALUES('022_person_direct_messages.sql')");
     assert.deepEqual((await pool.query('SELECT id,status FROM dm_conversations')).rows, [{ id: first, status: 'blocked' }]);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [first])).rows[0].n, 2);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_conversation_events WHERE conversation_id=$1', [first])).rows[0].n, 2);
