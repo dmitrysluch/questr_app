@@ -1,0 +1,58 @@
+[
+  {
+    "id": "online",
+    "name": "Online",
+    "kind": "online",
+    "parentId": null,
+    "population": 0,
+    "search": "onlineglobalremote"
+  },
+  {
+    "id": "country:IL",
+    "name": "Israel",
+    "kind": "country",
+    "parentId": null,
+    "population": 10122800,
+    "search": "ilisrisrael"
+  },
+  {
+    "id": "country:JO",
+    "name": "Jordan",
+    "kind": "country",
+    "parentId": null,
+    "population": 11520684,
+    "search": "jojorjordan"
+  },
+  {
+    "id": "city:250441",
+    "name": "Amman",
+    "kind": "city",
+    "parentId": "country:JO",
+    "population": 1275857,
+    "search": "ammanammanammanammamaamanamanasamaniamanoamansammanammanaammonammanammanammanaamanamanamaphiladelphiarabbahrabbathammonammanammanaamanamanaamaniammananmananmanxammanyammanʻmʼnʿmanʿmʾnαμμανаманамманаммонամմանאמאןעמאןياممانامانعمانعمانشہرعمانعمانعەممانܥܡܐܢअममनআমমনਅਮਨஅமமனಅಮಮನഅമമൻอมมานཨམམནამანიአማንammanアンマン安曼암만"
+  },
+  {
+    "id": "city:281184",
+    "name": "Jerusalem",
+    "kind": "city",
+    "parentId": "country:IL",
+    "population": 971800,
+    "search": "jerusalemjerusalemaeliacapitolinaalqudsalkudsalqudisalqudsalqudısarielbaitulmaqdisbaitulmuqaddisbajtulmakudisbaytalmaqdisbaytalmuqaddascherusalemcityofdavidcoloniaaeliacapitolinadjeruzalemelkudselqudseshsheriferusagemerusalimgeruesalemgerusalemgerusalemmegerusalemgierusalemmegirusalemmiherusaleherusalemherusalehierosolymahierousalemhierousalemhierusalemhiruharamaijerusalemialosaklengialosatlengiarusaileimiarusaileimiebousiebusierosolymaierousalemierousalimuierusalemierusalemaierusalimirdavidirhaqdooshairhaqodeshiyerusalimialosaklengialosatlengiyerusalimjrsjarusalenjeriwsalemjerozalejerozalejerozolemajerozolimajerozolemajerusalemjerusalemijerusalemojerusalemujerusalenjerusalimjerusalemjerusalemjerusalenjeruusalemmjeruzalejeruzalemjeruzalemejeruzalimjeruzalemjeruzalejeruzsalemjeruzsalemjerusalemjerusalemujorsalajorsalaborgjorsalirjerusalemjorsalaborgjorsalirkoudskudueskuduskuduskuudsgӏalamoriamoriasorcalimorselimorselimquddusqudusquedsqudssalemsionsolymaurselimurshalimurusalimurusalimurselimxerusalenxerusalenyalusatlangyerusalemyerusalemiyerusalemuyerusalemiyerushalayimyerusəlimyirushalayimyirushalayimyalusatlangyerusalemzionalbalatalqudsassarifalqudsassarifalblaalqdsalqdsalshryfalqudsaryyylauwrshalymawlyalqbltynawrsalmawrshlymawrshlymalqdsawrslymanbaytalmuqdasbytalmqdserucalemerusaremuhaqodesierusalimijerusalamajerusalemjerusalemajeruselamalqdsmdyntalqdsmryamworiyahmwryhqudsqudusqۇdssalemsalymshywnslmwrshlymyarusalamaybwsyelusalengyerusalemyebwsyelusallemyerwsalamiyerwsalayimyerwselemyrwshlmyrwslmyrwslymywrshەlymziywonzywnαριηλιεβουςιεροσολυμαιεροσολυμαιερουσαλημιερουσαλημμωριαςσαλημσιωνσολυμαєрусалиміерусалімієроусалимъјерусалимбаитулмакъдисерусалимиерусалимиерусалимкудускъудсгӏалауршалимերուսաղեմերուսաղէմאיליהקפיטולינההקדשיבוסירושלםירושליםירושלםירושלםיבוסירושליםירושלםמוריהמוריהציוןציוןשלםשלםاورسالماورشليماورشليمالقدساولىالقبلتيناورشليمايلياءيورشەلیماريييلالبلاالقدسالقدسالشريفالقدسالقدساورسلیماناورشلیمبيتالمقدسبیتالمقدسبیتالمقدسساليمصهيونقدسقۇدسلقدسمدينةالقدسمرياورشليميبوسیروشلمܐܘܪܫܠܡܨܗܝܘܢޤދސजरसलमजरसलमजरसलमयरशलमজরসলমਜਰਸਲਮଜରସଲମஎரசலமజరసలಜರಸಲജറസലเยรซาเลมເຢຣຊາເລມཇརསལམဂရဆလငမიერუსალიმიእየሩሳሌምエルサレム耶路撒冷예루살렘𐌹𐌰𐌹𐍂𐌿𐍃𐌰𐌿𐌻𐍅𐌼𐌰"
+  },
+  {
+    "id": "city:293397",
+    "name": "Tel Aviv",
+    "kind": "city",
+    "parentId": "country:IL",
+    "population": 432892,
+    "search": "telavivtelavivlungsodngtelavivyafotlvtehlaviutelavevstelavivtelavivyaffotelavivyafotelavivjaffatelavivjafotelavivyafotelavivastelavivtelavevstelawiwtelevivtelavivtelavivtelavivotelavivteləvivtelavivatelavivumtellabibtellabibtellafiftelaweifutelavivtelabibeutelavivitelaabhibhatelaabhivatelaavivatelaabibatelʼabiybyapwoteruabibuthelxawiftlabybtlabybyafatlalrbyʿtlavyvtlawywtlawywyafwtlʼbybtlʼbybypwtlawywtlawywtlawywyafwtێlyەvyvτελαβιβтелавивтелавивтельавивтельавівтэльавіуթելավիվתלאביביפותלאביבתלאביביפוتلاویوتلاویویافوتلاڤیڤتلابيبتلابيبيافاتلابيبتلابیبتلالربيعتلاویوتلاویویافوتلاویوتلاویوتلاویویافوتلاویوتلاویویافوتێليەڤیڤتېلاۋىفܬܠܐܒܝܒतलअभवतलअववतलअववতলআভভতলআববடலஅவவടൽഅവവเทลอาวฟთელავივიቴልአቪቭテルアヒフ特拉維夫特拉维夫텔아비브"
+  },
+  {
+    "id": "city:294801",
+    "name": "Haifa",
+    "kind": "city",
+    "parentId": "country:IL",
+    "population": 285316,
+    "search": "haifahaifaaifacaiffachaifahfahaifahajfahajfohayfahaifahaifahefaheifaheifahephaheyfahefakhajfakhajfaelungsodnghefalungsodnghefahaiphahaifahaifahaipahaiphahifahphhyfahyphjhfytkaihpakhaipahajfoχαιφαхаифæхаифахајфаհայֆաחיפהחפהجحفيةحيفاحیفاحەیفاܚܝܦܐहइफहफहफகஃபಹಫഹഫไฮฟาხაიფაheyfaハイファ海法하이파"
+  }
+]

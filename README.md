@@ -29,11 +29,12 @@ Requirements: Node.js 22.12+ and Docker. Commands below use Compose v2. If your 
 ```sh
 cp .env.example .env
 npm ci
+python3 scripts/import-geography.py
 docker compose up -d db
 npm run dev
 ```
 
-Open **http://localhost:5173**. The API runs on port 5181; PostgreSQL runs on localhost:55432. Migrations and catalog seeds run automatically at server startup.
+Open **http://localhost:5173**. The API runs on port 5181; PostgreSQL runs on localhost:55432. Migrations and catalog seeds run automatically at server startup. `LOCATION_CATALOG_PATH` points to an external JSON file of countries, cities and Online. The import command generates one in `local/locations.json`; this file is ignored by git. You can instead supply your own catalog at that path. Existing location IDs must remain stable; removed entries stay in PostgreSQL so existing references continue to work. Changing a location's kind or parent requires an explicit database migration.
 
 The default configuration is intentionally usable without credentials:
 
@@ -46,7 +47,7 @@ To run the entire application in Docker instead:
 docker compose up -d --build
 ```
 
-Open **http://localhost:5180**. This serves the production frontend and API from one origin. The PostgreSQL volume keeps data across container restarts. `docker compose down` stops the containers and preserves that volume.
+Open **http://localhost:5180**. This serves the production frontend and API from one origin. Compose mounts the host file named by `LOCATION_CATALOG_PATH` read-only at `/etc/questr/locations.json`. For a non-Compose deployment, mount the file yourself and set `LOCATION_CATALOG_PATH` to its path inside the container. The PostgreSQL volume keeps data across container restarts. `docker compose down` stops the containers and preserves that volume.
 
 ## Connect the interviewer through OpenRouter
 

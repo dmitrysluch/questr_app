@@ -5,11 +5,12 @@ import { createPool, transaction, type Pool } from './db.ts';
 import { loadConfig } from './config.ts';
 import { avatars, tags } from '../shared/catalog.ts';
 import languageData from '../shared/languages.json';
-import locationData from './data/locations.json';
+import { loadLocationCatalog } from './location-catalog.ts';
 import { normalizeSearch } from '../shared/discovery.ts';
 import { communities, communityAncestors } from '../shared/communities.ts';
 
-export async function migrate(pool: Pool) {
+export async function migrate(pool: Pool, locationCatalogPath: string) {
+  const locationData = await loadLocationCatalog(locationCatalogPath);
   await transaction(pool, async client => {
     await client.query("SELECT pg_advisory_xact_lock(81720311)");
     await client.query('CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
@@ -32,6 +33,12 @@ export async function migrate(pool: Pool) {
     await client.query('DELETE FROM community_closure');
     for (const community of communities) for (const [depth, ancestor] of communityAncestors(community.id).entries()) {
       await client.query('INSERT INTO community_closure(ancestor_id,descendant_id,depth) VALUES($1,$2,$3)', [ancestor, community.id, depth]);
+    }
+    const existingLocations = (await client.query('SELECT id,kind,parent_id FROM locations WHERE id = ANY($1::text[])', [locationData.map(location => location.id)])).rows;
+    const configuredLocations = new Map(locationData.map(location => [location.id, location]));
+    for (const existing of existingLocations) {
+      const configured = configuredLocations.get(existing.id)!;
+      if (existing.kind !== configured.kind || existing.parent_id !== configured.parentId) throw new Error(`Location ${existing.id} needs an explicit migration before changing kind or parent`);
     }
     // Countries first so every city's parent already exists. Batched, offline seed.
     for (const cities of [false, true]) {
@@ -59,7 +66,8 @@ export async function migrate(pool: Pool) {
   });
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const pool = createPool(loadConfig().databaseUrl);
-  try { await migrate(pool); console.log('QUESTR database is up to date.'); }
+  const config = loadConfig();
+  const pool = createPool(config.databaseUrl);
+  try { await migrate(pool, config.locationCatalogPath); console.log('QUESTR database is up to date.'); }
   finally { await pool.end(); }
 }

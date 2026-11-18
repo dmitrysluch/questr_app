@@ -1,6 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import type { Express } from 'express';
 import { createPool, type Pool } from '../../server/db.ts';
@@ -9,6 +10,7 @@ import { createApp } from '../../server/app.ts';
 import { loadConfig } from '../../server/config.ts';
 
 const connection = process.env.TEST_DATABASE_URL;
+const locationCatalogPath = fileURLToPath(new URL('../fixtures/locations.json', import.meta.url));
 const database = `questr_test_${randomUUID().replaceAll('-', '')}`;
 let root: Pool, pool: Pool, app: Express;
 const sent: { email: string; code: string }[] = [];
@@ -17,7 +19,7 @@ before(async () => {
   root = createPool(connection);
   await root.query(`CREATE DATABASE "${database}"`);
   const url = new URL(connection); url.pathname = `/${database}`;
-  pool = createPool(url.toString()); await migrate(pool);
+  pool = createPool(url.toString()); await migrate(pool, locationCatalogPath);
   app = createApp(pool, { ...loadConfig(), authMode: 'demo', aiMode: 'demo', brevoApiKey: 'test', brevoSenderEmail: 'no-reply@questr.test' },
     undefined, undefined, async (email, code) => { sent.push({ email, code }); });
 });

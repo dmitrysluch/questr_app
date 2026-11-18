@@ -1,15 +1,19 @@
-"""Refresh the committed GeoNames snapshot. Runtime never calls GeoNames.
+"""Generate an external GeoNames location catalog. Runtime never calls GeoNames.
 Source: https://download.geonames.org/export/dump/ — CC BY 4.0.
-Requires Python 3; run explicitly and review catalog changes before committing.
+Requires Python 3; run explicitly before starting the app with a new catalog.
 """
-import datetime
+import argparse
 import io
 import json
+import os
 from pathlib import Path
 import urllib.request
 import zipfile
 
 root = Path(__file__).resolve().parent.parent
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--languages', action='store_true', help='also refresh the tracked language catalog')
+args = parser.parse_args()
 base = 'https://download.geonames.org/export/dump/'
 def download(name):
     with urllib.request.urlopen(base + name, timeout=90) as response:
@@ -38,33 +42,14 @@ with zipfile.ZipFile(io.BytesIO(download('cities15000.zip'))) as archive:
             continue
         cities.append(dict(id='city:' + f[0], name=f[1], kind='city', parentId=parent, population=population, search=normalize(','.join(f[1:4]))))
 locations = [dict(id='online', name='Online', kind='online', parentId=None, population=0, search='onlineglobalremote')] + sorted(countries, key=lambda c: c['id']) + sorted(cities, key=lambda c: c['id'])
-path = root / 'server/data'
-path.mkdir(exist_ok=True)
-(path / 'locations.json').write_text('[\n' + ',\n'.join(json.dumps(location, ensure_ascii=False, separators=(',', ':')) for location in locations) + '\n]\n')
-languages = []
-for line in download('iso-languagecodes.txt').decode().splitlines()[1:]:
-    fields = line.split('\t')
-    if len(fields) >= 4 and len(fields[2]) == 2:
-        languages.append(dict(code=fields[2], label=fields[3]))
-(root / 'shared/languages.json').write_text(json.dumps(sorted(languages, key=lambda l: l['label']), ensure_ascii=False, indent=2) + '\n')
-(path / 'README.md').write_text(f'''# Geography snapshot
-
-Source: [GeoNames](https://www.geonames.org/), downloaded {datetime.date.today().isoformat()}.
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Data is provided as-is.
-
-Derived from countryInfo.txt, cities15000.zip and iso-languagecodes.txt in
-https://download.geonames.org/export/dump/ . Names/aliases and IDs are retained;
-search aliases are normalized; retired AN/CS country codes are excluded.
-Countries/territories follow the source grouping. This is a discovery catalog,
-not a statement about borders or sovereignty.
-
-Includes {len(countries)} countries/territories, {len(cities)} cities (population >=100,000,
-capitals, plus Israeli cities in cities15000), and a separate Online location.
-The language catalog includes {len(languages)} two-letter ISO languages.
-Smaller towns outside this coverage can be added later without changing IDs.
-No coordinates, IP location lookup, or external service calls are needed at runtime.
-
-Refresh explicitly with `python3 scripts/import-geography.py` and review the diff.
-Migrations upsert catalog rows; removed records are retained to preserve references.
-''')
-print(f'{len(countries)} countries, {len(cities)} cities, {len(languages)} languages')
+catalog_path = Path(os.environ.get('LOCATION_CATALOG_PATH', root / 'local/locations.json')).resolve()
+catalog_path.parent.mkdir(parents=True, exist_ok=True)
+catalog_path.write_text('[\n' + ',\n'.join(json.dumps(location, ensure_ascii=False, separators=(',', ':')) for location in locations) + '\n]\n')
+if args.languages:
+    languages = []
+    for line in download('iso-languagecodes.txt').decode().splitlines()[1:]:
+        fields = line.split('\t')
+        if len(fields) >= 4 and len(fields[2]) == 2:
+            languages.append(dict(code=fields[2], label=fields[3]))
+    (root / 'shared/languages.json').write_text(json.dumps(sorted(languages, key=lambda l: l['label']), ensure_ascii=False, indent=2) + '\n')
+print(f'{len(countries)} countries, {len(cities)} cities; wrote {catalog_path}')

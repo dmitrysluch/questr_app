@@ -6,7 +6,7 @@ import { EventBot } from './event-bot.ts';
 
 const config = loadConfig();
 const pool = createPool(config.databaseUrl);
-await migrate(pool);
+await migrate(pool, config.locationCatalogPath);
 const server = createApp(pool, config).listen(config.port, '0.0.0.0', () => {
   console.log(`QUESTR API: http://localhost:${config.port} (auth: ${config.authMode}, assistant: ${config.aiMode})`);
 });

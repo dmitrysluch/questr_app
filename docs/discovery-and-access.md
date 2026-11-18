@@ -16,11 +16,12 @@ from a shared adventure; after consent, the conversation belongs to the pair of 
 - `locations` is a forest: country → city, plus the independent `online` root.
   Countries are filters; an event has one city or Online and one language.
   Exact addresses and meeting links use the separate restricted `event_private_details` table.
-- The catalog is bundled locally: 250 countries/territories and 6,462 cities.
-  Coverage: cities with >=100,000 people, capitals, plus Israeli cities in the
-  GeoNames cities15000 extract. Aliases support searches such as Хайфа / חיפה.
-  Smaller towns can be added without changing the model. See the
-  [source attribution and refresh instructions](../server/data/README.md).
+- The catalog is an external JSON file selected by `LOCATION_CATALOG_PATH` and
+  imported into PostgreSQL on startup. The optional GeoNames generator yields
+  250 countries/territories and 6,462 cities: cities with >=100,000 people,
+  capitals, plus Israeli cities in the cities15000 extract. Aliases support
+  searches such as Хайфа / חיפה. Smaller towns can be added without changing
+  the model. See the [source attribution and refresh instructions](../server/data/README.md).
   Parent changes require an explicit migration because they affect access scopes.
 
 Matching requires a selected location. Selected adventure languages narrow the feed;

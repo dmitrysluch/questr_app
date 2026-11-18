@@ -1,6 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import type { Express } from 'express';
 import { createPool, type Pool } from '../../server/db.ts';
@@ -10,6 +11,7 @@ import { loadConfig } from '../../server/config.ts';
 import { can } from '../../server/permissions.ts';
 
 const connection = process.env.TEST_DATABASE_URL;
+const locationCatalogPath = fileURLToPath(new URL('../fixtures/locations.json', import.meta.url));
 let root: Pool, pool: Pool, app: Express;
 const database = `questr_test_${randomUUID().replaceAll('-', '')}`;
 before(async () => {
@@ -17,7 +19,7 @@ before(async () => {
   root = createPool(connection);
   await root.query(`CREATE DATABASE "${database}"`);
   const url = new URL(connection); url.pathname = `/${database}`;
-  pool = createPool(url.toString()); await migrate(pool);
+  pool = createPool(url.toString()); await migrate(pool, locationCatalogPath);
   app = createApp(pool, { ...loadConfig(), authMode: 'demo', aiMode: 'demo' });
 });
 after(async () => {

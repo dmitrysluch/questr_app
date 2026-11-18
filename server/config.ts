@@ -1,5 +1,5 @@
 export interface Config {
-  databaseUrl: string; port: number; appOrigin: string;
+  databaseUrl: string; port: number; appOrigin: string; locationCatalogPath: string;
   authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter';
   openrouterApiKey: string; openrouterModel: string; openrouterQuestionModel: string; openrouterReviewModel: string;
   openrouterReasoningEffort: ReasoningEffort; openrouterQuestionReasoningEffort: ReasoningEffort; openrouterReviewReasoningEffort: ReasoningEffort; botToken: string;
@@ -17,6 +17,7 @@ export function loadConfig(): Config {
   if (!['demo', 'telegram'].includes(authMode) || !['demo', 'openrouter'].includes(aiMode)) throw new Error('Use AUTH_MODE=demo|telegram and AI_MODE=demo|openrouter');
   const config: Config = {
     databaseUrl: process.env.DATABASE_URL ?? 'postgresql://questr:questr_local@localhost:55432/questr',
+    locationCatalogPath: process.env.LOCATION_CATALOG_PATH ?? './local/locations.json',
     port: Number(process.env.PORT ?? 5181), appOrigin: process.env.APP_ORIGIN ?? 'http://localhost:5173',
     authMode: authMode as Config['authMode'], aiMode: aiMode as Config['aiMode'],
     openrouterApiKey: process.env.OPENROUTER_API_KEY ?? '', openrouterModel: process.env.OPENROUTER_MODEL ?? 'openai/gpt-6.1-terra',

@@ -1,6 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { createPool, type Pool } from '../../server/db.ts';
 import { migrate } from '../../server/migrate.ts';
@@ -12,11 +13,12 @@ import type { ProfileTag } from '../../shared/schema.ts';
 import { appearanceForPreset, type AvatarAppearance } from '../../shared/avatar.ts';
 import { googleMapsSearch } from '../../shared/event-links.ts';
 const connection = process.env.TEST_DATABASE_URL;
+const locationCatalogPath = fileURLToPath(new URL('../fixtures/locations.json', import.meta.url));
 const database = `questr_events_${randomUUID().replaceAll('-', '')}`;
 const config = { ...loadConfig(), authMode: 'demo' as const, aiMode: 'demo' as const, botToken: 'fake-token', webhookSecret: 'test-secret', publicAppUrl: 'https://questr.example' };
 let admin: Pool, pool: Pool;
 let app: ReturnType<typeof createApp>;
-before(async () => { if (!connection) return; admin = createPool(connection); await admin.query(`CREATE DATABASE "${database}"`); const url = new URL(connection); url.pathname = `/${database}`; pool = createPool(url.toString()); await migrate(pool); app = createApp(pool, config); });
+before(async () => { if (!connection) return; admin = createPool(connection); await admin.query(`CREATE DATABASE "${database}"`); const url = new URL(connection); url.pathname = `/${database}`; pool = createPool(url.toString()); await migrate(pool, locationCatalogPath); app = createApp(pool, config); });
 after(async () => { if (!connection) return; await pool?.end(); await admin.query(`DROP DATABASE IF EXISTS "${database}"`); await admin.end(); });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
 async function person(name = 'Moss', profile: { tags?: ProfileTag[]; askMeTopics?: string[]; openToRomance?: boolean; avatarAppearance?: AvatarAppearance } = {}) {

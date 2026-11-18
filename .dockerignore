@@ -4,6 +4,7 @@ dist
 .env
 .env.*
 .artifacts
+local
 test-results
 playwright-report
 *.log

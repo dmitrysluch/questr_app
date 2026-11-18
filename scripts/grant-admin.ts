@@ -7,9 +7,10 @@ if (!['--name', '--user-id'].includes(kind ?? '') || !value || process.argv.leng
   console.error('Usage: npm run admin:grant -- --name <exact display name> | --user-id <uuid>');
   process.exit(2);
 }
-const pool = createPool(loadConfig().databaseUrl);
+const config = loadConfig();
+const pool = createPool(config.databaseUrl);
 try {
-  await migrate(pool);
+  await migrate(pool, config.locationCatalogPath);
   const users = kind === '--name'
     ? (await pool.query(`SELECT u.id FROM users u JOIN profiles p ON p.user_id=u.id
         WHERE u.status='active' AND lower(p.display_name)=lower($1)`, [value])).rows
