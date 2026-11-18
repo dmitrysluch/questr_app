@@ -538,6 +538,15 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .adventure-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
 .adventure-card { padding: 23px; text-align: left; width: 100%; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .adventure-card:hover { border-color: #ad8d69; box-shadow: 4px 4px 0 #d7c6af; }
+.event-listings a.adventure-card { color: inherit; text-decoration: none; }
+.listing-filters { display: grid; gap: 12px; margin-bottom: 24px; }
+.listing-filters .selection-picker { margin-top: 0; }
+.listing-filters > .text-button { justify-self: start; }
+.listing-filters .event-form-grid { max-width: 500px; }
+.listing-parties { margin-top: 32px; }
+.listing-parties h2 { margin-bottom: 16px; }
+.admin-listing-form { padding: 24px; margin-bottom: 25px; }
+.admin-listings > .adventure-list { margin-top: 24px; }
 .adventure-card h2 { margin: 0; overflow-wrap: anywhere; font-size: 22px; line-height: 1.35; }
 .event-summary { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .adventure-card .event-summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }

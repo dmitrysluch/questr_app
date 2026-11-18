@@ -42,7 +42,8 @@ function mapEvent(row: any, userId: string): Adventure {
     location: { id: row.location_id, name: row.location_name, kind: row.location_kind, parentId: row.parent_id, countryName: row.country_name },
     place: row.place_id && row.place_name ? { id: row.place_id, cityLocationId: row.place_city_id, cityName: row.location_name,
       name: row.place_name, address: row.place_address, active: row.place_active, revision: row.place_revision } : null,
-    languageCode: row.language_code, communityId: row.community_id, startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), timeZone: row.time_zone,
+    languageCode: row.language_code, communityId: row.community_id, eventListingId: row.event_listing_id ?? null,
+    startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), timeZone: row.time_zone,
     capacity: row.capacity, participantCount: row.participant_count, revision: row.revision, status: row.status,
     host: { id: row.created_by, displayName: row.host_name, avatarId: row.host_avatar, avatarAppearance: row.host_appearance }, myStatus: row.my_status ?? null, isHost: row.created_by === userId };
 }
@@ -149,6 +150,16 @@ export class Adventures {
     for (const row of rows.slice(0, 20)) if (await can(this.pool, userId, 'events.view', { type: 'event', id: row.id })) events.push(mapEvent(row, userId));
     return { events, nextOffset: rows.length > 20 ? offset + 20 : null };
   }
+  async forListing(userId: string, listingId: string): Promise<Adventure[]> {
+    await activeUser(this.pool, userId);
+    const { rows } = await this.pool.query(`${eventProjection} WHERE e.event_listing_id=$2 AND e.status='published'
+      AND host_user.status='active' AND (e.community_id IS NULL OR EXISTS(SELECT 1 FROM user_community_grants g
+        JOIN community_closure c ON c.descendant_id=g.community_id WHERE g.user_id=$1 AND c.ancestor_id=e.community_id))
+      ORDER BY e.starts_at,e.id LIMIT 100`, [userId, listingId]);
+    const visible: Adventure[] = [];
+    for (const row of rows) if (await can(this.pool, userId, 'events.view', { type: 'event', id: row.id })) visible.push(mapEvent(row, userId));
+    return visible;
+  }
   async detail(userId: string, eventId: string): Promise<AdventureDetail> {
     // One read transaction/row lock makes removal and private-detail projection
     // agree; no stale membership check can expose a newer meeting link.
@@ -207,10 +218,10 @@ export class Adventures {
   async create(userId: string, body: unknown) {
     const input = createEventSchema.parse(body);
     await activeUser(this.pool, userId);
-    const fields = normalizeFields(eventFieldsSchema.parse(Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'requestId'))));
+    const fields = normalizeFields(eventFieldsSchema.parse(Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'requestId' && key !== 'eventListingId'))));
     await requireCapability(this.pool, userId, 'events.create', { type: 'location', id: fields.locationId });
     await this.review([fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform].join('\n\n'));
-    const fingerprint = hash(JSON.stringify(fields));
+    const fingerprint = hash(JSON.stringify(input.eventListingId ? { fields, eventListingId: input.eventListingId } : fields));
     const eventId = await transaction(this.pool, async db => {
       await activeUser(db, userId);
       const use = await consumeCapability(db, userId, 'events.create', { type: 'location', id: fields.locationId }, input.requestId);
@@ -220,8 +231,12 @@ export class Adventures {
         return old.id;
       }
       await validateFields(db, userId, fields);
-      const row = (await db.query(`INSERT INTO events(created_by,title,activity_summary,description_markdown,cost_estimate,experience_notes,online_platform,location_id,language_code,starts_at,ends_at,time_zone,capacity,place_id,community_id,status,request_id,request_hash)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'published',$16,$17) RETURNING id`, [userId, fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, fields.placeId, fields.communityId, input.requestId, fingerprint])).rows[0];
+      if (input.eventListingId) {
+        const listing = (await db.query('SELECT city_location_id,status,ends_at FROM event_listings WHERE id=$1 FOR SHARE', [input.eventListingId])).rows[0];
+        if (!listing || listing.status !== 'published' || listing.ends_at.getTime() <= Date.now() || listing.city_location_id !== fields.locationId) throw new AppError(400, 'LISTING_UNAVAILABLE');
+      }
+      const row = (await db.query(`INSERT INTO events(created_by,title,activity_summary,description_markdown,cost_estimate,experience_notes,online_platform,location_id,language_code,starts_at,ends_at,time_zone,capacity,place_id,community_id,event_listing_id,status,request_id,request_hash)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'published',$17,$18) RETURNING id`, [userId, fields.title, fields.activitySummary, fields.descriptionMarkdown, fields.costEstimate, fields.experienceNotes, fields.onlinePlatform, fields.locationId, fields.languageCode, fields.startsAt, fields.endsAt, fields.timeZone, fields.capacity, fields.placeId, fields.communityId, input.eventListingId, input.requestId, fingerprint])).rows[0];
       await db.query('INSERT INTO event_private_details(event_id,meeting_details,meeting_map_url) VALUES($1,$2,$3)', [row.id, fields.meetingDetails, fields.meetingMapUrl]);
       await db.query("INSERT INTO event_memberships(event_id,user_id,role,status) VALUES($1,$2,'host','accepted')", [row.id, userId]);
       await grantEventRole(db, row.id, userId, 'organizer', userId);

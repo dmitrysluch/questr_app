@@ -1,0 +1,56 @@
+import { test, expect } from '@playwright/test';
+import { createPool } from '../../server/db.ts';
+
+test('admin publishes an event listing and a character gathers a party from it', async ({ page }) => {
+  test.skip(!process.env.DATABASE_URL, 'A local PostgreSQL URL is required.');
+  const pool = createPool(process.env.DATABASE_URL!);
+  try {
+    await expect.poll(async () => (await page.request.get('/api/health')).status()).toBe(200);
+    await page.request.post('/api/auth/demo', { data: {} });
+    const state = await (await page.request.get('/api/me')).json();
+    const registration = await (await page.request.post('/api/register', { data: { displayName: 'Listing curator', invite: state.demoInvite, adult: true, terms: true, locale: 'en' } })).json();
+    const draft = await (await page.request.put('/api/draft', { data: { ...registration.draft, avatarId: 'moss', introMarkdown: 'I like coffee and live music.', spokenLanguages: ['en'] } })).json();
+    await page.request.put('/api/discovery', { data: { revision: 0, locationIds: ['country:IL'], languageCodes: ['en'] } });
+    await page.request.post('/api/profile/publish', { data: { revision: draft.draft.revision } });
+    await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Browser listing test')", [state.user.id]);
+    const marker = crypto.randomUUID().slice(0, 8);
+    const placeName = `Listing cafe ${marker}`;
+    await page.request.post('/api/places/admin', { data: { cityLocationId: 'city:294801', name: placeName, address: '12 Music Street', active: true } });
+    await page.goto('/');
+    await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Event listings' }).click();
+    const form = page.locator('.admin-listing-form');
+    const title = `Live records ${marker}`;
+    await form.getByLabel('Event name').fill(title);
+    await form.getByLabel('Description (Markdown)').fill('A night of live music and coffee in the city.');
+    const day = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    await form.getByLabel('Starts').fill(`${day}T19:00`);
+    await form.getByLabel('Ends').fill(`${day}T21:00`);
+    await form.getByLabel('Time zone').selectOption('Asia/Jerusalem');
+    await form.getByRole('combobox', { name: 'City', exact: true }).fill('Haifa');
+    await form.getByRole('option', { name: /^Haifa/ }).click();
+    await form.getByRole('combobox', { name: 'Public venue' }).fill(placeName);
+    await form.getByRole('option', { name: new RegExp(placeName) }).click();
+    await form.getByLabel('Organizer').fill('Local record club');
+    await form.getByLabel('Event source URL').fill('https://example.com/record-night');
+    await form.getByLabel('Status').selectOption('draft');
+    await form.getByRole('button', { name: 'Add event' }).click();
+    const card = page.locator('.admin-listings .adventure-card').filter({ hasText: title });
+    await expect(card).toContainText('Draft');
+    await card.click();
+    await form.getByLabel('Status').selectOption('published');
+    await form.getByRole('button', { name: 'Save changes' }).click();
+    await expect(card).toContainText('Published');
+    await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Adventures' }).click();
+    await page.locator('.event-tabs').getByRole('button', { name: 'Events' }).click();
+    await page.getByRole('link', { name: new RegExp(title) }).click();
+    await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole('button', { name: 'Gather a party' }).click();
+    const editor = page.getByRole('dialog');
+    await expect(editor.getByLabel('Adventure title')).toHaveValue(title);
+    await editor.getByLabel('What will the party do?').fill('We will hear live music and have coffee together.');
+    await editor.getByRole('button', { name: 'Publish adventure' }).click();
+    await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'View the event listing' })).toBeVisible();
+  } finally { await pool.end(); }
+});

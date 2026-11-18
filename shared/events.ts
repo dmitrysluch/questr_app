@@ -26,7 +26,7 @@ export const eventFieldsSchema = z.object({
   meetingMapUrl: z.string().max(2048).default(''),
 }).strict();
 export type EventFields = z.infer<typeof eventFieldsSchema>;
-export const createEventSchema = eventFieldsSchema.extend({ requestId: z.uuid() });
+export const createEventSchema = eventFieldsSchema.extend({ requestId: z.uuid(), eventListingId: z.uuid().nullable().default(null) });
 export const editEventSchema = eventFieldsSchema.extend({ revision: z.number().int().nonnegative() });
 export const applicationSchema = z.object({ message: z.string().trim().max(2000).refine(message => !message || message.length >= 3).default('') }).strict();
 export const connectionRequestSchema = z.object({
@@ -46,6 +46,7 @@ export interface Adventure {
   id: string; title: string; activitySummary: string; descriptionMarkdown: string; costEstimate: string;
   experienceNotes: string; onlinePlatform: string; recruitmentOpen: boolean; location: Location; languageCode: string;
   communityId: string | null;
+  eventListingId: string | null;
   place: Place | null;
   startsAt: string; endsAt: string; timeZone: string; capacity: number; participantCount: number; revision: number;
   status: 'draft' | 'published' | 'cancelled' | 'completed';

@@ -7,7 +7,7 @@ import { errorText, getLocale, t } from '../i18n.ts';
 import { loadGooglePlaces, type GooglePrediction } from '../googlePlaces.ts';
 import { SelectionPicker, type Choice } from './SelectionPicker.tsx';
 
-type Pick = { kind: 'saved'; id: string } | { kind: 'google'; mapUrl: string } | null;
+type Pick = { kind: 'saved'; id: string } | { kind: 'google'; mapUrl: string; name: string } | null;
 type GoogleChoice = { id: string; label: string; prediction: GooglePrediction };
 function googleId(mapUrl: string): string | null {
   if (!mapUrl) return null;
@@ -15,8 +15,8 @@ function googleId(mapUrl: string): string | null {
   catch { return mapUrl; }
 }
 
-export function PlacePicker({ cityId, placeId, meetingMapUrl, selected, googleKey, focusOnMount = false, onPick }: {
-  cityId: string; placeId: string | null; meetingMapUrl: string; selected?: Place | null; googleKey: string; focusOnMount?: boolean;
+export function PlacePicker({ cityId, placeId, meetingMapUrl, selected, googleKey, label, googleLabel, focusOnMount = false, onPick }: {
+  cityId: string; placeId: string | null; meetingMapUrl: string; selected?: Place | null; googleKey: string; label?: string; googleLabel?: string; focusOnMount?: boolean;
   onPick: (pick: Pick) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -84,7 +84,7 @@ export function PlacePicker({ cityId, placeId, meetingMapUrl, selected, googleKe
     ...savedChoices,
     ...(pickedSaved ? [{ id: `saved:${pickedSaved.id}`, label: pickedSaved.name, detail: pickedSaved.address }] : []),
     ...(selected ? [{ id: `saved:${selected.id}`, label: selected.name, detail: selected.address }] : []),
-    ...(currentGoogleId ? [{ id: value, label: pickedGoogle?.id === value ? pickedGoogle.label : t('places.googlePoint'), source: 'google' as const }] : []),
+    ...(currentGoogleId ? [{ id: value, label: pickedGoogle?.id === value ? pickedGoogle.label : googleLabel ?? t('places.googlePoint'), source: 'google' as const }] : []),
   ];
   async function choose(ids: string[]) {
     const id = ids[0];
@@ -106,11 +106,11 @@ export function PlacePicker({ cityId, placeId, meetingMapUrl, selected, googleKe
       const mapUrl = googleMapsSearch('meeting point', place.id);
       setPickedGoogle({ id: `google:selected:${place.id}`, label: place.displayName || item.label, source: 'google' });
       session.current = null;
-      onPick({ kind: 'google', mapUrl });
+      onPick({ kind: 'google', mapUrl, name: place.displayName || item.label });
     } catch { setGoogleError(true); }
     finally { setPicking(false); }
   }
-  return <><SelectionPicker label={t('places.pickPlace')} placeholder={t('places.search')} value={value ? [value] : []}
+  return <><SelectionPicker label={label ?? t('places.pickPlace')} placeholder={t('places.search')} value={value ? [value] : []}
     selected={selectedChoices} items={[...savedChoices, ...googleChoices]} query={query} onQuery={next => { if (!next) session.current = null; setQuery(next); }}
     onChange={ids => void choose(ids)} loading={picking} pending={savedLoading || googleLoading} focusOnMount={focusOnMount} replaceOnSelect limit={1} />
     {!googleKey && <p className="field-hint">{t('places.googleNotConfigured')}</p>}
