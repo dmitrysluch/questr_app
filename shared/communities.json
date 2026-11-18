@@ -1,0 +1,28 @@
+{
+  "communities": [
+    {
+      "id": "university_students",
+      "parentId": null,
+      "name": {
+        "en": "University students",
+        "ru": "Студенты вузов"
+      }
+    },
+    {
+      "id": "israeli_university_students",
+      "parentId": "university_students",
+      "name": {
+        "en": "Students at Israeli universities",
+        "ru": "Студенты израильских вузов"
+      }
+    },
+    {
+      "id": "ariel_students",
+      "parentId": "israeli_university_students",
+      "name": {
+        "en": "Ariel University students",
+        "ru": "Студенты Ариэльского университета"
+      }
+    }
+  ]
+}
