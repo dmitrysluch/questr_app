@@ -16,12 +16,13 @@ function newCode() {
   return `QUEST-${btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_')}`;
 }
 
-export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
+export function Invites({ admin, selfId, botUsername }: { admin: boolean; selfId: string; botUsername: string }) {
   const communities = useCommunities();
   const [listing, setListing] = useState<Listing>(empty);
   const [users, setUsers] = useState<InviterAccount[]>([]);
   const [search, setSearch] = useState('');
   const [expiresInDays, setExpiresInDays] = useState(7);
+  const [maxRedemptions, setMaxRedemptions] = useState(1);
   const [eventCreator, setEventCreator] = useState(true);
   const [inviteDepth, setInviteDepth] = useState(0);
   const [communityIds, setCommunityIds] = useState<string[]>([]);
@@ -29,7 +30,7 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const pending = useRef<{ requestId: string; code: string; expiresInDays: number; eventCreator: boolean; inviteDepth: number; communityIds: string[] } | null>(null);
+  const pending = useRef<{ requestId: string; code: string; expiresInDays: number; maxRedemptions: number; eventCreator: boolean; inviteDepth: number; communityIds: string[] } | null>(null);
   async function refresh(q = search) {
     const [next, accounts] = await Promise.all([
       api<Listing>('/invites'),
@@ -53,7 +54,7 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
   }, [admin]);
   async function issue() {
     if (busy) return;
-    const request = pending.current ?? { requestId: crypto.randomUUID(), code: newCode(), expiresInDays,
+    const request = pending.current ?? { requestId: crypto.randomUUID(), code: newCode(), expiresInDays, maxRedemptions,
       eventCreator: eventCreator && listing.grantOptions.eventCreator, inviteDepth: Math.min(inviteDepth, listing.grantOptions.maxInviteDepth), communityIds: admin ? communityIds : [] };
     pending.current = request; setBusy(true); setError(null);
     try {
@@ -75,6 +76,8 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
     try { await refresh(search); } catch (problem) { setError(problem); } finally { setBusy(false); }
   }
   const budget = listing.budget;
+  const available = Math.max(0, (budget?.maxUses ?? 0) - (budget?.used ?? 0));
+  const issuedLink = issuedCode ? `https://t.me/${botUsername}?startapp=${encodeURIComponent(issuedCode.code)}` : '';
   return <section className="invites-page">
     <div className="page-heading"><span className="eyebrow">QUESTR / {t(admin ? 'nav.admin' : 'nav.invites')}</span><h1>{t('invites.title')}</h1></div>
     {error !== null && <div className="error-banner" role="alert">{errorText(error)}<button className="text-button" onClick={() => { setError(null); void refresh().catch(setError); }}>{t('common.retry')}</button></div>}
@@ -86,6 +89,9 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
         <select id="invite-expiry" value={expiresInDays} disabled={busy} onChange={event => { setExpiresInDays(Number(event.target.value)); pending.current = null; }}>
           {[1, 7, 30].map(days => <option key={days} value={days}>{t('invites.days', { count: days })}</option>)}
         </select>
+        <label htmlFor="invite-capacity">{t('invites.capacity')}</label>
+        <input id="invite-capacity" type="number" inputMode="numeric" min={1} max={20} value={maxRedemptions} disabled={busy} onChange={event => { setMaxRedemptions(Number(event.target.value)); pending.current = null; }} />
+        <p className="hint">{t('invites.capacityHint')}</p>
         <div className="invite-grants">
           <span>{t('invites.grants')}</span>
           <label className="checkbox-label"><input type="checkbox" checked={eventCreator && listing.grantOptions.eventCreator} disabled={busy || !listing.grantOptions.eventCreator} onChange={event => { setEventCreator(event.target.checked); pending.current = null; }} />{t('invites.eventCreator')}</label>
@@ -96,14 +102,15 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
           <small className="hint">{t('invites.depthHint')}</small>
           {admin && <fieldset className="invite-community-grants"><legend>{t('communities.label')}</legend>{communities.map(community => <label className="checkbox-label" key={community.id} style={{ paddingInlineStart: `${12 * (communityAncestors(communities, community.id).length - 1)}px` }}><input type="checkbox" checked={communityIds.includes(community.id)} disabled={busy} onChange={event => { setCommunityIds(old => event.target.checked ? [...old, community.id] : old.filter(id => id !== community.id)); pending.current = null; }} />{community.name[getLocale()]}</label>)}</fieldset>}
         </div>
-        <button className="pixel-button" disabled={busy || !budget || budget.used >= budget.maxUses} onClick={() => void issue()}>{busy ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}{t('invites.create')}</button>
-        {issuedCode && <div className="issued-invite" role="status"><span>{t('invites.copyNow')}</span><code>{issuedCode.code}</code><button className="outline-button small" onClick={() => void navigator.clipboard.writeText(issuedCode.code).catch(setError)}><ClipboardCopy size={15} />{t('invites.copy')}</button></div>}
+        <button className="pixel-button" disabled={busy || !budget || !Number.isInteger(maxRedemptions) || maxRedemptions < 1 || maxRedemptions > 20 || maxRedemptions > available} onClick={() => void issue()}>{busy ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}{t('invites.create')}</button>
+        {issuedCode && <div className="issued-invite" role="status"><span>{t('invites.copyNow')}</span><code>{issuedCode.code}</code><div className="invite-actions"><button className="outline-button small" onClick={() => void navigator.clipboard.writeText(issuedCode.code).catch(setError)}><ClipboardCopy size={15} />{t('invites.copy')}</button><button className="outline-button small" onClick={() => void navigator.clipboard.writeText(issuedLink).catch(setError)}><ClipboardCopy size={15} />{t('invites.copyLink')}</button></div><a href={issuedLink} target="_blank" rel="noreferrer">{t('invites.openLink')}</a></div>}
       </div>
       <div className="paper-card invite-list-card"><div className="invite-list-header"><div><h2>{t('invites.list')}</h2><span>{listing.total}</span></div><button className="text-button" disabled={busy} onClick={() => void refresh().catch(setError)}><RotateCw size={15} />{t('events.refresh')}</button></div>
-        {!listing.invites.length ? <p className="hint">{t('invites.empty')}</p> : <ul className="invite-list">{listing.invites.map(invite => <li key={invite.id}>
+        {!listing.invites.length ? <p className="hint">{t('invites.empty')}</p> : <ul className="invite-list">{listing.invites.map(invite => <li key={invite.id} data-invite-id={invite.id}>
           <div><span className={`invite-status ${invite.status}`}>{t(`invites.status.${invite.status}`)}</span><span className="invite-date">{t('invites.expiryDate', { date: date(invite.expiresAt) })}</span></div>
           {admin && invite.createdBy && <span className="invite-person">{t('invites.issuer', { name: invite.createdBy })}</span>}
           {invite.redeemedBy && <span className="invite-person">{t('invites.usedBy', { name: invite.redeemedBy })}</span>}
+          <span className="invite-person">{t('invites.capacityUsed', { used: invite.redemptionCount, max: invite.maxRedemptions })}</span>
           <span className="invite-person">{[invite.eventCreator ? t('invites.eventCreator') : null, invite.inviteDepth ? t('invites.depthLabel', { count: invite.inviteDepth }) : null].filter(Boolean).join(' · ') || t('invites.basicAccess')}</span>
           {!!invite.communityIds?.length && <span className="invite-person">{invite.communityIds.map(id => communities.find(community => community.id === id)?.name[getLocale()] ?? id).join(' · ')}</span>}
           {invite.status === 'active' && (confirmId === invite.id ? <div className="invite-actions"><button className="outline-button small" disabled={busy} onClick={() => void revoke(invite.id)}><Check size={14} />{t('invites.confirmRevoke')}</button><button className="text-button" onClick={() => setConfirmId(null)}><X size={14} />{t('common.cancel')}</button></div> : <button className="text-button invite-revoke" disabled={busy} onClick={() => setConfirmId(invite.id)}>{t('invites.revoke')}</button>)}

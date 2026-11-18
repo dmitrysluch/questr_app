@@ -29,6 +29,10 @@ import { CommunityCatalog } from './community-catalog.tsx';
 import { initAnalytics, syncAnalyticsIdentity, track } from './analytics.ts';
 
 const BioEditor = lazy(() => import('./components/BioEditor.tsx'));
+const sharedInviteCode = (() => {
+  const value = new URLSearchParams(location.search).get('tgWebAppStartParam');
+  return value && /^QUEST-[A-Za-z0-9_-]{24}$/.test(value) ? value : null;
+})();
 declare global {
   interface Window { Telegram?: { WebApp?: { initData: string; ready: () => void; expand: () => void; openTelegramLink?: (url: string) => void; setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void } } }
 }
@@ -72,7 +76,7 @@ export function App() {
     syncAnalyticsIdentity(next.user.status === 'pending_invite' ? null : next.user.id);
     setBioReview(next.bioReview);
     setShowProfile(next.user.status === 'active');
-    setInvite(next.demoInvite ?? '');
+    setInvite(sharedInviteCode ?? next.demoInvite ?? '');
     return next;
   }, [replace]);
   useEffect(() => {
@@ -103,7 +107,8 @@ export function App() {
         if (active) {
           const target = new URLSearchParams(location.search).get('route');
           if (target && /^adventures\/[0-9a-f-]{36}(?:\/character\/[0-9a-f-]{36})?$/i.test(target)) location.hash = target;
-          const [catalog] = await Promise.all([api<{ communities: Community[] }>('/communities'), loadState()]);
+          const [catalog, loadedState] = await Promise.all([api<{ communities: Community[] }>('/communities'), loadState()]);
+          if (sharedInviteCode && loadedState.user.status === 'active' && !target) location.hash = 'character';
           if (active) setCommunities(parseCommunities(catalog));
         }
       } catch (e) { if (active) setError(e); }
@@ -235,10 +240,10 @@ export function App() {
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
             <p className="form-privacy"><LockKeyhole size={13} />{t('footer.private')}</p>
           </form>
-        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} /> : communitiesOpen ? <AdminCommunities /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
+        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} botUsername={config?.botUsername ?? 'questr_game'} /> : communitiesOpen ? <AdminCommunities /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} />
-          <InviteRedeemer onRedeemed={loadState} />
+          <InviteRedeemer initialCode={sharedInviteCode ?? ''} onRedeemed={loadState} />
           <EmailInvite onVerified={loadState} />
           <RomanceSettings />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />

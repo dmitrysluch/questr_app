@@ -135,9 +135,10 @@ export function emailInviteRoutes(pool: Pool, config: Config, throttle: (key: st
       if (previous && previous.user_id !== userId) return 'EMAIL_ALREADY_USED';
       let inviteId = previous?.invite_id as string | undefined;
       if (!inviteId) {
-        const created = await db.query(`INSERT INTO invites(token_hash,expires_at,redeemed_by,redeemed_at)
-          VALUES($1,now()+interval '1 day',$2,now()) RETURNING id`, [hash(randomBytes(32).toString('hex')), userId]);
+        const created = await db.query(`INSERT INTO invites(token_hash,expires_at,redeemed_by,redeemed_at,redemption_count)
+          VALUES($1,now()+interval '1 day',$2,now(),1) RETURNING id`, [hash(randomBytes(32).toString('hex')), userId]);
         inviteId = created.rows[0].id;
+        await db.query('INSERT INTO invite_redemptions(invite_id,user_id) VALUES($1,$2)', [inviteId, userId]);
       }
       await db.query(`INSERT INTO invite_communities(invite_id,community_id)
         SELECT $1,community_id FROM email_invite_domain_communities WHERE domain=$2 ON CONFLICT DO NOTHING`, [inviteId, domain]);

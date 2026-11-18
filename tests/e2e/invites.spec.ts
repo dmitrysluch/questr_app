@@ -3,8 +3,8 @@ import { createPool } from '../../server/db.ts';
 
 const databaseUrl = process.env.DATABASE_URL;
 
-async function character(page: Page, name: string) {
-  await page.goto('/');
+async function character(page: Page, name: string, url = '/') {
+  await page.goto(url);
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill(name);
   await page.getByLabel('I am 18 or older.').check();
   await page.getByLabel('I agree to the community guidelines.').check();
@@ -29,6 +29,7 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
   test.skip(!databaseUrl, 'A local PostgreSQL URL is required for the admin browser test.');
   const pool = createPool(databaseUrl!);
   const guestContext = await browser.newContext();
+  const linkContext = await browser.newContext();
   try {
     const adminId = await character(page, 'Admin Quester');
     await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Browser test')", [adminId]);
@@ -51,8 +52,14 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await newest.getByRole('button', { name: 'Confirm revoke' }).click();
     await expect(newest.locator('.invite-status.revoked')).toBeVisible();
     await page.locator('.invite-issue').getByLabel('Ariel students from external config', { exact: true }).check();
+    await page.getByRole('spinbutton', { name: 'People who can use this invite' }).fill('2');
+    const issuedResponse = page.waitForResponse(response => response.url().endsWith('/api/invites') && response.request().method() === 'POST');
     await page.getByRole('button', { name: 'Create invite' }).click();
+    const response = await issuedResponse;
+    expect(response.ok()).toBe(true);
+    const groupId = (await response.json()).id as string;
     const communityCode = await page.locator('.issued-invite code').innerText();
+    await expect(page.locator('.issued-invite a')).toHaveAttribute('href', `https://t.me/questr_game?startapp=${communityCode}`);
 
     const guest = await guestContext.newPage();
     const friendName = `Invite Friend ${crypto.randomUUID().slice(0, 8)}`;
@@ -62,6 +69,14 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await guest.getByRole('textbox', { name: 'Invite code' }).fill(communityCode);
     await guest.getByRole('button', { name: 'Apply invite' }).click();
     await expect(guest.locator('.community-badge')).toHaveText('✦ Ariel students from external config');
+    const linkGuest = await linkContext.newPage();
+    await linkGuest.goto(`/?tgWebAppStartParam=${communityCode}`);
+    await expect(linkGuest.getByRole('textbox', { name: 'Invite code' })).toHaveValue(communityCode);
+    await character(linkGuest, 'Shared Link Guest', `/?tgWebAppStartParam=${communityCode}`);
+    await linkGuest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character' }).click();
+    await expect(linkGuest.locator('.community-badge')).toHaveText('✦ Ariel students from external config');
+    await page.locator('.invite-list-card').getByRole('button', { name: 'Refresh' }).click();
+    await expect(page.locator(`[data-invite-id="${groupId}"]`)).toContainText('2 of 2 places used');
     await guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Adventures' }).click();
     await guest.getByRole('button', { name: 'Create adventure' }).click();
     await guest.getByRole('dialog').getByLabel('Community').selectOption('ariel_students');
@@ -73,14 +88,14 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await card.getByLabel('Create adventures').uncheck();
     await card.getByLabel('Can issue invites').check();
     await card.getByLabel('Maximum invite chain').selectOption('2');
-    await card.getByLabel('Invites per window').fill('1');
+    await card.getByLabel('Invite seats per window').fill('1');
     await card.getByRole('button', { name: 'Save access' }).click();
     await expect(card.getByLabel('Create adventures')).not.toBeChecked();
     await expect(card.getByLabel('Maximum invite chain')).toHaveValue('2');
     await guest.reload();
     await expect(guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Invites' })).toBeVisible();
     await guest.getByRole('button', { name: 'Invites', exact: true }).click();
-    await expect(guest.getByText('0 of 1 issued in 7 days')).toBeVisible();
+    await expect(guest.getByText('0 of 1 invite seats reserved in 7 days')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  } finally { await guestContext.close(); await pool.end(); }
+  } finally { await guestContext.close(); await linkContext.close(); await pool.end(); }
 });

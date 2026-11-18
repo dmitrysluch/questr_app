@@ -88,22 +88,23 @@ export async function grantMember(db: PoolClient, userId: string, grants: { invi
 }
 // Must run in the SAME transaction as the action. Serializes competing consumes;
 // rollback also restores quota. A retry cannot spend again or change its target.
-export async function consumeCapability(db: PoolClient, userId: string, capability: Capability, resource: Resource, requestId: string): Promise<'new' | 'replay'> {
+export async function consumeCapability(db: PoolClient, userId: string, capability: Capability, resource: Resource, requestId: string, cost = 1): Promise<'new' | 'replay'> {
+  if (!Number.isInteger(cost) || cost < 1) throw new AppError(400, 'INVALID_INPUT');
   await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`budget:${userId}:${capability}`]);
   await requireCapability(db, userId, capability, resource);
   const resourceKey = resource.type === 'global' ? 'global' : `${resource.type}:${resource.id}`;
-  const used = (await db.query('SELECT resource_key FROM capability_usage WHERE user_id=$1 AND capability=$2 AND request_id=$3', [userId, capability, requestId])).rows[0];
+  const used = (await db.query('SELECT resource_key,cost FROM capability_usage WHERE user_id=$1 AND capability=$2 AND request_id=$3', [userId, capability, requestId])).rows[0];
   if (used) {
-    if (used.resource_key !== resourceKey) throw new AppError(409, 'REQUEST_CONFLICT');
+    if (used.resource_key !== resourceKey || used.cost !== cost) throw new AppError(409, 'REQUEST_CONFLICT');
     return 'replay';
   }
   const budget = (await db.query('SELECT max_uses,window_seconds FROM capability_budgets WHERE user_id=$1 AND capability=$2 FOR UPDATE', [userId, capability])).rows[0];
   // Creating events/invites requires an explicit budget, even for overlapping roles.
   if (!budget && ['events.create', 'invite.create', 'dm.send_opener'].includes(capability)) throw new AppError(403, 'PERMISSION_DENIED');
   if (budget) {
-    const usage = (await db.query("SELECT count(*)::int AS total FROM capability_usage WHERE user_id=$1 AND capability=$2 AND used_at>now()-make_interval(secs=>$3)", [userId, capability, budget.window_seconds])).rows[0];
-    if (usage.total >= budget.max_uses) throw new AppError(429, 'BUDGET_EXHAUSTED');
+    const usage = (await db.query("SELECT COALESCE(sum(cost),0)::int AS total FROM capability_usage WHERE user_id=$1 AND capability=$2 AND used_at>now()-make_interval(secs=>$3)", [userId, capability, budget.window_seconds])).rows[0];
+    if (usage.total + cost > budget.max_uses) throw new AppError(429, 'BUDGET_EXHAUSTED');
   }
-  await db.query('INSERT INTO capability_usage(user_id,capability,request_id,resource_key) VALUES($1,$2,$3,$4)', [userId, capability, requestId, resourceKey]);
+  await db.query('INSERT INTO capability_usage(user_id,capability,request_id,resource_key,cost) VALUES($1,$2,$3,$4,$5)', [userId, capability, requestId, resourceKey, cost]);
   return 'new';
 }

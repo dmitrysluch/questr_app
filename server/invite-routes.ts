@@ -12,6 +12,7 @@ const issueSchema = z.object({
   requestId: z.uuid(),
   code: z.string().regex(/^QUEST-[A-Za-z0-9_-]{24}$/),
   expiresInDays: z.number().int().min(1).max(30),
+  maxRedemptions: z.number().int().min(1).max(20).default(1),
   eventCreator: z.boolean().optional(),
   inviteDepth: z.number().int().min(0).max(2).optional(),
   communityIds: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)).max(20)
@@ -39,7 +40,7 @@ async function grantOptions(db: Pool | PoolClient, userId: string, admin: boolea
 
 async function budgetFor(db: Pool | PoolClient, userId: string): Promise<InviteBudget | null> {
   const { rows } = await db.query(`SELECT b.max_uses,b.window_seconds,
-    (SELECT count(*)::int FROM capability_usage u WHERE u.user_id=b.user_id AND u.capability='invite.create'
+    (SELECT COALESCE(sum(u.cost),0)::int FROM capability_usage u WHERE u.user_id=b.user_id AND u.capability='invite.create'
       AND u.used_at>now()-make_interval(secs=>b.window_seconds)) AS used
     FROM capability_budgets b WHERE b.user_id=$1 AND b.capability='invite.create'`, [userId]);
   const row = rows[0];
@@ -49,9 +50,10 @@ async function budgetFor(db: Pool | PoolClient, userId: string): Promise<InviteB
 function mapInvite(row: Record<string, any>): InviteRecord {
   return {
     id: row.id, createdAt: row.created_at.toISOString(), expiresAt: row.expires_at.toISOString(),
-    status: row.redeemed_at ? 'redeemed' : row.revoked_at ? 'revoked' : row.expires_at <= new Date() ? 'expired' : 'active',
+    status: row.revoked_at ? 'revoked' : row.redemption_count >= row.max_redemptions ? 'redeemed' : row.expires_at <= new Date() ? 'expired' : 'active',
     createdBy: row.creator_name, redeemedBy: row.redeemer_name,
     eventCreator: row.grants_event_creation, inviteDepth: row.invite_depth, communityIds: row.community_ids,
+    maxRedemptions: row.max_redemptions, redemptionCount: row.redemption_count,
   };
 }
 
@@ -62,7 +64,7 @@ export function inviteRoutes(pool: Pool) {
     await requireCapability(pool, userId, 'invite.create', { type: 'global' });
     const admin = await can(pool, userId, 'admin', { type: 'global' });
     const { offset } = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0) }).strict().parse(req.query);
-    const { rows } = await pool.query(`SELECT i.id,i.created_at,i.expires_at,i.revoked_at,i.redeemed_at,i.grants_event_creation,i.invite_depth,
+    const { rows } = await pool.query(`SELECT i.id,i.created_at,i.expires_at,i.revoked_at,i.redeemed_at,i.grants_event_creation,i.invite_depth,i.max_redemptions,i.redemption_count,
       ARRAY(SELECT community_id FROM invite_communities WHERE invite_id=i.id ORDER BY community_id) AS community_ids,
       COALESCE(cp.display_name,cd.display_name) AS creator_name,
       COALESCE(rp.display_name,rd.display_name) AS redeemer_name
@@ -88,19 +90,19 @@ export function inviteRoutes(pool: Pool) {
       if (eventCreator && !allowed.eventCreator || inviteDepth > allowed.maxInviteDepth) throw new AppError(403, 'PERMISSION_DENIED');
       if (input.communityIds.length && !admin) throw new AppError(403, 'PERMISSION_DENIED');
       if (input.communityIds.length && (await db.query('SELECT id FROM communities WHERE id=ANY($1::text[])', [input.communityIds])).rowCount !== input.communityIds.length) throw new AppError(400, 'COMMUNITY_INVALID');
-      const result = await consumeCapability(db, userId, 'invite.create', { type: 'global' }, input.requestId);
+      const result = await consumeCapability(db, userId, 'invite.create', { type: 'global' }, input.requestId, input.maxRedemptions);
       if (result === 'replay') {
-        const old = (await db.query('SELECT id,token_hash,expires_at,grants_event_creation,invite_depth,expiry_days FROM invites WHERE created_by=$1 AND issuance_request_id=$2', [userId, input.requestId])).rows[0];
+        const old = (await db.query('SELECT id,token_hash,expires_at,grants_event_creation,invite_depth,expiry_days,max_redemptions FROM invites WHERE created_by=$1 AND issuance_request_id=$2', [userId, input.requestId])).rows[0];
         const oldCommunities = old && (await db.query('SELECT community_id FROM invite_communities WHERE invite_id=$1 ORDER BY community_id', [old.id])).rows.map(row => row.community_id);
-        if (!old || old.token_hash !== tokenHash || old.grants_event_creation !== eventCreator || old.invite_depth !== inviteDepth || old.expiry_days !== input.expiresInDays || JSON.stringify(oldCommunities) !== JSON.stringify([...input.communityIds].sort())) throw new AppError(409, 'REQUEST_CONFLICT');
+        if (!old || old.token_hash !== tokenHash || old.grants_event_creation !== eventCreator || old.invite_depth !== inviteDepth || old.expiry_days !== input.expiresInDays || old.max_redemptions !== input.maxRedemptions || JSON.stringify(oldCommunities) !== JSON.stringify([...input.communityIds].sort())) throw new AppError(409, 'REQUEST_CONFLICT');
         return old;
       }
       if ((await db.query('SELECT 1 FROM invites WHERE token_hash=$1', [tokenHash])).rowCount) throw new AppError(409, 'INVITE_CODE_CONFLICT');
-      const { rows } = await db.query(`INSERT INTO invites(token_hash,created_by,issuance_request_id,expires_at,expiry_days,grants_event_creation,invite_depth)
-        VALUES($1,$2,$3,now()+make_interval(days=>$4),$4,$5,$6) RETURNING id,expires_at`, [tokenHash, userId, input.requestId, input.expiresInDays, eventCreator, inviteDepth]);
+      const { rows } = await db.query(`INSERT INTO invites(token_hash,created_by,issuance_request_id,expires_at,expiry_days,grants_event_creation,invite_depth,max_redemptions)
+        VALUES($1,$2,$3,now()+make_interval(days=>$4),$4,$5,$6,$7) RETURNING id,expires_at`, [tokenHash, userId, input.requestId, input.expiresInDays, eventCreator, inviteDepth, input.maxRedemptions]);
       for (const communityId of input.communityIds) await db.query('INSERT INTO invite_communities(invite_id,community_id) VALUES($1,$2)', [rows[0].id, communityId]);
       await db.query("INSERT INTO permission_audit(user_id,actor_id,action,details,reason) VALUES($1,$1,'invite.created',$2,'Invitation issued')",
-        [userId, JSON.stringify({ inviteId: rows[0].id, expiresInDays: input.expiresInDays, eventCreator, inviteDepth, communityIds: input.communityIds })]);
+        [userId, JSON.stringify({ inviteId: rows[0].id, expiresInDays: input.expiresInDays, maxRedemptions: input.maxRedemptions, eventCreator, inviteDepth, communityIds: input.communityIds })]);
       return rows[0];
     });
     res.status(201).json({ id: record.id, expiresAt: record.expires_at.toISOString() });
@@ -122,9 +124,9 @@ export function inviteRoutes(pool: Pool) {
     const admin = await can(pool, userId, 'admin', { type: 'global' });
     if (!admin) await requireCapability(pool, userId, 'invite.create', { type: 'global' });
     await transaction(pool, async db => {
-      const invite = (await db.query('SELECT created_by,redeemed_at,revoked_at FROM invites WHERE id=$1 FOR UPDATE', [inviteId])).rows[0];
+      const invite = (await db.query('SELECT created_by,redemption_count,max_redemptions,revoked_at FROM invites WHERE id=$1 FOR UPDATE', [inviteId])).rows[0];
       if (!invite || (!admin && invite.created_by !== userId)) throw new AppError(404, 'NOT_FOUND');
-      if (invite.redeemed_at || invite.revoked_at) throw new AppError(409, 'INVITE_NOT_REVOCABLE');
+      if (invite.redemption_count >= invite.max_redemptions || invite.revoked_at) throw new AppError(409, 'INVITE_NOT_REVOCABLE');
       await db.query('UPDATE invites SET revoked_at=now() WHERE id=$1', [inviteId]);
       await db.query("INSERT INTO permission_audit(user_id,actor_id,action,details,reason) VALUES($1,$2,'invite.revoked',$3,'Invitation revoked')",
         [invite.created_by, userId, JSON.stringify({ inviteId })]);
@@ -146,7 +148,7 @@ export function inviteRoutes(pool: Pool) {
       EXISTS(SELECT 1 FROM role_assignments a WHERE a.user_id=u.id AND a.role_code='event_creator' AND a.location_id IS NULL
         AND a.revoked_at IS NULL AND a.valid_from<=now() AND (a.valid_until IS NULL OR a.valid_until>now())) AS is_event_creator,
       b.max_uses,b.window_seconds,
-      (SELECT count(*)::int FROM capability_usage x WHERE x.user_id=u.id AND x.capability='invite.create'
+      (SELECT COALESCE(sum(x.cost),0)::int FROM capability_usage x WHERE x.user_id=u.id AND x.capability='invite.create'
         AND b.window_seconds IS NOT NULL AND x.used_at>now()-make_interval(secs=>b.window_seconds)) AS used,
       eb.max_uses AS event_max_uses,eb.window_seconds AS event_window_seconds,
       (SELECT count(*)::int FROM capability_usage x WHERE x.user_id=u.id AND x.capability='events.create'

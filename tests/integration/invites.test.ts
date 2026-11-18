@@ -117,6 +117,67 @@ integration('single-use redemption and revocation update status without revealin
   assert.ok(!JSON.stringify(list).includes(revoked.code));
 });
 
+integration('a shared invite reserves every seat, accepts distinct members once, and closes at capacity', async () => {
+  const owner = await active('Group Invite Host');
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Test admin')", [owner.id]);
+  await pool.query("UPDATE capability_budgets SET max_uses=4 WHERE user_id=$1 AND capability='invite.create'", [owner.id]);
+  const shared = { ...issue(), maxRedemptions: 3, eventCreator: false, communityIds: ['ariel_students'] };
+  const created = (await owner.agent.post('/api/invites').send(shared).expect(201)).body;
+  assert.equal((await owner.agent.post('/api/invites').send(shared).expect(201)).body.id, created.id);
+  await owner.agent.post('/api/invites').send({ ...shared, maxRedemptions: 2 }).expect(409);
+  const budget = (await owner.agent.get('/api/invites').expect(200)).body.budget;
+  assert.equal(budget.used, 3);
+  await owner.agent.post('/api/invites').send({ ...issue(), maxRedemptions: 2 }).expect(429);
+
+  const newcomer = await activeWithInvite('Group Newcomer', shared.code);
+  assert.deepEqual((await newcomer.agent.get('/api/me')).body.profile.communities, ['ariel_students']);
+  const member = await active('Group Existing Member');
+  assert.equal((await member.agent.post('/api/invites/redeem').send({ code: shared.code }).expect(200)).body.alreadyRedeemed, false);
+  assert.equal((await member.agent.post('/api/invites/redeem').send({ code: shared.code }).expect(200)).body.alreadyRedeemed, true);
+  const partial = (await owner.agent.get('/api/invites').expect(200)).body.invites.find((invite: any) => invite.id === created.id);
+  assert.equal(partial.status, 'active');
+  assert.equal(partial.redemptionCount, 2);
+  assert.equal(partial.maxRedemptions, 3);
+
+  const last = await browser();
+  await last.agent.post('/api/register').send({ displayName: 'Last Seat', invite: shared.code, adult: true, terms: true, locale: 'en' }).expect(200);
+  const rejected = await browser();
+  await rejected.agent.post('/api/register').send({ displayName: 'No Seat', invite: shared.code, adult: true, terms: true, locale: 'en' }).expect(400);
+  const full = (await owner.agent.get('/api/invites').expect(200)).body.invites.find((invite: any) => invite.id === created.id);
+  assert.equal(full.status, 'redeemed');
+  assert.equal(full.redemptionCount, 3);
+  await owner.agent.post(`/api/invites/${created.id}/revoke`).send({}).expect(409);
+  assert.equal((await pool.query('SELECT count(*)::int AS total FROM invite_redemptions WHERE invite_id=$1', [created.id])).rows[0].total, 3);
+});
+
+integration('a partially used shared invite can be revoked without removing existing members', async () => {
+  const owner = await active('Group Revoke Host');
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Test admin')", [owner.id]);
+  const shared = { ...issue(), maxRedemptions: 2, eventCreator: false, communityIds: ['ariel_students'] };
+  const created = (await owner.agent.post('/api/invites').send(shared).expect(201)).body;
+  const member = await activeWithInvite('Group Revoked Member', shared.code);
+  await owner.agent.post(`/api/invites/${created.id}/revoke`).send({}).expect(200);
+  assert.deepEqual((await member.agent.get('/api/me')).body.profile.communities, ['ariel_students']);
+  const another = await browser();
+  await another.agent.post('/api/register').send({ displayName: 'Revoked Seat', invite: shared.code, adult: true, terms: true, locale: 'en' }).expect(400);
+  const revoked = (await owner.agent.get('/api/invites').expect(200)).body.invites.find((invite: any) => invite.id === created.id);
+  assert.equal(revoked.status, 'revoked');
+  assert.equal(revoked.redemptionCount, 1);
+});
+
+integration('simultaneous redemptions cannot take the same last seat', async () => {
+  const owner = await active('Race Invite Host');
+  await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Test admin')", [owner.id]);
+  const shared = { ...issue(), maxRedemptions: 2, eventCreator: false };
+  const created = (await owner.agent.post('/api/invites').send(shared).expect(201)).body;
+  await activeWithInvite('First Race Seat', shared.code);
+  const [first, second] = await Promise.all([active('Race Candidate One'), active('Race Candidate Two')]);
+  const results = await Promise.all([first, second].map(member => member.agent.post('/api/invites/redeem').send({ code: shared.code })));
+  assert.deepEqual(results.map(result => result.status).sort(), [200, 400]);
+  assert.equal((await pool.query('SELECT redemption_count FROM invites WHERE id=$1', [created.id])).rows[0].redemption_count, 2);
+  assert.equal((await pool.query('SELECT count(*)::int AS total FROM invite_redemptions WHERE invite_id=$1', [created.id])).rows[0].total, 2);
+});
+
 integration('invite grants become roles, depth shrinks each generation, and issuers cannot escalate rights', async () => {
   const owner = await active('Role Admin');
   await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Test admin')", [owner.id]);

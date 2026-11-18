@@ -95,6 +95,8 @@ export interface InviteRecord {
   eventCreator: boolean;
   inviteDepth: number;
   communityIds: string[];
+  maxRedemptions: number;
+  redemptionCount: number;
 }
 export interface InviteBudget { maxUses: number; used: number; windowDays: number }
 export interface InviterAccount {

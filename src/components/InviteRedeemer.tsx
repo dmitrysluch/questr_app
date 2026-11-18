@@ -2,8 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { api } from '../api.ts';
 import { errorText, t } from '../i18n.ts';
 
-export function InviteRedeemer({ onRedeemed }: { onRedeemed: () => Promise<unknown> }) {
-  const [code, setCode] = useState('');
+export function InviteRedeemer({ onRedeemed, initialCode = '' }: { onRedeemed: () => Promise<unknown>; initialCode?: string }) {
+  const [code, setCode] = useState(initialCode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
