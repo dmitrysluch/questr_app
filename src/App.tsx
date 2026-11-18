@@ -16,6 +16,7 @@ import { Modal } from './components/Modal.tsx';
 import { Interview } from './components/Interview.tsx';
 import { AskMeTopics } from './components/AskMeTopics.tsx';
 import { Invites } from './components/Invites.tsx';
+import { AdminCommunities } from './components/AdminCommunities.tsx';
 import { InviteRedeemer } from './components/InviteRedeemer.tsx';
 import { EmailInvite } from './components/EmailInvite.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
@@ -48,7 +49,7 @@ export function App() {
   const [bioReview, setBioReview] = useState<BioReview | null>(null);
   const [discoveryDirty, setDiscoveryDirty] = useState(false);
   const [discoveryPending, setDiscoveryPending] = useState<DiscoveryPreferences | null>(null);
-  const [exitTarget, setExitTarget] = useState<'character' | 'adventures' | 'invites' | null>(null);
+  const [exitTarget, setExitTarget] = useState<'character' | 'adventures' | 'invites' | 'communities' | null>(null);
   const [telegramNeeded, setTelegramNeeded] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
@@ -122,12 +123,12 @@ export function App() {
       setState(old => old ? { ...old, user: { ...old.user, locale: next } } : old);
     });
   }
-  function navigate(target: 'character' | 'adventures' | 'invites') {
+  function navigate(target: 'character' | 'adventures' | 'invites' | 'communities') {
     if (busy) return;
     if (state?.user.status === 'active' && !showProfile && discoveryDirty) { setExitTarget(target); return; }
     void finishExit(target, false);
   }
-  async function finishExit(target: 'character' | 'adventures' | 'invites', saveFilters: boolean) {
+  async function finishExit(target: 'character' | 'adventures' | 'invites' | 'communities', saveFilters: boolean) {
     await run(async () => {
       await flush();
       if (saveFilters && discoveryPending) {
@@ -187,15 +188,16 @@ export function App() {
   const currentReview = bioReview?.introMarkdown === draft?.introMarkdown ? bioReview : null;
   const currentTopicReviews = currentReview && JSON.stringify(currentReview.askMeTopics) === JSON.stringify(draft?.askMeTopics) ? currentReview.topicReviews : undefined;
   const invitesOpen = state?.user.status === 'active' && state.permissions.inviteCreate && route.startsWith('#invites');
-  const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character') && !invitesOpen;
+  const communitiesOpen = state?.user.status === 'active' && state.permissions.admin && route.startsWith('#communities');
+  const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character') && !invitesOpen && !communitiesOpen;
 
   return <div className="app-shell">
     <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR" onClick={event => { if (state?.user.status === 'active') { event.preventDefault(); navigate('adventures'); } }}><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>
       <div className="header-right">{config?.authMode === 'demo' && <span className="preview-badge">{t('app.demo')}</span>}<select className="locale-switch" aria-label={t('ui.language')} value={locale} disabled={!state || busy} onChange={event => void changeLocale(event.target.value as Locale)}><option value="en">EN</option><option value="ru">RU</option></select><button className="text-button" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
     </header>
     <div className="workspace">
-      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !invitesOpen ? 'active' : ''} aria-current={!adventuresOpen && !invitesOpen ? 'page' : undefined} onClick={() => navigate('character')}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => navigate('adventures')}>{t('nav.adventures')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => navigate('invites')}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}</nav>}
-      {draft && !showProfile && !adventuresOpen && !invitesOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
+      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !invitesOpen && !communitiesOpen ? 'active' : ''} aria-current={!adventuresOpen && !invitesOpen && !communitiesOpen ? 'page' : undefined} onClick={() => navigate('character')}>{t('nav.character')}</button><button className={adventuresOpen ? 'active' : ''} aria-current={adventuresOpen ? 'page' : undefined} onClick={() => navigate('adventures')}>{t('nav.adventures')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => navigate('invites')}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}{state.permissions.admin && <button className={communitiesOpen ? 'active' : ''} aria-current={communitiesOpen ? 'page' : undefined} onClick={() => navigate('communities')}>{t('nav.communities')}</button>}</nav>}
+      {draft && !showProfile && !adventuresOpen && !invitesOpen && !communitiesOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
         {steps.map((step, index) => <button key={step.id} className={`step ${currentStep === step.id ? 'active' : ''} ${index < stepIndex ? 'done' : ''}`}
           disabled={busy || (step.id !== 'avatar' && !draft.avatarId)} aria-current={currentStep === step.id ? 'step' : undefined} onClick={() => void go(step.id)}>
           <span className="step-number">{index < stepIndex ? <Check size={13} /> : index + 1}</span><span className="step-label">{t(step.label)}</span>
@@ -216,7 +218,7 @@ export function App() {
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
             <p className="form-privacy"><LockKeyhole size={13} />{t('footer.private')}</p>
           </form>
-        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
+        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} /> : communitiesOpen ? <AdminCommunities /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} />
           <InviteRedeemer onRedeemed={loadState} />

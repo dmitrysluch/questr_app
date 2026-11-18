@@ -33,7 +33,13 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     const adminId = await character(page, 'Admin Quester');
     await pool.query("INSERT INTO role_assignments(user_id,role_code,reason) VALUES($1,'admin','Browser test')", [adminId]);
     await page.reload();
-    await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Admin' }).click();
+    const adminNav = page.getByRole('navigation', { name: 'Workspace' });
+    await adminNav.getByRole('button', { name: 'Communities' }).click();
+    await expect(page.locator('.admin-community-node')).toHaveCount(3);
+    await expect(page.locator('.admin-community-node').nth(2)).toContainText('Ariel University students');
+    await expect(page.locator('.admin-community-node').nth(2)).toContainText('ariel_students');
+    await expect(page.locator('.admin-community-node + ul')).toHaveCount(2);
+    await adminNav.getByRole('button', { name: 'Admin' }).click();
     await expect(page.getByRole('heading', { name: 'Invites', exact: true })).toBeVisible();
     await page.getByLabel('Invite chain', { exact: true }).selectOption('2');
     await page.getByRole('button', { name: 'Create invite' }).click();
@@ -44,13 +50,14 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await newest.getByRole('button', { name: 'Revoke', exact: true }).click();
     await newest.getByRole('button', { name: 'Confirm revoke' }).click();
     await expect(newest.locator('.invite-status.revoked')).toBeVisible();
-    await page.getByLabel('Ariel University students', { exact: true }).check();
+    await page.locator('.invite-issue').getByLabel('Ariel University students', { exact: true }).check();
     await page.getByRole('button', { name: 'Create invite' }).click();
     const communityCode = await page.locator('.issued-invite code').innerText();
 
     const guest = await guestContext.newPage();
     const friendName = `Invite Friend ${crypto.randomUUID().slice(0, 8)}`;
     await character(guest, friendName);
+    await expect(guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Communities' })).toHaveCount(0);
     await guest.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character' }).click();
     await guest.getByRole('textbox', { name: 'Invite code' }).fill(communityCode);
     await guest.getByRole('button', { name: 'Apply invite' }).click();
