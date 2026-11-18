@@ -15,6 +15,7 @@ import { ProfileCard } from './ProfileCard.tsx';
 import { Modal } from './Modal.tsx';
 import { PartyRoster } from './PartyRoster.tsx';
 import { PlacePicker } from './PlacePicker.tsx';
+import { track } from '../analytics.ts';
 function eventDate(event: Adventure) { return new Intl.DateTimeFormat(getLocale(), { timeZone: event.timeZone, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }).formatRange(new Date(event.startsAt), new Date(event.endsAt)); }
 const statusKey = (event: Adventure): TranslationKey => event.status === 'published' && Date.parse(event.startsAt) <= Date.now() ? 'events.started' : event.status === 'published' && !event.recruitmentOpen ? 'events.recruitmentClosed' : `events.${event.status}`;
 const go = (id?: string) => { location.hash = id ? `adventures/${id}` : 'adventures'; };
@@ -55,6 +56,7 @@ export function Adventures({ config, discovery, spokenLanguages, communityIds, o
   const inTelegramMiniApp = Boolean(window.Telegram?.WebApp?.initData);
   const [confirmation, setConfirmation] = useState<{ title: TranslationKey; hint: TranslationKey; path: string; body: object; leave?: boolean } | null>(null);
   const generation = useRef(0);
+  useEffect(() => { if (!id) track('adventure_list_viewed', { view }); }, [id, view]);
   useEffect(() => {
     let previousId = location.hash.split('/')[1] ?? '';
     const change = () => {
@@ -93,6 +95,12 @@ export function Adventures({ config, discovery, spokenLanguages, communityIds, o
     setBusy(true); setError(null);
     try {
       const result = await api<{ event: AdventureDetail | null }>(`/events/${id}${path}`, { method: 'POST', body });
+      if (path === '/applications') track('adventure_application_sent', { with_note: Boolean('message' in body && typeof body.message === 'string' && body.message.trim()) });
+      else if (path.startsWith('/members/')) {
+        const decision = 'action' in body ? body.action : null;
+        if (decision === 'accept') track('adventure_application_accepted');
+        else if (decision === 'decline') track('adventure_application_declined');
+      } else if (path === '/leave') track('adventure_left');
       setConfirmation(null); setApplication(false); setMessage(''); setDetail(result.event);
       if (leave) { setView('mine'); go(); }
     } catch (error) { setError(error); } finally { setBusy(false); }
@@ -103,6 +111,7 @@ export function Adventures({ config, discovery, spokenLanguages, communityIds, o
     setBusy(true); setError(null);
     try {
       const result = await api<{ connection: CharacterConnection }>(`/events/${id}/profiles/${personId}/connection`, { method: 'POST', body: { purpose: connectionPurpose, message: connectionMessage } });
+      track('connection_requested', { purpose: connectionPurpose });
       setConnection(result.connection); setConnectionPurpose(null); setConnectionMessage('');
     } catch (error) { setError(error); } finally { setBusy(false); }
   }
@@ -257,6 +266,7 @@ function EventEditor({ config, initial, spokenLanguages, communityIds, onClose, 
       if (!initial && !locationAccess?.canCreate) throw { code: 'PERMISSION_DENIED' };
       const body = { ...fields, costEstimate: fields.costEstimate.trim() || t('events.defaultCost'), experienceNotes: fields.experienceNotes.trim() || t('events.defaultExperience'), startsAt: instant, endsAt: endInstant, ...(initial ? { revision: initial.revision } : { requestId: requestId.current }) };
       const result = await api<{ event: AdventureDetail }>(initial ? `/events/${initial.id}` : '/events', { method: initial ? 'PUT' : 'POST', body });
+      track(initial ? 'adventure_updated' : 'adventure_created', { format: fields.locationId === 'online' ? 'online' : 'offline', community_only: Boolean(fields.communityId) });
       onSaved(result.event);
     } catch (error) { setError(error); } finally { setBusy(false); }
   }

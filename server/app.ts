@@ -71,7 +71,7 @@ export function createApp(pool: Pool, config: Config, interviewer?: Interviewer,
     }
   }
   app.get('/api/health', async (_req, res) => { await pool.query('SELECT 1'); res.json({ ok: true }); });
-  app.get('/api/config', (_req, res) => res.json({ authMode: config.authMode, aiMode: config.aiMode, botUsername: 'questr_game', termsVersion, googleMapsBrowserKey: config.googleMapsBrowserKey }));
+  app.get('/api/config', (_req, res) => res.json({ authMode: config.authMode, aiMode: config.aiMode, botUsername: 'questr_game', termsVersion, googleMapsBrowserKey: config.googleMapsBrowserKey, posthogProjectKey: config.posthogProjectKey }));
 
   app.post('/api/auth/demo', async (req, res) => {
     if (config.authMode !== 'demo') throw new AppError(404, 'NOT_FOUND');

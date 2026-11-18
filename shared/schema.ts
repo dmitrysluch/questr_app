@@ -102,4 +102,4 @@ export interface InviterAccount {
   budget: InviteBudget | null;
   eventBudget: InviteBudget | null;
 }
-export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string; googleMapsBrowserKey: string }
+export interface AppConfig { authMode: 'demo' | 'telegram'; aiMode: 'demo' | 'openrouter'; botUsername: string; termsVersion: string; googleMapsBrowserKey: string; posthogProjectKey: string }

@@ -26,6 +26,7 @@ import type { BioReview } from '../shared/content-policy.ts';
 import type { DiscoveryPreferences } from '../shared/discovery.ts';
 import { parseCommunities, type Community } from '../shared/communities.ts';
 import { CommunityCatalog } from './community-catalog.tsx';
+import { initAnalytics, syncAnalyticsIdentity, track } from './analytics.ts';
 
 const BioEditor = lazy(() => import('./components/BioEditor.tsx'));
 declare global {
@@ -68,6 +69,7 @@ export function App() {
     const savedLocale = preferredLocale(next.user.locale);
     setLocale(savedLocale); setInterfaceLocale(savedLocale);
     setState(next); replace(next.draft);
+    syncAnalyticsIdentity(next.user.status === 'pending_invite' ? null : next.user.id);
     setBioReview(next.bioReview);
     setShowProfile(next.user.status === 'active');
     setInvite(next.demoInvite ?? '');
@@ -80,6 +82,8 @@ export function App() {
         const next = await api<AppConfig>('/config');
         if (!active) return;
         setConfig(next);
+        await initAnalytics(next.posthogProjectKey);
+        if (!active) return;
         const browserLanguage = navigator.languages?.[0] ?? navigator.language;
         setTelegramSession(null);
         if (next.authMode === 'demo') await api('/auth/demo', { method: 'POST', body: { browserLanguage } });
@@ -115,6 +119,8 @@ export function App() {
     event.preventDefault();
     await run(async () => {
       const result = await api<{ draft: Draft }>('/register', { method: 'POST', body: { displayName: name, invite: invite.trim() || undefined, adult, terms, locale } });
+      track('registration_completed');
+      syncAnalyticsIdentity(state?.user.id ?? null);
       replace(result.draft);
       setState(old => old ? { ...old, user: { ...old.user, status: 'onboarding' }, draft: result.draft } : old);
     });
@@ -179,6 +185,7 @@ export function App() {
         if (e instanceof ApiError && e.code === 'CONTENT_REQUIRES_CHANGES') setBioReview((e.details as { bioReview: BioReview }).bioReview);
         throw e;
       } finally { setCheckingBio(false); }
+      track('profile_published', { first_publish: !state?.profile, has_intro: Boolean(result.profile.introMarkdown.trim()), tag_count: result.profile.tags.length, ask_me_count: result.profile.askMeTopics.length, language_count: result.profile.spokenLanguages.length });
       setState(old => old ? { ...old, profile: result.profile, user: { ...old.user, status: 'active' } } : old);
       setShowProfile(true); window.scrollTo({ top: 0, behavior: 'smooth' });
     });
@@ -194,6 +201,12 @@ export function App() {
   const invitesOpen = state?.user.status === 'active' && state.permissions.inviteCreate && route.startsWith('#invites');
   const communitiesOpen = state?.user.status === 'active' && state.permissions.admin && route.startsWith('#communities');
   const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character') && !invitesOpen && !communitiesOpen;
+  const analyticsScreen = !state || state.user.status === 'pending_invite' ? null
+    : state.user.status !== 'active' ? `onboarding_${currentStep}`
+    : invitesOpen ? 'invites' : communitiesOpen ? 'communities'
+    : adventuresOpen ? route.includes('/character/') ? 'adventure_character' : route.startsWith('#adventures/') ? 'adventure_detail' : 'adventure_list'
+    : showProfile ? 'character_profile' : `character_editor_${currentStep}`;
+  useEffect(() => { if (analyticsScreen) track('screen_viewed', { screen: analyticsScreen }); }, [analyticsScreen]);
 
   return <CommunityCatalog.Provider value={communities}><div className="app-shell">
     <header className="site-header"><a className="wordmark" href="/" aria-label="QUESTR" onClick={event => { if (state?.user.status === 'active') { event.preventDefault(); navigate('adventures'); } }}><span className="pixel-spark" />QUESTR<span className="wordmark-dot">.</span></a>

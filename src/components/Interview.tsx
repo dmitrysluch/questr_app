@@ -9,6 +9,7 @@ import { Modal } from './Modal.tsx';
 import { PixelEmoji } from './PixelEmoji.tsx';
 import { MarkedText } from './ContentReview.tsx';
 import type { BioReview } from '../../shared/content-policy.ts';
+import { track } from '../analytics.ts';
 
 interface Props {
   config: AppConfig;
@@ -50,6 +51,7 @@ export function Interview({ config, conversation, proposal, hasBio, askMeTopics,
       const review = await api<{ bioReview: BioReview }>('/draft/validate', { method: 'POST', body: { revision: draft?.revision } });
       onBioReview(review.bioReview);
       const result = await api<{ conversation: Conversation }>('/assistant/start', { method: 'POST', body: { consent: true } });
+      track('interview_started', { has_existing_bio: hasBio });
       onConversation(result.conversation);
     } catch (e) { setError(e); } finally { setBusy(null); }
   }
@@ -62,6 +64,7 @@ export function Interview({ config, conversation, proposal, hasBio, askMeTopics,
     try {
       await flush();
       const result = await api<{ conversation: Conversation }>('/assistant/messages', { method: 'POST', body: pendingRequest.current.input });
+      track(changeTopic ? 'interview_topic_changed' : 'interview_answered');
       onConversation(result.conversation); if (!changeTopic) setAnswer(''); pendingRequest.current = null;
     } catch (e) {
       setError(e);
@@ -74,6 +77,7 @@ export function Interview({ config, conversation, proposal, hasBio, askMeTopics,
     try {
       await flush();
       const result = await api<{ proposal: Proposal }>('/assistant/proposals', { method: 'POST', body: {} });
+      track('interview_draft_created');
       onProposal(result.proposal); setSelectedCodes(result.proposal.suggestedTags.map(t => t.code)); setSelectedTopicIndexes([]); setReviewView('proposed'); setReviewing(true);
     } catch (e) { setError(e); } finally { setBusy(null); }
   }
@@ -83,6 +87,7 @@ export function Interview({ config, conversation, proposal, hasBio, askMeTopics,
     try {
       const current = await flush();
       const result = await api<{ draft: Draft }>(`/assistant/proposals/${proposal.id}/apply`, { method: 'POST', body: { revision: current?.revision, tagCodes: selectedCodes, askMeTopicIndexes: selectedTopicIndexes } });
+      track('interview_draft_applied');
       onProposal(null); setReviewing(false); onApply(result.draft);
     } catch (e) { setError(e); } finally { setBusy(null); }
   }
