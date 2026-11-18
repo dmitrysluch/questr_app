@@ -8,6 +8,7 @@ import { proposalOutputSchema, type ChatMessage, type ProfileTag } from '../shar
 import { demoQuestion, demoProposal } from './demo-assistant.ts';
 import { profileContentPolicy, contentRedirectNotice } from '../shared/content-policy.ts';
 import type { Locale } from '../shared/locale.ts';
+import type { OperationalMetrics } from './metrics.ts';
 
 export { interviewInstructions } from './interview-prompt.ts';
 
@@ -39,7 +40,8 @@ const proposalJsonSchema = {
 };
 
 export async function structuredResponse(config: Config, instructions: string, input: unknown, name: string, schema: object, fetcher: typeof fetch = fetch,
-  model: { id: string; effort: ReasoningEffort } = { id: config.openrouterModel, effort: config.openrouterReasoningEffort }): Promise<unknown> {
+  model: { id: string; effort: ReasoningEffort } = { id: config.openrouterModel, effort: config.openrouterReasoningEffort }, metrics?: OperationalMetrics): Promise<unknown> {
+  const startedAt = performance.now();
   try {
     const response = await fetcher('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST', signal: AbortSignal.timeout(60000),
@@ -57,8 +59,10 @@ export async function structuredResponse(config: Config, instructions: string, i
     const body = await response.json() as { choices?: { finish_reason?: string; message?: { content?: string; refusal?: string } }[] };
     const choice = body.choices?.[0];
     if (choice?.finish_reason !== 'stop' || choice.message?.refusal || typeof choice.message?.content !== 'string') throw new AppError(503, 'ASSISTANT_UNAVAILABLE');
-    return JSON.parse(choice.message.content);
-  } catch { throw new AppError(503, 'ASSISTANT_UNAVAILABLE'); }
+    const parsed = JSON.parse(choice.message.content);
+    metrics?.recordDependency('openrouter', 'ok', startedAt);
+    return parsed;
+  } catch { metrics?.recordDependency('openrouter', 'error', startedAt); throw new AppError(503, 'ASSISTANT_UNAVAILABLE'); }
 }
 
 export function checkContext(messages: ChatMessage[], bio: string) {
@@ -81,7 +85,7 @@ export function validateProposal(bio: string, messages: ChatMessage[], raw: unkn
 
 export class Interviewer {
   private lastOpeningAngle: string | null = null;
-  constructor(private config: Config, private fetcher: typeof fetch = fetch) {}
+  constructor(private config: Config, private fetcher: typeof fetch = fetch, private metrics?: OperationalMetrics) {}
   async question(messages: ChatMessage[], bio: string, redirectExplicitContent = false, interests: ProfileTag[] = [], locale: Locale = 'en') {
     checkContext(messages, bio);
     const topicChangeRequested = messages.at(-1)?.kind === 'change_topic';
@@ -95,7 +99,7 @@ export class Interviewer {
       currentBio: bio, transcript: messages.map(({ role, content, kind }) => kind === 'change_topic' ? { role, action: 'change_topic' } : { role, content }), redirectExplicitContent, topicChangeRequested,
       selectedInterests: interests.map(t => t.kind === 'custom' ? t.label : tags.find(tag => tag.code === t.code)!.label),
       openingAngle, interfaceLocale: locale,
-    }, 'questr_question', questionJsonSchema, this.fetcher, { id: this.config.openrouterQuestionModel, effort: this.config.openrouterQuestionReasoningEffort });
+    }, 'questr_question', questionJsonSchema, this.fetcher, { id: this.config.openrouterQuestionModel, effort: this.config.openrouterQuestionReasoningEffort }, this.metrics);
     const parsed = z.object({ question: z.string().trim().min(5).max(1200) }).strict().safeParse(result);
     if (!parsed.success) throw new AppError(503, 'ASSISTANT_UNAVAILABLE');
     return finish(parsed.data.question);
@@ -113,7 +117,7 @@ export class Interviewer {
     const raw = await structuredResponse(this.config, draftInstructions, {
       currentBio: { id: 'bio', markdown: bio }, transcript: mapped, interfaceLocale: locale, existingAskMeTopics,
       catalog: tags.map(({ code, label }) => ({ code, label })),
-    }, 'questr_bio', proposalJsonSchema, this.fetcher);
+    }, 'questr_bio', proposalJsonSchema, this.fetcher, undefined, this.metrics);
     if (raw && typeof raw === 'object' && 'introMarkdown' in raw && typeof raw.introMarkdown === 'string' && !raw.introMarkdown.trim()) throw new AppError(422, 'MORE_DETAIL_NEEDED');
     const result = validateProposal(bio, mapped.map(m => ({ ...m, createdAt: '' })), raw);
     const idMap = new Map(mapped.map((m, i) => [m.id, messages[i].id]));

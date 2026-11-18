@@ -3,15 +3,17 @@ import { createPool } from './db.ts';
 import { migrate } from './migrate.ts';
 import { createApp } from './app.ts';
 import { EventBot } from './event-bot.ts';
+import { OperationalMetrics } from './metrics.ts';
 
 const config = loadConfig();
 const pool = createPool(config.databaseUrl);
 await migrate(pool, config.locationCatalogPath, config.communityCatalogPath);
-const server = createApp(pool, config).listen(config.port, '0.0.0.0', () => {
+const metrics = config.metricsPath ? new OperationalMetrics(pool) : undefined;
+const server = createApp(pool, config, undefined, undefined, undefined, metrics).listen(config.port, '0.0.0.0', () => {
   console.log(`QUESTR API: http://localhost:${config.port} (auth: ${config.authMode}, assistant: ${config.aiMode})`);
 });
 server.on('error', error => { console.error('QUESTR could not start:', error.message); void pool.end().then(() => process.exit(1)); });
-const stopBot = config.authMode === 'telegram' && config.webhookSecret ? new EventBot(pool, config).start() : async () => {};
+const stopBot = config.authMode === 'telegram' && config.webhookSecret ? new EventBot(pool, config, fetch, metrics).start() : async () => {};
 let stopping = false;
 function stop() {
   if (stopping) return;

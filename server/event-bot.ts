@@ -11,6 +11,7 @@ import { botText } from './bot-copy.ts';
 import { relayMarkdown } from './telegram-markdown.ts';
 import { hasPublicLink } from '../shared/events.ts';
 import { ZodError } from 'zod';
+import type { OperationalMetrics } from './metrics.ts';
 
 class TelegramError extends Error {
   constructor(public retryAfter: number | null, description = 'TELEGRAM_DELIVERY_FAILED') { super(description); }
@@ -23,8 +24,8 @@ const buttonLabel = (value: string) => value.length > 56 ? `${value.slice(0, 53)
  * rather than automatically risking a duplicate delivery. */
 export class EventBot {
   private adventures: Adventures;
-  constructor(private pool: Pool, private config: Config, private fetcher: typeof fetch = fetch) {
-    this.adventures = new Adventures(pool, new ContentReviewer(config));
+  constructor(private pool: Pool, private config: Config, private fetcher: typeof fetch = fetch, private metrics?: OperationalMetrics) {
+    this.adventures = new Adventures(pool, new ContentReviewer(config, fetch, metrics));
   }
   private appButton(locale: string, route?: string, label: 'openButton' | 'viewCharacterButton' = 'openButton'): BotButton | null {
     if (!this.config.publicAppUrl.startsWith('https://')) return null;
@@ -39,13 +40,18 @@ export class EventBot {
     return button ? { inline_keyboard: [[button]] } : undefined;
   }
   private async call(method: string, body: object): Promise<any> {
+    const startedAt = performance.now();
     let response: Response;
     try { response = await this.fetcher(`https://api.telegram.org/bot${this.config.botToken}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) }); }
-    catch { throw new TelegramError(null); }
+    catch { this.metrics?.recordDependency('telegram', 'error', startedAt); throw new TelegramError(null); }
     let result: any;
-    try { result = await response.json(); } catch { throw new TelegramError(null); }
-    if (!response.ok || !result.ok) throw new TelegramError(result.error_code === 429 ? Math.max(1, Math.min(3600, Number(result.parameters?.retry_after) || 30)) : null,
-      `${method}: ${result.error_code ?? response.status} ${String(result.description ?? 'Telegram request failed').slice(0, 200)}`);
+    try { result = await response.json(); } catch { this.metrics?.recordDependency('telegram', 'error', startedAt); throw new TelegramError(null); }
+    if (!response.ok || !result.ok) {
+      this.metrics?.recordDependency('telegram', 'error', startedAt);
+      throw new TelegramError(result.error_code === 429 ? Math.max(1, Math.min(3600, Number(result.parameters?.retry_after) || 30)) : null,
+        `${method}: ${result.error_code ?? response.status} ${String(result.description ?? 'Telegram request failed').slice(0, 200)}`);
+    }
+    this.metrics?.recordDependency('telegram', 'ok', startedAt);
     return result.result;
   }
   private async topic(db: PoolClient, userId: string, eventId: string, chatId: string) {

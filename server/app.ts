@@ -23,15 +23,20 @@ import { inviteRoutes } from './invite-routes.ts';
 import { redeemInvite } from './invite-redemption.ts';
 import { romanceConsentVersion, romanceInputSchema } from '../shared/romance.ts';
 import { placeRoutes } from './place-routes.ts';
-import { emailInviteRoutes, type EmailSender } from './email-invites.ts';
+import { brevoSender, emailInviteRoutes, type EmailSender } from './email-invites.ts';
 import { parseCommunities } from '../shared/communities.ts';
+import { OperationalMetrics } from './metrics.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
 
-export function createApp(pool: Pool, config: Config, interviewer = new Interviewer(config), reviewer = new ContentReviewer(config), sendEmail?: EmailSender) {
+export function createApp(pool: Pool, config: Config, interviewer?: Interviewer, reviewer?: ContentReviewer, sendEmail?: EmailSender, metrics?: OperationalMetrics) {
+  metrics ??= config.metricsPath ? new OperationalMetrics(pool) : undefined;
+  interviewer ??= new Interviewer(config, fetch, metrics);
+  reviewer ??= new ContentReviewer(config, fetch, metrics);
   const app = express();
   app.disable('x-powered-by');
+  if (metrics && config.metricsPath) metrics.install(app, config.metricsPath, config.metricsToken);
   app.use(express.json({ limit: '5mb' }));
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -191,7 +196,7 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     await pool.query("UPDATE users SET locale=$2,locale_source='manual',updated_at=now() WHERE id=$1", [currentUser(res).id, locale]);
     res.json({ locale });
   });
-  app.use('/api/email-invites', emailInviteRoutes(pool, config, throttle, sendEmail));
+  app.use('/api/email-invites', emailInviteRoutes(pool, config, throttle, sendEmail ?? brevoSender(config, metrics)));
   app.post('/api/register', async (req, res) => {
     const user = currentUser(res);
     throttle(`register:${user.id}`, 10);
@@ -326,7 +331,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
     throttle(`review:${userId}`, 15);
     const draft = await getDraft(pool, userId);
     if (!draft || draft.revision !== revision) throw new AppError(409, 'DRAFT_CONFLICT');
-    const [review, ...topicReviews] = await Promise.all([draft.introMarkdown, ...draft.askMeTopics].map(text => reviewContent(pool, reviewer, text)));
+    const draftReviewer = reviewer ?? new ContentReviewer(config, fetch, metrics);
+    const [review, ...topicReviews] = await Promise.all([draft.introMarkdown, ...draft.askMeTopics].map(text => reviewContent(pool, draftReviewer, text)));
     // Never attach a completed review to text edited while the model was running.
     const latest = await getDraft(pool, userId);
     if (!latest || latest.revision !== draft.revision) throw new AppError(409, 'REVIEW_STALE');

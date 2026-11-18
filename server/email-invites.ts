@@ -8,8 +8,24 @@ import { hash } from './auth.ts';
 import { transaction } from './db.ts';
 import { AppError } from './errors.ts';
 import { grantMember, requireCapability } from './permissions.ts';
+import type { OperationalMetrics } from './metrics.ts';
 
 export type EmailSender = (email: string, code: string, locale: string) => Promise<void>;
+
+export function verificationEmail(code: string, locale: string) {
+  if (!/^\d{8}$/.test(code)) throw new Error('Invalid verification code');
+  const russian = locale === 'ru';
+  const subject = russian ? 'Код подтверждения QUESTR' : 'Your QUESTR verification code';
+  const title = russian ? 'Подтверди почту' : 'Verify your email';
+  const instruction = russian ? 'Введи этот код в QUESTR:' : 'Enter this code in QUESTR:';
+  const expiry = russian ? 'Код действует 10 минут.' : 'This code expires in 10 minutes.';
+  const ignore = russian ? 'Если ты не запрашивал код, просто проигнорируй письмо.' : 'If you did not request this code, you can ignore this email.';
+  return {
+    subject,
+    textContent: `${title}\n\n${instruction} ${code}\n\n${expiry}\n${ignore}`,
+    htmlContent: `<!doctype html><html lang="${russian ? 'ru' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:24px 12px;background:#f5efe5;color:#30251f;font-family:Arial,Helvetica,sans-serif"><div style="max-width:480px;margin:0 auto;background:#fffaf2;border:2px solid #4a3328;padding:24px"><div style="font-size:17px;font-weight:800;letter-spacing:3px;color:#4a3328">QUESTR</div><h1 style="margin:28px 0 12px;font-size:26px;line-height:1.2;font-weight:700">${title}</h1><p style="margin:0 0 20px;font-size:16px;line-height:1.5">${instruction}</p><div style="display:inline-block;padding:14px;background:#e8d2ac;border:2px solid #4a3328;box-shadow:4px 4px 0 #4a3328;color:#30251f;font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:800;letter-spacing:4px;white-space:nowrap">${code}</div><p style="margin:26px 0 8px;font-size:15px;line-height:1.5">${expiry}</p><p style="margin:0;font-size:14px;line-height:1.5;color:#69584d">${ignore}</p></div></body></html>`,
+  };
+}
 
 function normalizeDomain(value: string): string {
   const domain = domainToASCII(value.trim().toLowerCase());
@@ -31,24 +47,23 @@ const ruleSchema = z.object({ domain: z.string().trim().min(4).max(253), enabled
   communityIds: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)).max(20)
     .refine(ids => new Set(ids).size === ids.length) }).strict();
 
-export function brevoSender(config: Config): EmailSender {
+export function brevoSender(config: Config, metrics?: OperationalMetrics, fetcher: typeof fetch = fetch): EmailSender {
   return async (email, code, locale) => {
     if (!config.brevoApiKey || !config.brevoSenderEmail) throw new AppError(503, 'EMAIL_NOT_CONFIGURED');
-    const russian = locale === 'ru';
+    const message = verificationEmail(code, locale);
+    const startedAt = performance.now();
     let response: Response;
     try {
-      response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      response = await fetcher('https://api.brevo.com/v3/smtp/email', {
         method: 'POST', signal: AbortSignal.timeout(10000),
         headers: { 'api-key': config.brevoApiKey, 'content-type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({ sender: { name: 'QUESTR', email: config.brevoSenderEmail }, to: [{ email }],
-          subject: russian ? 'Код подтверждения QUESTR' : 'Your QUESTR verification code',
-          textContent: russian
-            ? `Код подтверждения: ${code}\n\nОн действует 10 минут. Если ты не запрашивал код, просто проигнорируй письмо.`
-            : `Your verification code: ${code}\n\nIt expires in 10 minutes. If you did not request it, ignore this message.`,
+          ...message,
           tags: ['email-domain-invite'] }),
       });
-    } catch (error) { console.error('QUESTR email delivery failed:', error); throw new AppError(503, 'EMAIL_SEND_FAILED'); }
-    if (!response.ok) { console.error('QUESTR Brevo rejected email:', response.status); throw new AppError(503, 'EMAIL_SEND_FAILED'); }
+    } catch (error) { metrics?.recordDependency('brevo', 'error', startedAt); console.error('QUESTR email delivery failed:', error); throw new AppError(503, 'EMAIL_SEND_FAILED'); }
+    if (!response.ok) { metrics?.recordDependency('brevo', 'error', startedAt); console.error('QUESTR Brevo rejected email:', response.status); throw new AppError(503, 'EMAIL_SEND_FAILED'); }
+    metrics?.recordDependency('brevo', 'ok', startedAt);
   };
 }
 

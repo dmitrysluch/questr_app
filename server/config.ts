@@ -5,6 +5,7 @@ export interface Config {
   openrouterReasoningEffort: ReasoningEffort; openrouterQuestionReasoningEffort: ReasoningEffort; openrouterReviewReasoningEffort: ReasoningEffort; botToken: string;
   webhookSecret: string; publicAppUrl: string; secureCookie: boolean; googleMapsBrowserKey: string;
   brevoApiKey: string; brevoSenderEmail: string;
+  metricsPath: string; metricsToken: string;
 }
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 function effort(value: string, name: string): ReasoningEffort {
@@ -31,10 +32,14 @@ export function loadConfig(): Config {
     publicAppUrl: process.env.PUBLIC_APP_URL ?? '', secureCookie: process.env.COOKIE_SECURE === 'true',
     googleMapsBrowserKey: process.env.GOOGLE_MAPS_BROWSER_KEY ?? '',
     brevoApiKey: process.env.BREVO_API_KEY ?? '', brevoSenderEmail: process.env.BREVO_SENDER_EMAIL ?? '',
+    metricsPath: process.env.METRICS_PATH ?? '', metricsToken: process.env.METRICS_TOKEN ?? '',
   };
   if (config.authMode === 'telegram' && !config.botToken) throw new Error('TELEGRAM_BOT_TOKEN is required in telegram mode');
   if (config.aiMode === 'openrouter' && !config.openrouterApiKey) throw new Error('OPENROUTER_API_KEY is required in openrouter mode');
   if (config.authMode === 'demo' && !['localhost', '127.0.0.1', '[::1]'].includes(new URL(config.appOrigin).hostname)) throw new Error('Demo authentication is limited to a localhost APP_ORIGIN');
   if (new URL(config.appOrigin).protocol === 'https:' && !config.secureCookie) throw new Error('Set COOKIE_SECURE=true for HTTPS');
+  if (config.metricsPath && (!/^\/[a-zA-Z0-9/_-]+$/.test(config.metricsPath) || config.metricsPath === '/' || config.metricsPath.endsWith('/') || config.metricsPath.startsWith('/api/')))
+    throw new Error('METRICS_PATH must be a dedicated path outside /api');
+  if (config.metricsPath && config.metricsToken.length < 32) throw new Error('Set METRICS_TOKEN to at least 32 characters when METRICS_PATH is enabled');
   return config;
 }

@@ -117,6 +117,16 @@ Admins can also configure exact email-domain invite rules in **Admin → Email d
 
 To enable real delivery, set `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` in the server environment. Configure and verify that sender in Brevo first. QUESTR uses [Brevo's transactional email endpoint](https://developers.brevo.com/docs/send-a-transactional-email); neither the API key nor verification codes are returned to the browser. Until both variables are set, the email option is hidden from users. Admins can prepare domain rules before enabling delivery.
 
+Transactional verification emails include matching HTML and plain-text versions in the account's interface language (Russian or English).
+
+### Operations metrics
+
+Set `METRICS_PATH=/internal/metrics` and a random `METRICS_TOKEN` of at least 32 characters to enable Prometheus scraping. Configure the scraper to send `Authorization: Bearer <token>` to the API's internal address; do not expose this route publicly. An empty `METRICS_PATH` disables the endpoint. `/api/health` remains the database-backed health check.
+
+The endpoint exports Node.js runtime metrics plus `questr_http_requests_total`, `questr_http_request_duration_seconds`, `questr_database_up`, `questr_db_pool_connections`, `questr_db_pool_waiting_requests`, `questr_bot_queue_rows`, `questr_bot_queue_oldest_due_age_seconds`, `questr_dependency_requests_total`, and `questr_dependency_request_duration_seconds`. HTTP labels use route templates and status codes; provider labels are limited to Telegram, OpenRouter and Brevo. Queue `due` excludes scheduled reminders and delayed retries until they are ready to process; `failed` counts unresolved terminal errors. User IDs, event IDs, paths containing identifiers, email addresses, and message content are never metric labels. Queue gauges are omitted if the database cannot be queried; `questr_database_up=0` reports that failure. The metrics route itself is excluded from HTTP counts.
+
+For initial alerts, watch a missing scrape or `questr_database_up=0`, sustained HTTP 5xx or latency, growing bot queue age/failed rows, and provider error rates. Product activity and conversion metrics belong in a separate instrumentation layer.
+
 The browser sends official Telegram Mini App `initData` to the server. The server verifies the HMAC signature, freshness, and numeric user ID before issuing a session. Client-provided `initDataUnsafe` is never trusted. [Telegram authentication documentation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
 
 Applications are submitted in the Mini App. For Telegram application notifications, party chats and consent-gated direct messages, set `TELEGRAM_WEBHOOK_SECRET`, configure `/api/telegram/webhook` with that secret, and enable private bot topics in BotFather. Party topics appear automatically; `/chats` and `/people` provide button menus for opening topics and requesting private chats. The [setup and delivery notes](docs/adventures.md#telegram-setup) describe the flow, durable queues and deployment checks.

@@ -4,6 +4,7 @@ import type { Config } from './config.ts';
 import { hash } from './auth.ts';
 import { AppError } from './errors.ts';
 import { structuredResponse } from './assistant.ts';
+import type { OperationalMetrics } from './metrics.ts';
 import { contentPolicyVersion, profileContentPolicy, mergeSpans, type ContentReview, type ContentSpan } from '../shared/content-policy.ts';
 
 export const reviewInstructions = `You are QUESTR's content reviewer. Classify supplied text; do not chat with its author or rewrite it.
@@ -29,7 +30,7 @@ export function validateReview(text: string, raw: unknown): ContentReview {
 export class ContentReviewer {
   readonly key: string;
   readonly mode: 'demo' | 'openrouter';
-  constructor(private config: Config, private fetcher: typeof fetch = fetch) {
+  constructor(private config: Config, private fetcher: typeof fetch = fetch, private metrics?: OperationalMetrics) {
     this.mode = config.aiMode;
     this.key = `${contentPolicyVersion}:${config.aiMode}:${config.aiMode === 'demo' ? 'fixtures' : `${config.openrouterReviewModel}:${config.openrouterReviewReasoningEffort}`}`;
   }
@@ -47,7 +48,7 @@ export class ContentReviewer {
       const chunk = text.slice(start, start + 16000);
       try {
         const result = validateReview(chunk, await structuredResponse(this.config, reviewInstructions, { content: chunk }, 'questr_content_review', jsonSchema, this.fetcher,
-          { id: this.config.openrouterReviewModel, effort: this.config.openrouterReviewReasoningEffort }));
+          { id: this.config.openrouterReviewModel, effort: this.config.openrouterReviewReasoningEffort }, this.metrics));
         spans.push(...result.spans.map(s => ({ start: start + s.start, end: start + s.end })));
       } catch { throw new AppError(503, 'CONTENT_REVIEW_UNAVAILABLE'); }
       if (start + 16000 >= text.length) break;

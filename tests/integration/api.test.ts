@@ -34,6 +34,31 @@ after(async () => {
   await admin.end();
 });
 const integration = (name: string, fn: () => Promise<void>) => test(name, { skip: !connection }, fn);
+integration('Prometheus endpoint requires its token and uses bounded route labels', async () => {
+  const token = 's'.repeat(40);
+  const observed = createApp(pool, { ...loadConfig(), authMode: 'demo', aiMode: 'demo', metricsPath: '/internal/metrics', metricsToken: token });
+  const user = (await pool.query('INSERT INTO users DEFAULT VALUES RETURNING id')).rows[0].id;
+  await pool.query(`INSERT INTO bot_outbox(dedupe_key,user_id,kind,body,available_at) VALUES
+    ('metrics-future',$1,'reply','Scheduled',now()+interval '1 hour'),
+    ('metrics-due',$1,'reply','Ready',now()-interval '2 minutes'),
+    ('metrics-failed',$1,'reply','Failed',now())`, [user]);
+  await pool.query("UPDATE bot_outbox SET state='failed' WHERE dedupe_key='metrics-failed'");
+  await request(observed).get('/api/health').expect(200);
+  await request(observed).get('/api/events/not-a-real-event-id').expect(401);
+  await request(observed).get('/internal/metrics').expect(401);
+  await request(observed).get('/internal/metrics').set('Authorization', 'Bearer wrong').expect(401);
+  const response = await request(observed).get('/internal/metrics').set('Authorization', `Bearer ${token}`).expect(200);
+  assert.match(response.headers['content-type'], /text\/plain/);
+  assert.match(response.text, /questr_database_up 1/);
+  assert.match(response.text, /questr_http_requests_total\{method="GET",route="\/api\/health",status="200"\} 1/);
+  assert.match(response.text, /questr_bot_queue_rows\{queue="inbox",state="due"\}/);
+  assert.match(response.text, /questr_bot_queue_rows\{queue="outbox",state="due"\} 1/);
+  assert.match(response.text, /questr_bot_queue_rows\{queue="outbox",state="failed"\} 1/);
+  const age = Number(response.text.match(/questr_bot_queue_oldest_due_age_seconds\{queue="outbox"\} ([\d.]+)/)?.[1]);
+  assert.ok(age >= 120 && age < 180);
+  assert.doesNotMatch(response.text, /not-a-real-event-id|internal\/metrics/);
+  await pool.query("DELETE FROM bot_outbox WHERE dedupe_key LIKE 'metrics-%'");
+});
 integration('community catalog API serves the external tree after authentication', async () => {
   const agent = request.agent(app);
   await agent.get('/api/communities').expect(401);
