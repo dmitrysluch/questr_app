@@ -104,6 +104,10 @@ The editor discloses that bio validation uses OpenRouter, including for manually
 
 Each issued code is single-use, but a character can apply additional codes from their character page after registration. The default expiry is 7 days, selectable from 1 to 30 days. Only its hash is stored; copy the plaintext code when it is created. The default `invite.create` budget is **3 issues per rolling 7 days** for a newly registered account, but the account needs an `inviter` or `admin` role to use it. The default `events.create` budget is 2 per rolling 7 days and requires the `event_creator` role. Multiple invites add rights without multiplying the person's budgets. An admin can change a person's limits and windows without resetting usage history. An invite chain of 2 levels lets the recipient and their direct invitees issue invites; each generation loses one level. Demo login codes and `npm run invite` are operator/system-issued and do not consume a person's budget.
 
+Admins can also configure exact email-domain invite rules in **Admin → Email domain invites**. A rule can allow registration, grant one or more communities, or both. For an existing character, verification adds the rule's communities; for a new character, a registration-enabled rule replaces the invite code. Email verification is bound to the current Telegram identity; it is not a separate passwordless login. The same email cannot be claimed by two characters. An 8-digit code expires in 10 minutes, has five attempts, and sending is rate-limited. The server checks the normalized email against an enabled exact-domain rule before calling Brevo; subdomains do not inherit access. Disabling a rule stops new verification, while existing membership remains.
+
+To enable real delivery, set `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` in the server environment. Configure and verify that sender in Brevo first. QUESTR uses [Brevo's transactional email endpoint](https://developers.brevo.com/docs/send-a-transactional-email); neither the API key nor verification codes are returned to the browser. Until both variables are set, the email option is hidden from users. Admins can prepare domain rules before enabling delivery.
+
 The browser sends official Telegram Mini App `initData` to the server. The server verifies the HMAC signature, freshness, and numeric user ID before issuing a session. Client-provided `initDataUnsafe` is never trusted. [Telegram authentication documentation](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app).
 
 Applications are submitted in the Mini App. For Telegram application notifications, party chats and consent-gated direct messages, set `TELEGRAM_WEBHOOK_SECRET`, configure `/api/telegram/webhook` with that secret, and enable private bot topics in BotFather. Party topics appear automatically; `/chats` and `/people` provide button menus for opening topics and requesting private chats. The [setup and delivery notes](docs/adventures.md#telegram-setup) describe the flow, durable queues and deployment checks.
@@ -116,7 +120,7 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 
 | Area | Tables |
 | --- | --- |
-| Identity and access | `users`, `telegram_accounts`, `sessions`, `invites`, `user_consents` |
+| Identity and access | `users`, `telegram_accounts`, `sessions`, `invites`, `email_invite_domains`, `email_verification_challenges`, `verified_emails`, `user_consents` |
 | Profiles | `profile_drafts`, `profiles`, `profile_answers`, `profile_tags`, `profile_languages` |
 | Catalogs | `avatar_presets`, `tags`, `tag_translations`, `languages`, `locations` |
 | Discovery | `discovery_preferences`, `discovery_locations`, `discovery_languages` |

@@ -17,6 +17,7 @@ import { Interview } from './components/Interview.tsx';
 import { AskMeTopics } from './components/AskMeTopics.tsx';
 import { Invites } from './components/Invites.tsx';
 import { InviteRedeemer } from './components/InviteRedeemer.tsx';
+import { EmailInvite } from './components/EmailInvite.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
 import { RomanceSettings } from './components/RomanceSettings.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
@@ -108,7 +109,7 @@ export function App() {
   async function register(event: FormEvent) {
     event.preventDefault();
     await run(async () => {
-      const result = await api<{ draft: Draft }>('/register', { method: 'POST', body: { displayName: name, invite, adult, terms, locale } });
+      const result = await api<{ draft: Draft }>('/register', { method: 'POST', body: { displayName: name, invite: invite.trim() || undefined, adult, terms, locale } });
       replace(result.draft);
       setState(old => old ? { ...old, user: { ...old.user, status: 'onboarding' }, draft: result.draft } : old);
     });
@@ -205,9 +206,11 @@ export function App() {
           <button className="text-button" onClick={() => void run(async () => { if (conflict || !state) await loadState(); else await flush(); })}>{t(conflict ? 'common.reload' : 'common.retry')}</button></div>}
         {loading ? <div className="loading-state"><LoaderCircle className="spin" size={25} /><p>{t('common.loading')}</p></div> : telegramNeeded ? <div className="interview-intro"><MessageCircle size={40} /><h1>{t('welcome.telegram')}</h1><a className="pixel-button" href="https://t.me/questr_game">{t('welcome.openBot')}<ArrowRight size={18} /></a></div> : !state ? null : !draft ? <section className="welcome-layout">
           <PageHeading title="welcome.title" />
+          <EmailInvite registration onVerified={loadState} />
           <form className="welcome-form paper-card" onSubmit={event => void register(event)}><span className="card-corner" />
             <label htmlFor="name">{t('welcome.name')}</label><input id="name" autoComplete="nickname" value={name} onChange={e => setName(e.target.value)} placeholder={t('welcome.namePlaceholder')} minLength={2} maxLength={40} required />
-            <label htmlFor="invite">{t('welcome.invite')}</label><input id="invite" value={invite} onChange={e => setInvite(e.target.value)} placeholder={t('welcome.invitePlaceholder')} autoCapitalize="none" autoComplete="off" spellCheck={false} required />
+            <label htmlFor="invite">{t('welcome.invite')}</label><input id="invite" value={invite} onChange={e => setInvite(e.target.value)} placeholder={t('welcome.invitePlaceholder')} autoCapitalize="none" autoComplete="off" spellCheck={false} required={!state.emailRegistrationAllowed} />
+            {state.emailRegistrationAllowed && <p className="hint">{t('emailInvite.registrationReady')}</p>}
             <div className="consents"><label className="checkbox-label"><input type="checkbox" checked={adult} onChange={e => setAdult(e.target.checked)} required /><span>{t('welcome.adult')}</span></label>
               <label className="checkbox-label"><input type="checkbox" checked={terms} onChange={e => setTerms(e.target.checked)} required /><span>{t('welcome.terms')}</span></label><button type="button" className="text-button terms-link" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
@@ -217,6 +220,7 @@ export function App() {
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} />
           <InviteRedeemer onRedeemed={loadState} />
+          <EmailInvite onVerified={loadState} />
           <RomanceSettings />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
 

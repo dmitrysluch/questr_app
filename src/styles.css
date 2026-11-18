@@ -221,6 +221,19 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .invite-redeemer > div { display: flex; gap: 10px; }
 .invite-redeemer input { flex: 1; min-width: 0; }
 .invite-redeemer p { margin: 9px 0 0; font-size: 12px; }
+.email-invite { max-width: 840px; margin: 14px auto; padding: 18px 24px; }
+.email-invite h2 { font-size: 15px; margin: 0 0 8px; }
+.email-invite .hint { font-size: 12px; margin: 6px 0 12px; }
+.email-invite label { display: block; margin-bottom: 7px; }
+.email-invite-row { display: flex; gap: 9px; }
+.email-invite-row input { flex: 1; min-width: 0; }
+.email-invite-verified { padding-left: 20px; font-size: 12px; }
+.email-domains-admin { margin-top: 30px; padding: 22px; }
+.email-domains-admin h2 { margin: 0 0 14px; font-size: 17px; }
+.email-domains-admin > form > input { max-width: 420px; margin: 8px 0 14px; }
+.email-domain-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.email-domain-list { list-style: none; padding: 0; margin: 18px 0 0; }
+.email-domain-list li { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; }
 .profile-body { margin: 0 33px; padding: 25px 0 34px; border-top: 1px solid #e7ddcd; }
 .profile-ask-me { margin: 0 33px 30px; padding-top: 22px; border-top: 1px solid #e7ddcd; }
 .profile-ask-me h3 { font-size: 14px; margin: 0 0 14px; }

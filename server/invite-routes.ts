@@ -70,9 +70,9 @@ export function inviteRoutes(pool: Pool) {
       FROM invites i
       LEFT JOIN profiles cp ON cp.user_id=i.created_by LEFT JOIN profile_drafts cd ON cd.user_id=i.created_by
       LEFT JOIN profiles rp ON rp.user_id=i.redeemed_by LEFT JOIN profile_drafts rd ON rd.user_id=i.redeemed_by
-      WHERE ($1::boolean OR i.created_by=$2)
+      WHERE ($1::boolean OR i.created_by=$2) AND NOT EXISTS(SELECT 1 FROM verified_emails v WHERE v.invite_id=i.id)
       ORDER BY i.created_at DESC,i.id DESC LIMIT 50 OFFSET $3`, [admin, userId, offset]);
-    const { rows: countRows } = await pool.query('SELECT count(*)::int AS total FROM invites WHERE ($1::boolean OR created_by=$2)', [admin, userId]);
+    const { rows: countRows } = await pool.query('SELECT count(*)::int AS total FROM invites i WHERE ($1::boolean OR created_by=$2) AND NOT EXISTS(SELECT 1 FROM verified_emails v WHERE v.invite_id=i.id)', [admin, userId]);
     res.json({ invites: rows.map(mapInvite), total: countRows[0].total, budget: await budgetFor(pool, userId), admin,
       grantOptions: await grantOptions(pool, userId, admin) });
   });

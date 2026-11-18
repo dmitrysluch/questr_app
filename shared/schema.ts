@@ -37,7 +37,7 @@ export const draftInputSchema = z.object({
 export type Draft = z.infer<typeof draftInputSchema>;
 export const registerSchema = z.object({
   displayName: z.string().trim().min(2).max(40),
-  invite: z.string().trim().min(6).max(120),
+  invite: z.string().trim().min(6).max(120).optional(),
   adult: z.literal(true),
   terms: z.literal(true),
   locale: localeSchema,
@@ -81,6 +81,7 @@ export interface AppState {
   conversation: Conversation | null;
   proposal: Proposal | null;
   demoInvite: string | null;
+  emailRegistrationAllowed: boolean;
   bioReview: BioReview | null;
   discovery: DiscoveryPreferences;
 }

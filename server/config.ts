@@ -4,6 +4,7 @@ export interface Config {
   openrouterApiKey: string; openrouterModel: string; openrouterQuestionModel: string; openrouterReviewModel: string;
   openrouterReasoningEffort: ReasoningEffort; openrouterQuestionReasoningEffort: ReasoningEffort; openrouterReviewReasoningEffort: ReasoningEffort; botToken: string;
   webhookSecret: string; publicAppUrl: string; secureCookie: boolean; googleMapsBrowserKey: string;
+  brevoApiKey: string; brevoSenderEmail: string;
 }
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 function effort(value: string, name: string): ReasoningEffort {
@@ -27,6 +28,7 @@ export function loadConfig(): Config {
     botToken: process.env.TELEGRAM_BOT_TOKEN ?? '', webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
     publicAppUrl: process.env.PUBLIC_APP_URL ?? '', secureCookie: process.env.COOKIE_SECURE === 'true',
     googleMapsBrowserKey: process.env.GOOGLE_MAPS_BROWSER_KEY ?? '',
+    brevoApiKey: process.env.BREVO_API_KEY ?? '', brevoSenderEmail: process.env.BREVO_SENDER_EMAIL ?? '',
   };
   if (config.authMode === 'telegram' && !config.botToken) throw new Error('TELEGRAM_BOT_TOKEN is required in telegram mode');
   if (config.aiMode === 'openrouter' && !config.openrouterApiKey) throw new Error('OPENROUTER_API_KEY is required in openrouter mode');

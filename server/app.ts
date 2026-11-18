@@ -23,11 +23,12 @@ import { inviteRoutes } from './invite-routes.ts';
 import { redeemInvite } from './invite-redemption.ts';
 import { romanceConsentVersion, romanceInputSchema } from '../shared/romance.ts';
 import { placeRoutes } from './place-routes.ts';
+import { emailInviteRoutes, type EmailSender } from './email-invites.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
 
-export function createApp(pool: Pool, config: Config, interviewer = new Interviewer(config), reviewer = new ContentReviewer(config)) {
+export function createApp(pool: Pool, config: Config, interviewer = new Interviewer(config), reviewer = new ContentReviewer(config), sendEmail?: EmailSender) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '5mb' }));
@@ -169,21 +170,23 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
   });
   app.get('/api/me', async (_req, res) => {
     const user = currentUser(res);
-    const [draft, profile, conversation, proposal, discovery, admin, inviteCreate] = await Promise.all([
+    const [draft, profile, conversation, proposal, discovery, admin, inviteCreate, emailRegistration] = await Promise.all([
       getDraft(pool, user.id), getProfile(pool, user.id), getConversation(pool, user.id), getProposal(pool, user.id), getDiscovery(pool, user.id),
       can(pool, user.id, 'admin', { type: 'global' }), can(pool, user.id, 'invite.create', { type: 'global' }),
+      pool.query('SELECT 1 FROM verified_emails WHERE user_id=$1 AND registration_allowed=true LIMIT 1', [user.id]),
     ]);
     const consent = await pool.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='ai_interview' AND document_version=$2", [user.id, `${aiConsentVersion}:${config.aiMode}`]);
     const ready = conversation?.mode === config.aiMode && !!consent.rowCount;
     const review = draft ? await storedReview(pool, reviewer, draft.introMarkdown) : null;
     const topicReviews = draft ? await Promise.all(draft.askMeTopics.map(topic => storedReview(pool, reviewer, topic))) : [];
-    res.json({ user, permissions: { admin, inviteCreate }, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown, askMeTopics: draft.askMeTopics, topicReviews: topicReviews.every(Boolean) ? topicReviews : undefined } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null });
+    res.json({ user, permissions: { admin, inviteCreate }, draft, profile, discovery, conversation: ready ? conversation : null, proposal: ready ? proposal : null, bioReview: review && draft ? { ...review, introMarkdown: draft.introMarkdown, askMeTopics: draft.askMeTopics, topicReviews: topicReviews.every(Boolean) ? topicReviews : undefined } : null, demoInvite: config.authMode === 'demo' && user.status === 'pending_invite' ? demoInvite(user.id) : null, emailRegistrationAllowed: !!emailRegistration.rowCount });
   });
   app.put('/api/locale', async (req, res) => {
     const { locale } = z.object({ locale: z.enum(['en', 'ru']) }).strict().parse(req.body);
     await pool.query("UPDATE users SET locale=$2,locale_source='manual',updated_at=now() WHERE id=$1", [currentUser(res).id, locale]);
     res.json({ locale });
   });
+  app.use('/api/email-invites', emailInviteRoutes(pool, config, throttle, sendEmail));
   app.post('/api/register', async (req, res) => {
     const user = currentUser(res);
     throttle(`register:${user.id}`, 10);
@@ -192,7 +195,8 @@ export function createApp(pool: Pool, config: Config, interviewer = new Intervie
       const fresh = (await client.query('SELECT status FROM users WHERE id=$1 FOR UPDATE', [user.id])).rows[0];
       if (fresh.status === 'blocked') throw new AppError(403, 'ACCOUNT_BLOCKED');
       if (fresh.status !== 'pending_invite') return;
-      await redeemInvite(client, user.id, input.invite);
+      if (input.invite) await redeemInvite(client, user.id, input.invite);
+      else if (!(await client.query('SELECT 1 FROM verified_emails WHERE user_id=$1 AND registration_allowed=true LIMIT 1', [user.id])).rowCount) throw new AppError(403, 'INVITE_REQUIRED');
       await client.query("UPDATE users SET status='onboarding',locale=$2,updated_at=now() WHERE id=$1", [user.id, input.locale]);
       for (const kind of ['adult', 'terms']) await client.query('INSERT INTO user_consents(user_id,kind,document_version) VALUES($1,$2,$3)', [user.id, kind, termsVersion]);
       await client.query('INSERT INTO profile_drafts(user_id,display_name) VALUES($1,$2)', [user.id, input.displayName]);

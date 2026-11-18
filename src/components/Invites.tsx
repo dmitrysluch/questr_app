@@ -4,6 +4,7 @@ import type { InviteBudget, InviteRecord, InviterAccount } from '../../shared/sc
 import { api } from '../api.ts';
 import { errorText, getLocale, t } from '../i18n.ts';
 import { PlacesAdmin } from './PlacesAdmin.tsx';
+import { EmailDomainsAdmin } from './EmailDomainsAdmin.tsx';
 import { communities, communityAncestors } from '../../shared/communities.ts';
 
 type Listing = { invites: InviteRecord[]; total: number; budget: InviteBudget | null; admin: boolean; grantOptions: { eventCreator: boolean; maxInviteDepth: number } };
@@ -112,6 +113,7 @@ export function Invites({ admin, selfId }: { admin: boolean; selfId: string }) {
       <form className="admin-search" onSubmit={event => void searchUsers(event)}><input aria-label={t('invites.searchUsers')} placeholder={t('invites.searchUsers')} value={search} onChange={event => setSearch(event.target.value)} maxLength={80} /><button className="outline-button small" disabled={busy} type="submit">{t('invites.search')}</button></form>
       <div className="admin-user-list">{users.map(user => <RoleSettings key={`${user.id}:${user.isAdmin}:${user.isInviter}:${user.isEventCreator}:${user.inviteDepth}:${user.budget?.maxUses}:${user.budget?.windowDays}:${user.eventBudget?.maxUses}:${user.eventBudget?.windowDays}`} user={user} selfId={selfId} onSaved={() => refresh()} />)}</div>
     </section>}
+    {admin && <EmailDomainsAdmin />}
     {admin && <PlacesAdmin />}
   </section>;
 }
