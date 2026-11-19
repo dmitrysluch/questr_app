@@ -14,6 +14,7 @@ import { ProfileCard } from './components/ProfileCard.tsx';
 import { Adventures } from './components/Adventures.tsx';
 import { EventListings } from './components/EventListings.tsx';
 import { AdminEventListings } from './components/AdminEventListings.tsx';
+import { Dates } from './components/Dates.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Interview } from './components/Interview.tsx';
 import { AskMeTopics } from './components/AskMeTopics.tsx';
@@ -59,7 +60,7 @@ export function App() {
   const [bioReview, setBioReview] = useState<BioReview | null>(null);
   const [discoveryDirty, setDiscoveryDirty] = useState(false);
   const [discoveryPending, setDiscoveryPending] = useState<DiscoveryPreferences | null>(null);
-  const [exitTarget, setExitTarget] = useState<'character' | 'adventures' | 'invites' | 'communities' | 'admin-listings' | null>(null);
+  const [exitTarget, setExitTarget] = useState<'character' | 'adventures' | 'dates' | 'invites' | 'communities' | 'admin-listings' | null>(null);
   const [telegramNeeded, setTelegramNeeded] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
@@ -108,7 +109,7 @@ export function App() {
         }
         if (active) {
           const target = new URLSearchParams(location.search).get('route');
-          if (target && (/^adventures\/[0-9a-f-]{36}(?:\/character\/[0-9a-f-]{36})?$/i.test(target) || /^listings\/[0-9a-f-]{36}$/i.test(target))) location.hash = target;
+          if (target && (/^adventures\/[0-9a-f-]{36}(?:\/character\/[0-9a-f-]{36})?$/i.test(target) || /^listings\/[0-9a-f-]{36}$/i.test(target) || /^dates\/[0-9a-f-]{36}(?:\/rounds\/[0-9a-f-]{36})?$/i.test(target))) location.hash = target;
           const [catalog, loadedState] = await Promise.all([api<{ communities: Community[] }>('/communities'), loadState()]);
           if (sharedInviteCode && loadedState.user.status === 'active' && !target) location.hash = 'character';
           if (active) setCommunities(parseCommunities(catalog));
@@ -140,12 +141,12 @@ export function App() {
       setState(old => old ? { ...old, user: { ...old.user, locale: next } } : old);
     });
   }
-  function navigate(target: 'character' | 'adventures' | 'invites' | 'communities' | 'admin-listings') {
+  function navigate(target: 'character' | 'adventures' | 'dates' | 'invites' | 'communities' | 'admin-listings') {
     if (busy) return;
-    if (state?.user.status === 'active' && !showProfile && discoveryDirty) { setExitTarget(target); return; }
+    if (state?.user.status === 'active' && !showProfile && discoveryDirty && discoveryPending) { setExitTarget(target); return; }
     void finishExit(target, false);
   }
-  async function finishExit(target: 'character' | 'adventures' | 'invites' | 'communities' | 'admin-listings', saveFilters: boolean) {
+  async function finishExit(target: 'character' | 'adventures' | 'dates' | 'invites' | 'communities' | 'admin-listings', saveFilters: boolean) {
     await run(async () => {
       await flush();
       if (saveFilters && discoveryPending) {
@@ -159,11 +160,11 @@ export function App() {
   async function go(step: Draft['currentStep']) {
     if (!draft || busy) return;
     if (step !== 'avatar' && !draft.avatarId) { setError(new ApiError('AVATAR_REQUIRED')); return; }
-    const leavingUnsavedFilters = discoveryDirty && step !== 'bio' && step !== 'discovery';
+    const leavingUnsavedFilters = discoveryDirty && discoveryPending !== null && step !== 'bio' && step !== 'discovery';
     const missingRequiredFilters = step === 'review' && !state?.profile && (!state?.discovery.locationIds.length || !state?.discovery.languageCodes.length);
     if (leavingUnsavedFilters || missingRequiredFilters) {
       edit({ currentStep: 'discovery' });
-      setError(new ApiError(discoveryDirty ? 'DISCOVERY_UNSAVED' : 'DISCOVERY_REQUIRED'));
+      setError(new ApiError(leavingUnsavedFilters ? 'DISCOVERY_UNSAVED' : 'DISCOVERY_REQUIRED'));
       requestAnimationFrame(() => document.getElementById('onboarding-discovery')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       return;
     }
@@ -209,10 +210,12 @@ export function App() {
   const communitiesOpen = state?.user.status === 'active' && state.permissions.admin && route.startsWith('#communities');
   const adminListingsOpen = state?.user.status === 'active' && state.permissions.admin && route.startsWith('#admin-listings');
   const listingsOpen = state?.user.status === 'active' && route.startsWith('#listings');
-  const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character') && !invitesOpen && !communitiesOpen && !adminListingsOpen && !listingsOpen;
+  const datesOpen = state?.user.status === 'active' && route.startsWith('#dates');
+  const adventuresOpen = state?.user.status === 'active' && !route.startsWith('#character') && !invitesOpen && !communitiesOpen && !adminListingsOpen && !listingsOpen && !datesOpen;
   const analyticsScreen = !state || state.user.status === 'pending_invite' ? null
     : state.user.status !== 'active' ? `onboarding_${currentStep}`
     : invitesOpen ? 'invites' : communitiesOpen ? 'communities' : adminListingsOpen ? 'admin_listings' : listingsOpen ? route.startsWith('#listings/') ? 'listing_detail' : 'listing_list'
+    : datesOpen ? route.startsWith('#dates/') ? 'date_detail' : 'date_list'
     : adventuresOpen ? route.includes('/character/') ? 'adventure_character' : route.startsWith('#adventures/') ? 'adventure_detail' : 'adventure_list'
     : showProfile ? 'character_profile' : `character_editor_${currentStep}`;
   useEffect(() => { if (analyticsScreen) track('screen_viewed', { screen: analyticsScreen }); }, [analyticsScreen]);
@@ -222,8 +225,8 @@ export function App() {
       <div className="header-right">{config?.authMode === 'demo' && <span className="preview-badge">{t('app.demo')}</span>}<select className="locale-switch" aria-label={t('ui.language')} value={locale} disabled={!state || busy} onChange={event => void changeLocale(event.target.value as Locale)}><option value="en">EN</option><option value="ru">RU</option></select><button className="text-button" onClick={() => setTermsOpen(true)}>{t('welcome.readTerms')}</button></div>
     </header>
     <div className="workspace">
-      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !listingsOpen && !invitesOpen && !communitiesOpen && !adminListingsOpen ? 'active' : ''} aria-current={!adventuresOpen && !listingsOpen && !invitesOpen && !communitiesOpen && !adminListingsOpen ? 'page' : undefined} onClick={() => navigate('character')}>{t('nav.character')}</button><button className={adventuresOpen || listingsOpen ? 'active' : ''} aria-current={adventuresOpen || listingsOpen ? 'page' : undefined} onClick={() => navigate('adventures')}>{t('nav.adventures')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => navigate('invites')}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}{state.permissions.admin && <><button className={communitiesOpen ? 'active' : ''} aria-current={communitiesOpen ? 'page' : undefined} onClick={() => navigate('communities')}>{t('nav.communities')}</button><button className={adminListingsOpen ? 'active' : ''} aria-current={adminListingsOpen ? 'page' : undefined} onClick={() => navigate('admin-listings')}>{t('nav.listingsAdmin')}</button></>}</nav>}
-      {draft && !showProfile && !adventuresOpen && !listingsOpen && !invitesOpen && !communitiesOpen && !adminListingsOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
+      {state?.user.status === 'active' && <nav className="workspace-tabs" aria-label={t('nav.label')}><button className={!adventuresOpen && !datesOpen && !listingsOpen && !invitesOpen && !communitiesOpen && !adminListingsOpen ? 'active' : ''} aria-current={!adventuresOpen && !datesOpen && !listingsOpen && !invitesOpen && !communitiesOpen && !adminListingsOpen ? 'page' : undefined} onClick={() => navigate('character')}>{t('nav.character')}</button><button className={adventuresOpen || listingsOpen ? 'active' : ''} aria-current={adventuresOpen || listingsOpen ? 'page' : undefined} onClick={() => navigate('adventures')}>{t('nav.adventures')}</button><button className={datesOpen ? 'active' : ''} aria-current={datesOpen ? 'page' : undefined} onClick={() => navigate('dates')}>{t('nav.dates')}</button>{state.permissions.inviteCreate && <button className={invitesOpen ? 'active' : ''} aria-current={invitesOpen ? 'page' : undefined} onClick={() => navigate('invites')}>{t(state.permissions.admin ? 'nav.admin' : 'nav.invites')}</button>}{state.permissions.admin && <><button className={communitiesOpen ? 'active' : ''} aria-current={communitiesOpen ? 'page' : undefined} onClick={() => navigate('communities')}>{t('nav.communities')}</button><button className={adminListingsOpen ? 'active' : ''} aria-current={adminListingsOpen ? 'page' : undefined} onClick={() => navigate('admin-listings')}>{t('nav.listingsAdmin')}</button></>}</nav>}
+      {draft && !showProfile && !adventuresOpen && !datesOpen && !listingsOpen && !invitesOpen && !communitiesOpen && !adminListingsOpen && <nav className="step-bar" aria-label={t('steps.eyebrow')}>
         {steps.map((step, index) => <button key={step.id} className={`step ${currentStep === step.id ? 'active' : ''} ${index < stepIndex ? 'done' : ''}`}
           disabled={busy || (step.id !== 'avatar' && !draft.avatarId)} aria-current={currentStep === step.id ? 'step' : undefined} onClick={() => void go(step.id)}>
           <span className="step-number">{index < stepIndex ? <Check size={13} /> : index + 1}</span><span className="step-label">{t(step.label)}</span>
@@ -244,7 +247,7 @@ export function App() {
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
             <p className="form-privacy"><LockKeyhole size={13} />{t('footer.private')}</p>
           </form>
-        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} botUsername={config?.botUsername ?? 'questr_game'} /> : communitiesOpen ? <AdminCommunities /> : adminListingsOpen && config ? <AdminEventListings config={config} /> : listingsOpen && config ? <EventListings config={config} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
+        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} botUsername={config?.botUsername ?? 'questr_game'} /> : communitiesOpen ? <AdminCommunities /> : adminListingsOpen && config ? <AdminEventListings config={config} /> : listingsOpen && config ? <EventListings config={config} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} /> : datesOpen ? <Dates selfId={state.user.id} admin={state.permissions.admin} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} detailId={route.startsWith('#dates/') ? route.slice('#dates/'.length) : null} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} />
           <InviteRedeemer initialCode={sharedInviteCode ?? ''} onRedeemed={loadState} />

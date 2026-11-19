@@ -7,6 +7,8 @@ export interface Config {
   brevoApiKey: string; brevoSenderEmail: string;
   metricsPath: string; metricsToken: string;
   posthogProjectKey: string;
+  datePhotoS3Endpoint: string; datePhotoS3Region: string; datePhotoS3Bucket: string;
+  datePhotoS3AccessKeyId: string; datePhotoS3SecretAccessKey: string;
 }
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 function effort(value: string, name: string): ReasoningEffort {
@@ -35,6 +37,11 @@ export function loadConfig(): Config {
     brevoApiKey: process.env.BREVO_API_KEY ?? '', brevoSenderEmail: process.env.BREVO_SENDER_EMAIL ?? '',
     metricsPath: process.env.METRICS_PATH ?? '', metricsToken: process.env.METRICS_TOKEN ?? '',
     posthogProjectKey: process.env.POSTHOG_PROJECT_KEY ?? '',
+    datePhotoS3Endpoint: process.env.DATE_PHOTO_S3_ENDPOINT ?? '',
+    datePhotoS3Region: process.env.DATE_PHOTO_S3_REGION ?? '',
+    datePhotoS3Bucket: process.env.DATE_PHOTO_S3_BUCKET ?? '',
+    datePhotoS3AccessKeyId: process.env.DATE_PHOTO_S3_ACCESS_KEY_ID ?? '',
+    datePhotoS3SecretAccessKey: process.env.DATE_PHOTO_S3_SECRET_ACCESS_KEY ?? '',
   };
   if (config.authMode === 'telegram' && !config.botToken) throw new Error('TELEGRAM_BOT_TOKEN is required in telegram mode');
   if (config.aiMode === 'openrouter' && !config.openrouterApiKey) throw new Error('OPENROUTER_API_KEY is required in openrouter mode');
@@ -43,5 +50,12 @@ export function loadConfig(): Config {
   if (config.metricsPath && (!/^\/[a-zA-Z0-9/_-]+$/.test(config.metricsPath) || config.metricsPath === '/' || config.metricsPath.endsWith('/') || config.metricsPath.startsWith('/api/')))
     throw new Error('METRICS_PATH must be a dedicated path outside /api');
   if (config.metricsPath && config.metricsToken.length < 32) throw new Error('Set METRICS_TOKEN to at least 32 characters when METRICS_PATH is enabled');
+  const photoValues = [config.datePhotoS3Endpoint, config.datePhotoS3Region, config.datePhotoS3Bucket, config.datePhotoS3AccessKeyId, config.datePhotoS3SecretAccessKey];
+  if (photoValues.some(Boolean) && !photoValues.every(Boolean)) throw new Error('Set all DATE_PHOTO_S3_* variables together');
+  if (config.datePhotoS3Endpoint) {
+    const endpoint = new URL(config.datePhotoS3Endpoint);
+    if (endpoint.protocol !== 'https:' && !(['localhost', '127.0.0.1'].includes(endpoint.hostname) && endpoint.protocol === 'http:')) throw new Error('DATE_PHOTO_S3_ENDPOINT must be HTTPS (HTTP only for local tests)');
+    if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new Error('DATE_PHOTO_S3_ENDPOINT must be a service URL without credentials or query');
+  }
   return config;
 }

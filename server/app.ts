@@ -27,18 +27,20 @@ import { placeRoutes } from './place-routes.ts';
 import { brevoSender, emailInviteRoutes, type EmailSender } from './email-invites.ts';
 import { parseCommunities } from '../shared/communities.ts';
 import { OperationalMetrics } from './metrics.ts';
+import { dateRoutes } from './dates.ts';
+import { s3DatePhotoStorage, type DatePhotoStorage } from './date-photo-storage.ts';
 
 type User = { id: string; status: string; locale: string };
 const currentUser = (res: Response): User => res.locals.user;
 
-export function createApp(pool: Pool, config: Config, interviewer?: Interviewer, reviewer?: ContentReviewer, sendEmail?: EmailSender, metrics?: OperationalMetrics) {
+export function createApp(pool: Pool, config: Config, interviewer?: Interviewer, reviewer?: ContentReviewer, sendEmail?: EmailSender, metrics?: OperationalMetrics, datePhotoStorage?: DatePhotoStorage | null) {
   metrics ??= config.metricsPath ? new OperationalMetrics(pool) : undefined;
   interviewer ??= new Interviewer(config, fetch, metrics);
   reviewer ??= new ContentReviewer(config, fetch, metrics);
   const app = express();
   app.disable('x-powered-by');
   if (metrics && config.metricsPath) metrics.install(app, config.metricsPath, config.metricsToken);
-  app.use(express.json({ limit: '5mb' }));
+  app.use(express.json({ limit: '6mb' }));
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -218,6 +220,8 @@ export function createApp(pool: Pool, config: Config, interviewer?: Interviewer,
     if (currentUser(res).status === 'pending_invite') throw new AppError(403, 'INVITE_REQUIRED');
     next();
   });
+  app.use('/api/dates', (req, res, next) => { if (req.method !== 'GET') throttle(`dates:${currentUser(res).id}`, 30); next(); });
+  app.use('/api/dates', dateRoutes(pool, config, reviewer, datePhotoStorage === undefined ? s3DatePhotoStorage(config) : datePhotoStorage));
   app.use('/api/events', (req, res, next) => { if (req.method !== 'GET') throttle(`events:${currentUser(res).id}`, 20); next(); });
   const adventures = new Adventures(pool, reviewer);
   app.use('/api/events', eventRoutes(adventures));

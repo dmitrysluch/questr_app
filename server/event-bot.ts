@@ -11,6 +11,8 @@ import { botText } from './bot-copy.ts';
 import { relayMarkdown } from './telegram-markdown.ts';
 import { hasPublicLink } from '../shared/events.ts';
 import { dmTopicUrl } from './telegram-links.ts';
+import { dateChatAllowed } from './dates.ts';
+import { randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
 import type { OperationalMetrics } from './metrics.ts';
 
@@ -89,6 +91,19 @@ export class EventBot {
     console.info('QUESTR bot topic created:', JSON.stringify({ kind: 'dm', userId, conversationId: dmId, chatId, threadId: topic.message_thread_id }));
     return topic.message_thread_id as number;
   }
+  private async dateTopic(db: PoolClient, userId: string, matchId: string, chatId: string) {
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,84))', [`${userId}:${matchId}`]);
+    const old = (await db.query('SELECT thread_id FROM date_bot_topics WHERE user_id=$1 AND match_id=$2', [userId, matchId])).rows[0];
+    if (old) return Number(old.thread_id);
+    const access = await dateChatAllowed(db, matchId, userId);
+    if (!access) throw new AppError(403, 'DATE_CHAT_CLOSED');
+    const person = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [access.other])).rows[0];
+    const topic = await this.call('createForumTopic', { chat_id: chatId, name: `Date · ${person.display_name}`.slice(0, 110) });
+    if (!Number.isSafeInteger(topic?.message_thread_id)) throw new TelegramError(null);
+    await db.query('INSERT INTO date_bot_topics(match_id,user_id,thread_id) VALUES($1,$2,$3)', [matchId, userId, topic.message_thread_id]);
+    console.info('QUESTR bot topic created:', JSON.stringify({ kind: 'date', userId, matchId, chatId, threadId: topic.message_thread_id }));
+    return topic.message_thread_id as number;
+  }
   private async eventByCode(db: PoolClient, userId: string, code: string) {
     if (!/^[a-f0-9]{8,32}$/i.test(code)) return null;
     const rows = (await db.query(`SELECT e.id,e.title FROM events e JOIN event_memberships m ON m.event_id=e.id
@@ -163,15 +178,19 @@ export class EventBot {
         await queuePartyTopic(db, event.id, row.user_id, event.title, this.config.aiMode);
       }
     }
-    if (wake) await db.query("UPDATE bot_outbox SET available_at=now() WHERE user_id=$1 AND kind='topic_init' AND state='pending'", [row.user_id]);
+    if (wake) await db.query("UPDATE bot_outbox SET available_at=now() WHERE user_id=$1 AND kind IN ('topic_init','date_topic','date_relay') AND state='pending'", [row.user_id]);
+    const dates = (await db.query(`SELECT d.title,t.thread_id FROM date_bot_topics t JOIN date_matches m ON m.id=t.match_id
+      JOIN date_rounds r ON r.id=m.round_id JOIN dates d ON d.id=r.date_id WHERE t.user_id=$1 AND r.status IN ('matched','scheduled')
+      ORDER BY m.created_at DESC LIMIT 10`, [row.user_id])).rows;
     const appButton = wake ? this.appButton(locale) : null;
     const keyboard: BotKeyboard = { inline_keyboard: [
       ...available.map(event => [{ text: buttonLabel(event.title), callback_data: `menu:event:${hex(event.id)}` }]),
+      ...dates.map(date => [{ text: buttonLabel(`♥ ${date.title}`), url: `https://t.me/questr_game/${date.thread_id}` }]),
       [{ text: botText(locale, 'allPeopleButton'), callback_data: 'menu:people' }],
       ...(appButton ? [[appButton]] : []),
     ] };
     await queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, kind: 'reply',
-      body: `${fromTopic ? `${botText(locale, 'commandsInAllChats')}\n\n` : ''}${botText(locale, available.length ? preparing ? 'chatsPreparing' : 'chatsList' : 'chatsEmpty')}`, keyboard });
+      body: `${fromTopic ? `${botText(locale, 'commandsInAllChats')}\n\n` : ''}${botText(locale, available.length || dates.length ? preparing ? 'chatsPreparing' : 'chatsList' : 'chatsEmpty')}`, keyboard });
   }
   private async menuEvent(db: PoolClient, row: any, locale: string, eventId: string) {
     const event = await this.eventByCode(db, row.user_id, hex(eventId));
@@ -325,6 +344,26 @@ export class EventBot {
     }
     return true;
   }
+  private async dateText(db: PoolClient, row: any, locale: string): Promise<boolean> {
+    const mapping = (await db.query('SELECT match_id FROM date_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
+    if (!mapping) return false;
+    const reply = (body: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id,
+      dateMatchId: mapping.match_id, kind: 'reply', inTopic: true, body });
+    const access = await dateChatAllowed(db, mapping.match_id, row.user_id);
+    if (!access) { await reply(botText(locale, 'chatClosed')); return true; }
+    if (row.photo_file_id) { await reply(botText(locale, 'photoOpenerTextOnly')); return true; }
+    const body = row.text.trim();
+    if (!body || body.length > 2000) throw new AppError(400, 'MESSAGE_TOO_LONG');
+    await this.adventures.review(body);
+    const inserted = (await db.query(`INSERT INTO date_messages(match_id,sender_id,body,request_id,telegram_update_id)
+      VALUES($1,$2,$3,$4,$5) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id`,
+      [mapping.match_id, row.user_id, body, randomUUID(), row.update_id])).rows[0];
+    if (!inserted) return true;
+    const name = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [row.user_id])).rows[0].display_name;
+    await queueBot(db, { key: `date:message:${inserted.id}`, userId: access.other, dateMatchId: mapping.match_id,
+      dateMessageId: inserted.id, kind: 'date_relay', inTopic: true, body: `${name}:\n${body}` });
+    return true;
+  }
   private async menuCallback(db: PoolClient, row: any, locale: string) {
     const data = row.callback_data as string;
     const respond = (body: string) => queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, body, kind: 'reply' });
@@ -411,6 +450,8 @@ export class EventBot {
         keyboard: /^\/start(?:@questr_game)?(?:\s|$)/i.test(row.text) ? this.appKeyboard(locale, eventId) : undefined });
       const replyInOrigin = async (body: string) => {
         if (row.thread_id) {
+          const date = (await db.query('SELECT match_id FROM date_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
+          if (date) return queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, dateMatchId: date.match_id, body, kind: 'reply', inTopic: true });
           const dm = (await db.query('SELECT conversation_id FROM dm_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
           if (dm) return queueBot(db, { key: `update:${row.update_id}:reply`, userId: row.user_id, dmId: dm.conversation_id, body, kind: 'reply', inTopic: true });
           const event = (await db.query('SELECT event_id FROM event_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
@@ -448,7 +489,7 @@ export class EventBot {
         } else if (!row.photo_file_id && await this.command(db, row, locale)) {
           // Command replies are queued by the command handler.
         } else if (row.thread_id && (row.photo_file_id || !row.text.startsWith('/'))) {
-          if (await this.dmText(db, row, locale)) {
+          if (await this.dateText(db, row, locale) || await this.dmText(db, row, locale)) {
             // A private topic has its own consent and delivery rules.
           } else {
           const mapping = (await db.query('SELECT event_id FROM event_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
@@ -560,9 +601,32 @@ export class EventBot {
           // A reply may explain why a closed topic no longer accepts messages.
         }
       }
+      if (row.date_match_id) {
+        const access = await dateChatAllowed(db, row.date_match_id, row.user_id);
+        if (row.kind === 'date_topic' || row.kind === 'date_relay') {
+          if (!account) {
+            await db.query("UPDATE bot_outbox SET available_at=now()+interval '1 minute' WHERE id=$1", [row.id]);
+            return true;
+          }
+          allowed = !!access;
+        }
+        if (allowed && row.kind === 'date_relay') {
+          const message = (await db.query('SELECT sender_id,body FROM date_messages WHERE id=$1 AND match_id=$2', [row.date_message_id, row.date_match_id])).rows[0];
+          allowed = !!message && message.sender_id === access?.other;
+          if (allowed) relayBody = message.body;
+        }
+      }
+      if (allowed && row.date_other_user_id) {
+        allowed = !!(await db.query("SELECT 1 FROM users WHERE id=$1 AND status='active'", [row.date_other_user_id])).rowCount
+          && !(await db.query(`SELECT 1 FROM date_blocks WHERE blocker_id IN ($1::uuid,$2::uuid)
+            AND blocked_id IN ($1::uuid,$2::uuid)`, [row.user_id, row.date_other_user_id])).rowCount
+          && !(await db.query(`SELECT 1 FROM dm_conversations WHERE first_user_id=LEAST($1::uuid,$2::uuid)
+            AND second_user_id=GREATEST($1::uuid,$2::uuid) AND status='blocked'`, [row.user_id, row.date_other_user_id])).rowCount;
+      }
       if (!allowed) { await db.query("UPDATE bot_outbox SET state='discarded' WHERE id=$1", [row.id]); return true; }
       try {
         const thread = row.target_thread_id ? Number(row.target_thread_id)
+          : row.in_topic && row.date_match_id ? await this.dateTopic(db, row.user_id, row.date_match_id, account.telegram_user_id)
           : row.in_topic && row.dm_id ? await this.dmTopic(db, row.user_id, row.dm_id, account.telegram_user_id)
           : row.in_topic && row.event_id ? await this.topic(db, row.user_id, row.event_id, account.telegram_user_id) : undefined;
         const profileButton = row.kind === 'application' && row.event_id && row.application_user_id

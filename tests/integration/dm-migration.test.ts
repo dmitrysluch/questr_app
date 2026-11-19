@@ -59,6 +59,12 @@ test('existing adventure-scoped DMs merge without losing messages or Telegram to
     await pool.query('DELETE FROM events WHERE id=$1', [events[0].id]);
     assert.equal((await pool.query('SELECT event_id FROM dm_conversations WHERE id=$1', [first])).rows[0].event_id, null);
 
+    // The bot under test is current code, so bring its schema forward after
+    // asserting the behavior of migration 022 itself.
+    for (const name of (await readdir(dir)).filter(name => name.endsWith('.sql') && name > '022_person_direct_messages.sql').sort()) {
+      await pool.query(await readFile(resolve(dir, name), 'utf8'));
+    }
+
     await pool.query('INSERT INTO bot_updates(update_id) VALUES(99103)');
     await pool.query("INSERT INTO bot_inbox(update_id,user_id,text,thread_id) VALUES(99103,$1,'Old topic message',4002)", [guest]);
     const sent: any[] = [];

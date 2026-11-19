@@ -119,6 +119,24 @@ To enable real delivery, set `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` in the ser
 
 Transactional verification emails include matching HTML and plain-text versions in the account's interface language (Russian or English).
 
+### Dates and private photo storage
+
+Dates have their own opt-in, photo, rounds, responses, matches, time votes, chat and Telegram topics. Both public dates (for invited members) and community-only dates are supported. A match opens a separate Telegram topic for each participant, even if the pair already has a normal DM. The suggested exact meeting point becomes visible only to the matched pair; they agree on the final place in chat. Previous rounds remain in **My dates** after reopening.
+
+Configure one **private** S3-compatible bucket for date photos using all five server variables below. For Nebius Object Storage, use the S3 API endpoint and region for your bucket; the values come from your Nebius account and are intentionally not hardcoded. The server uses signed path-style requests, so the browser needs no bucket CORS rule or direct S3 credentials.
+
+```sh
+DATE_PHOTO_S3_ENDPOINT=https://<your-s3-endpoint>
+DATE_PHOTO_S3_REGION=<your-region>
+DATE_PHOTO_S3_BUCKET=<your-private-bucket>
+DATE_PHOTO_S3_ACCESS_KEY_ID=<access-key>
+DATE_PHOTO_S3_SECRET_ACCESS_KEY=<secret-key>
+```
+
+The key needs only object `Put`, `Get` and `Delete` rights within this bucket. Keep anonymous/public object access disabled. Photo upload is disabled until all values are configured. Uploaded JPEG/PNG/WebP files are decoded, oriented, resized, re-encoded as JPEG (stripping EXIF/GPS), and stored as a full image plus a thumbnail. A photo stays hidden until an admin approves it in **Dates → Photos to review**. Reports appear in **Dates → Date reports**, where admins can remove the reported photo. Replacing or deleting a photo immediately removes its database pointer; S3 deletion is queued and retried on startup and every ten minutes. Do not enable object versioning for this bucket if permanent deletion of all historical object versions is required.
+
+The date-photo and chat APIs enforce session authorization; no presigned or public photo URLs are issued. Existing matches can be viewed after a user pauses dates, while new replies stop. Reporting someone blocks date discovery and new date messages between that pair. Text moderation continues to use the configured review model; image review is manual in this POC.
+
 ### Operations metrics
 
 Set `METRICS_PATH=/internal/metrics` and a random `METRICS_TOKEN` of at least 32 characters to enable Prometheus scraping. Configure the scraper to send `Authorization: Bearer <token>` to the API's internal address; do not expose this route publicly. An empty `METRICS_PATH` disables the endpoint. `/api/health` remains the database-backed health check.
@@ -144,20 +162,21 @@ The executable schema is in [`db/migrations/001_initial.sql`](db/migrations/001_
 | Catalogs | `avatar_presets`, `tags`, `tag_translations`, `languages`, `locations` |
 | Discovery | `discovery_preferences`, `discovery_locations`, `discovery_languages` |
 | Adventures | `events`, `event_memberships`, `event_private_details`, `event_reminders`, `event_activity` |
-| Bot messaging | `event_bot_topics`, `event_messages`, `dm_conversations`, `dm_messages`, `dm_bot_topics`, `bot_inbox`, `bot_outbox` |
+| Bot messaging | `event_bot_topics`, `event_messages`, `dm_conversations`, `dm_messages`, `dm_bot_topics`, `date_bot_topics`, `bot_inbox`, `bot_outbox` |
+| Dates | `date_settings`, `date_photos`, `date_photo_deletions`, `dates`, `date_rounds`, `date_windows`, `date_responses`, `date_matches`, `date_time_votes`, `date_messages`, `date_blocks`, `date_reports`, `date_audit` |
 | Authorization | `roles`, `role_capabilities`, `role_assignments`, `capability_budgets`, `capability_usage`, `permission_audit` |
 | Interview | `ai_conversations`, `ai_messages`, `ai_proposals` |
 | Content review | `content_reviews` (text hash, policy/model key, verdict and spans); review metadata on `ai_messages` |
 | Operations | `schema_migrations`, `bot_updates` |
 
-- `intro_markdown` is PostgreSQL `TEXT`, without an artificial short-bio character limit. HTTP bodies have a 5 MiB transport limit; individual interview answers have a 12,000-character limit and AI context has a 120,000-character ceiling. These are operational limits, separate from profile length.
+- `intro_markdown` is PostgreSQL `TEXT`, without an artificial short-bio character limit. HTTP bodies have a 6 MiB transport limit for photo uploads; individual interview answers have a 12,000-character limit and AI context has a 120,000-character ceiling. These are operational limits, separate from profile length.
 - Each account has one private editable draft and a separately confirmed profile. Auto-save uses optimistic revisions and serialized writes.
 - Catalog tags have stable codes, separate emoji, and translation rows. Custom tags retain their original label, emoji, and locale. A tag is either a catalog reference or a custom value, enforced by the database.
 - Invitations are stored as hashes and redeemed atomically in the same transaction as registration and required consent records.
 - HTTP-only sessions expire after 14 days. Profile editing and interview endpoints operate on the authenticated owner. Event-scoped read endpoints expose saved characters only to authorized viewers.
 - Markdown rendering does not execute raw HTML or JSX. Unsafe URL protocols and external image embeds are excluded from the profile renderer.
 
-The POC retains its local records until its database is removed or records are explicitly deleted. Automatic retention jobs, account export/deletion UI, human moderation tools, clubs, global DMs, and a city scene are outside this implementation. Set retention and operator policies before inviting real pilot users.
+The POC retains its local records until its database is removed or records are explicitly deleted. Automatic retention jobs and account export/deletion UI are outside this implementation. Date-photo review and reports have a manual admin path; broader moderation operations still need an operator policy before inviting real pilot users.
 
 ## Frontend and localization
 

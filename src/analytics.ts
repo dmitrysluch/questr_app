@@ -19,6 +19,11 @@ const eventProperties = {
   adventure_application_declined: [],
   adventure_left: [],
   connection_requested: ['purpose'],
+  date_viewed: [],
+  date_response_sent: [],
+  date_matched: [],
+  date_time_confirmed: [],
+  date_cancelled: [],
 } as const;
 
 export type AnalyticsEvent = keyof typeof eventProperties;

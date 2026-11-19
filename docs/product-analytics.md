@@ -14,5 +14,6 @@ The SDK keeps its identity in browser local storage without a cookie, identifies
 | `adventure_created`, `adventure_updated` | Adventure save succeeds | Online/offline, community-only flag |
 | `adventure_application_sent`, `adventure_application_accepted`, `adventure_application_declined`, `adventure_left` | Corresponding action succeeds | Note-present flag on application only |
 | `connection_requested` | Character chat/contact request succeeds in the web flow | Chat/contact purpose |
+| `date_viewed`, `date_response_sent`, `date_matched`, `date_time_confirmed`, `date_cancelled` | Corresponding date action succeeds in the Mini App | None |
 
 Telegram bot actions are not included in this browser-only first pass. The event catalog and filtering code live in `src/analytics.ts`; add new events there before instrumenting another flow. Never pass user text, profile content, contact details, exact place or event IDs as analytics properties.

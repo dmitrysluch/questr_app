@@ -51,11 +51,11 @@ test('create an adventure, apply from another character, accept, edit and withdr
   const editor = page.getByRole('dialog');
   await editor.getByLabel('Adventure title', { exact: true }).fill('Coffee, records & a slow afternoon');
   await editor.getByLabel('What will the party do?', { exact: true }).fill('Bring **one record** you love. We will listen over coffee.');
-  await editor.getByLabel('Starts', { exact: true }).fill('2030-06-15T19:30');
-  await editor.getByLabel('Ends', { exact: true }).fill('2030-06-15T21:30');
-  await editor.getByRole('combobox', { name: 'Where', exact: true }).fill('Haifa');
+  await editor.getByLabel('Date', { exact: true }).fill('2030-06-15');
+  await editor.getByLabel('Starts', { exact: true }).fill('19:30');
+  await editor.getByLabel('Ends', { exact: true }).fill('21:30');
+  await editor.getByRole('combobox', { name: 'City or online', exact: true }).fill('Haifa');
   await editor.getByRole('option', { name: 'Haifa Israel', exact: true }).click();
-  await editor.getByLabel('District or area').fill('Downtown');
   await editor.locator('summary').click();
   await editor.getByLabel('Time zone', { exact: true }).selectOption('Asia/Jerusalem');
   await editor.getByLabel('Approximate cost').fill('About ₪25');

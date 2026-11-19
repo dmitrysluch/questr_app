@@ -663,3 +663,41 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .romance-consent { margin: 15px 0; font-size: 12px; }
 .romance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
 .romance-error { color: #9a4545; font-size: 12px; }
+.dates-page, .date-detail { max-width: 760px; margin: 0 auto; }
+.date-settings, .date-create, .date-detail-card, .date-admin-review { padding: 20px; margin: 16px 0; }
+.date-settings h2, .date-create h2, .date-admin-review h2 { margin-top: 0; font-size: 19px; }
+.date-settings p, .date-detail p { line-height: 1.5; }
+.date-actions, .date-list-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.date-photo-settings { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; }
+.date-photo-settings h3 { margin: 0; font-size: 15px; }
+.date-file-button { position: relative; overflow: hidden; cursor: pointer; }
+.date-file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.date-card-list { display: grid; gap: 12px; margin: 18px 0; }
+.date-card { width: 100%; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 15px; padding: 12px; text-align: left; color: var(--ink); cursor: pointer; }
+.date-card:hover { border-color: #a6746a; }
+.date-card > span { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.date-card strong { font-size: 17px; }
+.date-card .date-windows { margin-top: 5px; }
+.date-photo { width: 92px; height: 92px; object-fit: cover; border: 2px solid #cfb8a2; background: #e7d8c5; border-radius: 2px; }
+.date-photo-empty { display: grid; place-items: center; font-size: 32px; color: #957766; }
+.date-admin-review .date-review-row { grid-template-columns: minmax(0, 280px) minmax(0, 1fr); }
+.date-admin-review .date-photo-large { width: 100%; height: auto; max-height: 420px; object-fit: contain; }
+.date-person { display: flex; gap: 16px; align-items: center; }
+.date-person h1 { font-size: 25px; margin: 5px 0; }
+.date-person p { margin: 5px 0; }
+.date-status { text-transform: uppercase; font-size: 10px; letter-spacing: .08em; color: #8c6654; font-weight: 700; }
+.date-windows, .date-period-options { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin: 12px 0; }
+.date-window-chip { display: inline-flex; padding: 6px 9px; background: #f1e7da; border: 1px solid #d7c3aa; border-radius: 2px; color: var(--ink); font-size: 12px; }
+.date-create label, .date-window-editor label, .date-time-proposal label { display: block; margin: 12px 0; }
+.date-create input, .date-create textarea, .date-create select, .date-detail textarea, .date-time-proposal input, .date-time-proposal select { display: block; width: 100%; max-width: 100%; min-width: 0; margin-top: 6px; padding: 10px; border: 1px solid #d5cbbb; background: #fffdf8; color: var(--ink); font: inherit; }
+.date-create textarea, .date-detail textarea { min-height: 95px; resize: vertical; }
+.date-create .date-period-options label, .date-detail .date-period-options label { display: inline-flex; margin: 0; }
+.date-response, .date-review-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+.date-response h3 { margin: 0; }
+.date-profile, .date-private-place, .date-time-proposal, .date-chat { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 12px; }
+.date-chat p { padding: 7px 9px; background: #f4ede3; overflow-wrap: anywhere; }
+.date-bot-link { display: inline-flex; margin-top: 14px; }
+.date-report { margin: 12px 0; font-size: 12px; }
+.date-report select { display: block; width: min(260px, 100%); margin: 7px 0; padding: 8px; border: 1px solid var(--line); background: var(--paper); }
+.date-empty { padding: 22px; color: var(--muted); }
+@media (max-width: 480px) { .date-card, .date-response, .date-review-row { grid-template-columns: 72px minmax(0,1fr); } .date-card .date-photo, .date-response .date-photo { width: 72px; height: 72px; } .date-admin-review .date-review-row { grid-template-columns: minmax(0, 1fr); } .date-person { align-items: flex-start; } .date-person .date-photo { width: 80px; height: 80px; } }

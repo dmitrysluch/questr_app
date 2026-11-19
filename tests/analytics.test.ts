@@ -66,3 +66,10 @@ test('non-scalar values cannot enter the approved fields', () => {
   };
   assert.deepEqual(filterAnalyticsEvent(event)?.properties, { '$session_id': 'session-uuid' });
 });
+
+test('date analytics never includes photos, messages or meeting details', () => {
+  const event: CaptureResult = { uuid: 'date-1', event: 'date_matched', properties: {
+    distinct_id: 'user-uuid', photo: 'private-object-key', message: 'Private first message', place: 'Private meeting point', dateId: 'date-uuid',
+  } };
+  assert.deepEqual(filterAnalyticsEvent(event)?.properties, { distinct_id: 'user-uuid' });
+});
