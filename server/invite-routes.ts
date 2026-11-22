@@ -6,6 +6,7 @@ import { transaction } from './db.ts';
 import { AppError } from './errors.ts';
 import { can, consumeCapability, requireCapability } from './permissions.ts';
 import type { InviteBudget, InviteRecord, InviterAccount } from '../shared/schema.ts';
+import { getProfile } from './store.ts';
 import { redeemInvite } from './invite-redemption.ts';
 
 const issueSchema = z.object({
@@ -139,6 +140,7 @@ export function inviteRoutes(pool: Pool) {
     await requireCapability(pool, actorId, 'admin', { type: 'global' });
     const { q } = z.object({ q: z.string().trim().max(80).default('') }).strict().parse(req.query);
     const { rows } = await pool.query(`SELECT u.id,COALESCE(p.display_name,d.display_name,'?') AS display_name,
+      p.user_id IS NOT NULL AS has_profile,
       EXISTS(SELECT 1 FROM role_assignments a WHERE a.user_id=u.id AND a.role_code='admin' AND a.revoked_at IS NULL
         AND a.valid_from<=now() AND (a.valid_until IS NULL OR a.valid_until>now())) AS is_admin,
       EXISTS(SELECT 1 FROM role_assignments a WHERE a.user_id=u.id AND a.role_code='inviter' AND a.revoked_at IS NULL
@@ -158,11 +160,20 @@ export function inviteRoutes(pool: Pool) {
       LEFT JOIN capability_budgets eb ON eb.user_id=u.id AND eb.capability='events.create'
       WHERE u.status='active' AND ($1='' OR position(lower($1) in lower(COALESCE(p.display_name,d.display_name,'')))>0)
       ORDER BY is_admin DESC,is_inviter DESC,display_name LIMIT 50`, [q]);
-    const users: InviterAccount[] = rows.map(row => ({ id: row.id, displayName: row.display_name, isAdmin: row.is_admin,
+    const users: InviterAccount[] = rows.map(row => ({ id: row.id, displayName: row.display_name, hasProfile: row.has_profile, isAdmin: row.is_admin,
       isInviter: row.is_inviter, inviteDepth: row.invite_depth, isEventCreator: row.is_event_creator,
       budget: row.max_uses === null ? null : { maxUses: row.max_uses, used: row.used, windowDays: row.window_seconds / 86400 },
       eventBudget: row.event_max_uses === null ? null : { maxUses: row.event_max_uses, used: row.event_used, windowDays: row.event_window_seconds / 86400 } }));
     res.json({ users });
+  });
+  router.get('/admin/profiles/:userId', async (req, res) => {
+    await requireCapability(pool, res.locals.user.id as string, 'admin', { type: 'global' });
+    const userId = id(req.params.userId);
+    const account = (await pool.query("SELECT status FROM users WHERE id=$1", [userId])).rows[0];
+    if (!account || account.status !== 'active') throw new AppError(404, 'NOT_FOUND');
+    const profile = await getProfile(pool, userId);
+    if (!profile) throw new AppError(404, 'NOT_FOUND');
+    res.json({ profile });
   });
   router.put('/admin/inviters/:userId', async (req, res) => {
     const actorId = res.locals.user.id as string;

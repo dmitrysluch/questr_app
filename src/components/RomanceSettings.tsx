@@ -3,6 +3,7 @@ import { api } from '../api.ts';
 import { errorText, t } from '../i18n.ts';
 import { romanceCategories, type RomanceCategory, type RomanceSettings as Settings } from '../../shared/romance.ts';
 import { PixelEmoji } from './PixelEmoji.tsx';
+import { DatePreferences } from './DatePreferences.tsx';
 
 export function RomanceSettings() {
   const [saved, setSaved] = useState<Settings | null>(null);
@@ -55,6 +56,7 @@ export function RomanceSettings() {
         <label className="checkbox-label romance-consent"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />{t('romance.consent')}</label>
         <div className="romance-actions"><button type="button" className="pixel-button small" disabled={busy || !gender || !interestedIn.length || !consent} onClick={() => void save()}>{t('romance.save')}</button><button type="button" className="text-button" disabled={busy} onClick={() => { load(saved); setError(null); }}>{t('common.cancel')}</button></div>
       </>}
+      {saved.enabled && <DatePreferences key={saved.revision} />}
     </>}
     {!!error && !!saved && <p role="alert" className="romance-error">{errorText(error)}</p>}
   </section>;

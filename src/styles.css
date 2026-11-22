@@ -524,6 +524,8 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .admin-role-block .hint { margin: 0; font-size: 11px; }
 .admin-user-head, .admin-user-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .admin-user-head strong { overflow-wrap: anywhere; }
+.admin-user-head a { flex-shrink: 0; font-size: 11px; }
+.admin-profile { max-width: 760px; margin: 0 auto; }
 .admin-user .checkbox-label { display: flex; align-items: center; gap: 8px; }
 .admin-budget-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .admin-budget-fields label { font-size: 11px; }
@@ -664,12 +666,22 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .romance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
 .romance-error { color: #9a4545; font-size: 12px; }
 .dates-page, .date-detail { max-width: 760px; margin: 0 auto; }
-.date-settings, .date-create, .date-detail-card, .date-admin-review { padding: 20px; margin: 16px 0; }
-.date-settings h2, .date-create h2, .date-admin-review h2 { margin-top: 0; font-size: 19px; }
-.date-settings p, .date-detail p { line-height: 1.5; }
+.date-create, .date-detail-card, .date-admin-review { padding: 20px; margin: 16px 0; }
+.date-create h2, .date-admin-review h2 { margin-top: 0; font-size: 19px; }
+.date-detail p { line-height: 1.5; }
 .date-actions, .date-list-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .date-photo-settings { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; }
-.date-photo-settings h3 { margin: 0; font-size: 15px; }
+.date-preferences { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 14px; }
+.date-preferences h3 { margin: 0; font-size: 17px; }
+.date-preferences p { line-height: 1.5; }
+.date-photo-settings h4 { margin: 0; font-size: 14px; }
+.date-own-photo { display: block; width: min(240px, 100%); aspect-ratio: 1; object-fit: cover; border: 2px solid #cfb8a2; background: #e7d8c5; }
+.date-crop-editor { margin-top: 14px; }
+.date-crop-editor label { display: grid; gap: 6px; max-width: 320px; margin-top: 12px; font-size: 12px; }
+.date-crop-editor input[type='range'] { width: 100%; accent-color: #a6746a; }
+.date-crop-canvas { display: block; width: min(320px, 100%); aspect-ratio: 1; border: 2px solid #cfb8a2; background: #e7d8c5; touch-action: none; cursor: grab; }
+.date-crop-canvas:active { cursor: grabbing; }
+.date-crop-canvas:focus-visible { outline: 3px solid #8e604a; outline-offset: 3px; }
 .date-file-button { position: relative; overflow: hidden; cursor: pointer; }
 .date-file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .date-card-list { display: grid; gap: 12px; margin: 18px 0; }

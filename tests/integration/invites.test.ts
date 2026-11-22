@@ -83,7 +83,11 @@ integration('admins can manage inviter access and budgets; inviters see only the
   await owner.agent.put(`/api/invites/admin/inviters/${inviter.id}`).send({ enabled: true, maxUses: 1, windowDays: 30 }).expect(200);
   await other.agent.put(`/api/invites/admin/inviters/${other.id}`).send({ enabled: true, maxUses: 50, windowDays: 1 }).expect(403);
   const users = (await owner.agent.get('/api/invites/admin/inviters?q=Keeper').expect(200)).body.users;
-  assert.equal(users.length, 1); assert.equal(users[0].isInviter, true); assert.equal(users[0].budget.maxUses, 1);
+  assert.equal(users.length, 1); assert.equal(users[0].isInviter, true); assert.equal(users[0].budget.maxUses, 1); assert.equal(users[0].hasProfile, true);
+  const profile = (await owner.agent.get(`/api/invites/admin/profiles/${inviter.id}`).expect(200)).body.profile;
+  assert.equal(profile.displayName, 'Invite Keeper');
+  assert.equal(profile.introMarkdown, '');
+  await inviter.agent.get(`/api/invites/admin/profiles/${other.id}`).expect(403);
   assert.equal((await inviter.agent.get('/api/me')).body.permissions.inviteCreate, true);
   const adminInvite = (await owner.agent.post('/api/invites').send(issue()).expect(201)).body;
   const ownCode = issue();

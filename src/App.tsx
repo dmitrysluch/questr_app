@@ -24,6 +24,7 @@ import { InviteRedeemer } from './components/InviteRedeemer.tsx';
 import { EmailInvite } from './components/EmailInvite.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
 import { RomanceSettings } from './components/RomanceSettings.tsx';
+import { AdminProfile } from './components/AdminProfile.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview } from '../shared/content-policy.ts';
 import type { DiscoveryPreferences } from '../shared/discovery.ts';
@@ -63,6 +64,12 @@ export function App() {
   const [exitTarget, setExitTarget] = useState<'character' | 'adventures' | 'dates' | 'invites' | 'communities' | 'admin-listings' | null>(null);
   const [telegramNeeded, setTelegramNeeded] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  useEffect(() => {
+    if (route !== '#character/dates' || !showProfile) return;
+    const frame = requestAnimationFrame(() => (document.getElementById('date-preferences')
+      ?? document.getElementById('romance-title'))?.scrollIntoView({ block: 'start' }));
+    return () => cancelAnimationFrame(frame);
+  }, [route, showProfile]);
   const [termsOpen, setTermsOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nextName, setNextName] = useState('');
@@ -207,6 +214,7 @@ export function App() {
   const currentReview = bioReview?.introMarkdown === draft?.introMarkdown ? bioReview : null;
   const currentTopicReviews = currentReview && JSON.stringify(currentReview.askMeTopics) === JSON.stringify(draft?.askMeTopics) ? currentReview.topicReviews : undefined;
   const invitesOpen = state?.user.status === 'active' && state.permissions.inviteCreate && route.startsWith('#invites');
+  const adminProfileId = state?.permissions.admin ? /^#invites\/profile\/([0-9a-f-]{36})$/i.exec(route)?.[1] : undefined;
   const communitiesOpen = state?.user.status === 'active' && state.permissions.admin && route.startsWith('#communities');
   const adminListingsOpen = state?.user.status === 'active' && state.permissions.admin && route.startsWith('#admin-listings');
   const listingsOpen = state?.user.status === 'active' && route.startsWith('#listings');
@@ -247,7 +255,7 @@ export function App() {
             <button type="submit" className="pixel-button full-width" disabled={busy}>{t('welcome.start')}{busy ? <LoaderCircle size={18} className="spin" /> : <ArrowRight size={18} />}</button>
             <p className="form-privacy"><LockKeyhole size={13} />{t('footer.private')}</p>
           </form>
-        </section> : invitesOpen ? <Invites admin={state.permissions.admin} selfId={state.user.id} botUsername={config?.botUsername ?? 'questr_game'} /> : communitiesOpen ? <AdminCommunities /> : adminListingsOpen && config ? <AdminEventListings config={config} /> : listingsOpen && config ? <EventListings config={config} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} /> : datesOpen ? <Dates selfId={state.user.id} admin={state.permissions.admin} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} detailId={route.startsWith('#dates/') ? route.slice('#dates/'.length) : null} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
+        </section> : invitesOpen ? adminProfileId ? <AdminProfile userId={adminProfileId} /> : <Invites admin={state.permissions.admin} selfId={state.user.id} botUsername={config?.botUsername ?? 'questr_game'} /> : communitiesOpen ? <AdminCommunities /> : adminListingsOpen && config ? <AdminEventListings config={config} /> : listingsOpen && config ? <EventListings config={config} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} /> : datesOpen ? <Dates selfId={state.user.id} admin={state.permissions.admin} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} detailId={route.startsWith('#dates/') ? route.slice('#dates/'.length) : null} /> : adventuresOpen && state.user.status === 'active' && config ? <Adventures config={config} discovery={state.discovery} spokenLanguages={state.profile?.spokenLanguages ?? []} communityIds={state.profile?.communities ?? []} onDiscovery={discovery => setState(old => old ? { ...old, discovery } : old)} /> : showProfile && state.profile ? <section>
           <PageHeading title="profile.title" />
           <ProfileCard profile={state.profile} />
           <InviteRedeemer initialCode={sharedInviteCode ?? ''} onRedeemed={loadState} />

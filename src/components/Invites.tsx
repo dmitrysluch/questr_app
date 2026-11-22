@@ -148,7 +148,7 @@ function RoleSettings({ user, selfId, onSaved }: { user: InviterAccount; selfId:
     } catch (problem) { setError(problem); } finally { setBusy(false); }
   }
   return <form className="paper-card admin-user" onSubmit={event => void save(event)}>
-    <div className="admin-user-head"><strong dir="auto">{user.displayName}</strong>{user.isAdmin && <span className="invite-status active">{t('nav.admin')}</span>}</div>
+    <div className="admin-user-head"><strong dir="auto">{user.displayName}</strong>{user.hasProfile && <a className="text-button" href={`#invites/profile/${user.id}`}>{t('invites.viewProfile')}</a>}{user.isAdmin && <span className="invite-status active">{t('nav.admin')}</span>}</div>
     <div className="admin-role-block"><label className="checkbox-label"><input type="checkbox" checked={eventCreator} disabled={busy} onChange={event => setEventCreator(event.target.checked)} />{t('invites.eventCreator')}</label>
       <div className="admin-budget-fields"><label>{t('invites.eventMaxUses')}<input type="number" min={0} max={100} value={eventMaxUses} disabled={busy || !eventCreator} onChange={event => setEventMaxUses(Number(event.target.value))} required /></label>
         <label>{t('invites.windowDays')}<input type="number" min={1} max={90} value={eventWindowDays} disabled={busy || !eventCreator} onChange={event => setEventWindowDays(Number(event.target.value))} required /></label></div>

@@ -71,6 +71,11 @@ integration('date photos stay private until review and disappear immediately on 
   const guest = await person('Guest', 'man', ['woman']);
   const incompatible = await person('Incompatible', 'woman', ['woman']);
   await host.agent.put('/api/dates/me/photo').send({ base64: photo }).expect(200);
+  const ownPending = await host.agent.get('/api/dates/me/photo').expect(200);
+  assert.equal(ownPending.headers['content-type'], 'image/jpeg');
+  assert.equal(ownPending.headers['cache-control'], 'private, no-store');
+  assert.ok(ownPending.body.length > 0);
+  await guest.agent.get('/api/dates/me/photo').expect(404);
   await host.agent.post('/api/dates').send(input()).expect(403);
   const queue = (await curator.agent.get('/api/dates/admin/photos').expect(200)).body.photos;
   await curator.agent.post(`/api/dates/admin/photos/${host.id}/review`).send({ photoId: queue.find((r: any) => r.userId === host.id).id, decision: 'approved' }).expect(200);
@@ -85,6 +90,7 @@ integration('date photos stay private until review and disappear immediately on 
   assert.equal(image.headers['content-type'], 'image/jpeg');
   await incompatible.agent.get(`/api/dates/${created.id}/photo/${host.id}`).expect(404);
   await host.agent.delete('/api/dates/me/photo').send({}).expect(200);
+  await host.agent.get('/api/dates/me/photo').expect(404);
   await guest.agent.get(`/api/dates/${created.id}/photo/${host.id}`).expect(404);
   assert.equal((await guest.agent.get('/api/dates').expect(200)).body.dates.length, 0);
   await cleanupDatePhotoDeletions(pool, storage);

@@ -2,14 +2,14 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { DateCard, DateDetail, DatePeriod, DateWindow } from '../../shared/dates.ts';
 import type { DiscoveryFilter, DiscoveryPreferences } from '../../shared/discovery.ts';
 import { communityAncestors } from '../../shared/communities.ts';
-import { api, apiBlob, ApiError } from '../api.ts';
+import { api, apiBlob } from '../api.ts';
 import { errorText, getLocale, languageName, locationName, t } from '../i18n.ts';
 import { useCommunities } from '../community-catalog.tsx';
 import { AdhocDiscoveryFilters, LanguagePicker, LocationPicker } from './Discovery.tsx';
 import { Markdown } from './Markdown.tsx';
 import { track } from '../analytics.ts';
+import type { DateSettings as Settings } from './DatePreferences.tsx';
 
-type Settings = { enabled: boolean; paused: boolean; revision: number; photoStatus: 'pending' | 'approved' | 'rejected' | null; storageAvailable: boolean; romanceReady: boolean };
 const periods: DatePeriod[] = ['morning', 'day', 'evening'];
 const go = (id?: string, roundId?: string) => { location.hash = id ? `dates/${id}${roundId ? `/rounds/${roundId}` : ''}` : 'dates'; };
 function PrivatePhoto({ url, alt, large = false }: { url: string | null; alt: string; large?: boolean }) {
@@ -41,33 +41,6 @@ function WindowEditor({ value, onChange }: { value: DateWindow[]; onChange: (val
     <button type="button" className="outline-button small" disabled={!day || !selected.length || value.length + selected.length > 42} onClick={add}>{t('dates.addWindow')}</button>
     <div className="date-windows">{value.map(w => <button type="button" className="date-window-chip" key={`${w.day}:${w.period}`} onClick={() => onChange(value.filter(item => item !== w))}>{w.day} · {t(`dates.period.${w.period}`)} ×</button>)}</div>
   </div>;
-}
-function PhotoSettings({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
-  const [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
-  async function upload(file: File | undefined) {
-    if (!file) return;
-    setBusy(true); setError(null);
-    try {
-      if (file.size > 4_000_000) throw new ApiError('PHOTO_INVALID');
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
-      const result = await api<{ photoStatus: Settings['photoStatus'] }>('/dates/me/photo', { method: 'PUT', body: { base64 } });
-      onChange({ ...settings, photoStatus: result.photoStatus });
-    } catch (reason) { setError(reason); } finally { setBusy(false); }
-  }
-  async function remove() {
-    setBusy(true); setError(null);
-    try { await api('/dates/me/photo', { method: 'DELETE', body: {} }); onChange({ ...settings, photoStatus: null }); }
-    catch (reason) { setError(reason); } finally { setBusy(false); }
-  }
-  return <div className="date-photo-settings"><h3>{t('dates.photo')}</h3><p>{t(settings.photoStatus ? `dates.photo.${settings.photoStatus}` : 'dates.photo.missing')}</p>
-    {settings.storageAvailable ? <div className="date-actions"><label className="outline-button small date-file-button">{t(settings.photoStatus ? 'dates.replacePhoto' : 'dates.uploadPhoto')}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => { void upload(event.target.files?.[0]); event.target.value = ''; }} /></label>
-      {settings.photoStatus && <button type="button" className="text-button" disabled={busy} onClick={() => void remove()}>{t('dates.deletePhoto')}</button>}</div>
-      : <p className="field-hint">{t('dates.storageUnavailable')}</p>}
-    {!!error && <p className="field-error" role="alert">{errorText(error)}</p>}</div>;
 }
 function AdminPhotos() {
   const [photos, setPhotos] = useState<Array<{ id: string; userId: string; displayName: string; url: string }>>([]);
@@ -180,7 +153,7 @@ function Detail({ id, roundId, selfId, onBack }: { id: string; roundId?: string;
 export function Dates({ selfId, admin, discovery, spokenLanguages, communityIds, detailId }: { selfId: string; admin: boolean; discovery: DiscoveryPreferences; spokenLanguages: string[]; communityIds: string[]; detailId: string | null }) {
   const [settings, setSettings] = useState<Settings | null>(null), [view, setView] = useState<'discover' | 'mine'>('discover');
   const [filters, setFilters] = useState<DiscoveryFilter | null>(null), [cards, setCards] = useState<DateCard[]>([]), [nextOffset, setNextOffset] = useState<number | null>(null);
-  const [creating, setCreating] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
+  const [creating, setCreating] = useState(false), [error, setError] = useState<unknown>(null);
   useEffect(() => { void api<{ settings: Settings }>('/dates/me/settings').then(result => setSettings(result.settings)).catch(setError); }, []);
   useEffect(() => {
     if (detailId || !settings || view === 'discover' && (!settings.enabled || settings.paused || settings.photoStatus !== 'approved' || !settings.romanceReady)) return;
@@ -189,28 +162,16 @@ export function Dates({ selfId, admin, discovery, spokenLanguages, communityIds,
     void api<{ dates: DateCard[]; nextOffset: number | null }>(`/dates?${query}`).then(result => { if (active) { setCards(result.dates); setNextOffset(result.nextOffset); } }).catch(reason => { if (active) setError(reason); });
     return () => { active = false; };
   }, [detailId, settings, view, filters]);
-  async function update(enabled: boolean, paused: boolean) {
-    if (!settings) return;
-    setBusy(true); setError(null);
-    try { const result = await api<{ settings: Pick<Settings, 'enabled' | 'paused' | 'revision'> }>('/dates/me/settings', { method: 'PUT', body: { enabled, paused, revision: settings.revision, consent: true } });
-      setSettings({ ...settings, ...result.settings }); }
-    catch (reason) { setError(reason); } finally { setBusy(false); }
-  }
   if (detailId) { const [id, , roundId] = detailId.split('/'); return <Detail id={id} roundId={roundId} selfId={selfId} onBack={() => go()} />; }
   const ready = settings?.enabled && !settings.paused && settings.photoStatus === 'approved' && settings.romanceReady;
   return <section className="dates-page"><div className="page-heading"><h1>{t('dates.title')}</h1></div>
-    <div className="paper-card date-settings"><h2>{t('dates.settings')}</h2>{!settings ? <p>{t('common.loading')}</p> : <><p>{t('dates.consent')}</p>
-      {!settings.romanceReady && <p className="field-hint">{t('dates.romanceRequired')} <button className="text-button" onClick={() => { location.hash = 'character'; }}>{t('nav.character')}</button></p>}
-      <div className="date-actions"><button className="outline-button small" disabled={busy || !settings.romanceReady} onClick={() => void update(!settings.enabled, false)}>{t(settings.enabled ? 'dates.disable' : 'dates.enable')}</button>{settings.enabled && <button className="text-button" disabled={busy} onClick={() => void update(true, !settings.paused)}>{t(settings.paused ? 'dates.resume' : 'dates.pause')}</button>}</div>
-      {(settings.enabled || settings.photoStatus) && <PhotoSettings settings={settings} onChange={setSettings} />}</>}
-    </div>
     {admin && <AdminPhotos />}
     {admin && <AdminReports />}
     <div className="date-list-controls"><button className={view === 'discover' ? 'pixel-button small' : 'outline-button small'} onClick={() => { setView('discover'); setCreating(false); }}>{t('dates.discover')}</button><button className={view === 'mine' ? 'pixel-button small' : 'outline-button small'} onClick={() => { setView('mine'); setCreating(false); }}>{t('dates.mine')}</button></div>
     {view === 'discover' && <><p className="field-hint">{t('dates.sharedFilters')}</p><AdhocDiscoveryFilters defaults={discovery} value={filters} onChange={setFilters} /></>}
     {ready && <div className="date-actions"><button className="pixel-button small" onClick={() => setCreating(!creating)}>{t(creating ? 'common.cancel' : 'dates.create')}</button></div>}
     {creating && ready && <CreateDate spokenLanguages={spokenLanguages} communityIds={communityIds} onCreated={id => go(id)} />}
-    {view === 'discover' && !ready ? <p className="paper-card date-empty">{t('dates.setupHint')}</p> : <div className="date-card-list">{cards.map(card => <button className="paper-card date-card" key={card.roundId} onClick={() => go(card.id, view === 'mine' ? card.roundId : undefined)}><PrivatePhoto url={card.photoUrl} alt={card.owner.displayName} /><span><span className="date-status">{t(`dates.status.${card.status}`)}</span><strong>{card.title}</strong><span>{card.owner.displayName} · {locationName(card.locationId, card.locationName)} · {languageName(card.languageCode)}</span><Windows windows={card.windows} zone={card.timeZone} /></span></button>)}{!cards.length && <p className="date-empty">{t('dates.empty')}</p>}
+    {view === 'discover' && !ready ? <div className="paper-card date-empty"><p>{settings ? t('dates.setupHint') : t('common.loading')}</p><a className="outline-button small" href="#character/dates">{t('dates.openSettings')}</a></div> : <div className="date-card-list">{cards.map(card => <button className="paper-card date-card" key={card.roundId} onClick={() => go(card.id, view === 'mine' ? card.roundId : undefined)}><PrivatePhoto url={card.photoUrl} alt={card.owner.displayName} /><span><span className="date-status">{t(`dates.status.${card.status}`)}</span><strong>{card.title}</strong><span>{card.owner.displayName} · {locationName(card.locationId, card.locationName)} · {languageName(card.languageCode)}</span><Windows windows={card.windows} zone={card.timeZone} /></span></button>)}{!cards.length && <p className="date-empty">{t('dates.empty')}</p>}
       {nextOffset !== null && <button className="outline-button small" onClick={() => { const query = new URLSearchParams({ view, offset: String(nextOffset) }); if (filters && view === 'discover') query.set('filters', JSON.stringify(filters)); void api<{ dates: DateCard[]; nextOffset: number | null }>(`/dates?${query}`).then(result => { setCards(old => [...old, ...result.dates]); setNextOffset(result.nextOffset); }).catch(setError); }}>{t('dates.more')}</button>}</div>}
     {!!error && <p className="field-error" role="alert">{errorText(error)}</p>}
   </section>;

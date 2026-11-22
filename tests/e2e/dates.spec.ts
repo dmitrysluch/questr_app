@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import sharp from 'sharp';
 
-test('date opt-in is separate from romance and fits the Mini App', async ({ page }) => {
+test('date setup lives in character romance settings and photos can be cropped and previewed', async ({ page }) => {
   test.skip(!process.env.DATABASE_URL, 'A local PostgreSQL URL is required.');
   await expect.poll(async () => (await page.request.get('/api/health')).status()).toBe(200);
   await page.request.post('/api/auth/demo', { data: {} });
@@ -12,15 +13,41 @@ test('date opt-in is separate from romance and fits the Mini App', async ({ page
   await page.goto('/');
   await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Dates' }).click();
   await expect(page.getByRole('heading', { name: 'Dates' })).toBeVisible();
-  await expect(page.getByText('Set up romance first')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Join dates' })).toBeDisabled();
-  const romance = (await page.request.get('/api/me/romance')).json();
-  const revision = (await romance).romance.revision;
-  await page.request.put('/api/me/romance', { data: { revision, gender: 'woman', interestedIn: ['man'], consent: true } });
+  await page.getByRole('link', { name: 'Open Romance settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Romance' })).toBeVisible();
+  const romance = (await (await page.request.get('/api/me/romance')).json()).romance;
+  await page.request.put('/api/me/romance', { data: { revision: romance.revision, gender: 'woman', interestedIn: ['man'], consent: true } });
   await page.reload();
+  await expect(page.getByRole('button', { name: 'Join dates' })).toBeVisible();
   await page.getByRole('button', { name: 'Join dates' }).click();
   await expect(page.getByText('Add a photo to create or respond to dates.')).toBeVisible();
-  await expect(page.getByText('Location, language and community filters also apply to adventures.')).toBeVisible();
+
+  let uploaded: Buffer | null = null;
+  await page.route('**/api/dates/me/settings', async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    const data = await response.json();
+    return route.fulfill({ json: { settings: { ...data.settings, storageAvailable: true } } });
+  });
+  await page.route('**/api/dates/me/photo', async route => {
+    if (route.request().method() === 'PUT') {
+      uploaded = Buffer.from(route.request().postDataJSON().base64, 'base64');
+      return route.fulfill({ json: { photoStatus: 'pending' } });
+    }
+    if (route.request().method() === 'GET' && uploaded) return route.fulfill({ status: 200, contentType: 'image/jpeg', body: uploaded });
+    return route.fulfill({ status: 404, json: { error: 'NOT_FOUND' } });
+  });
+  await page.reload();
+  const source = await sharp({ create: { width: 800, height: 500, channels: 3, background: '#83604f' } }).jpeg().toBuffer();
+  await page.locator('.date-file-button input').setInputFiles({ name: 'portrait.jpg', mimeType: 'image/jpeg', buffer: source });
+  await expect(page.getByRole('img', { name: 'Photo crop preview' })).toBeVisible();
+  await page.getByRole('slider', { name: 'Zoom' }).fill('1.2');
+  await page.getByRole('button', { name: 'Use this photo' }).click();
+  await expect(page.getByRole('img', { name: 'Your date photo' })).toBeVisible();
+  expect(uploaded).not.toBeNull();
+  const output = await sharp(uploaded!).metadata();
+  expect(output.width).toBe(output.height);
+  expect(output.width).toBeGreaterThanOrEqual(320);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Pause dates' }).click();
   await expect(page.getByRole('button', { name: 'Resume dates' })).toBeVisible();

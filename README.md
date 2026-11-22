@@ -121,7 +121,7 @@ Transactional verification emails include matching HTML and plain-text versions 
 
 ### Dates and private photo storage
 
-Dates have their own opt-in, photo, rounds, responses, matches, time votes, chat and Telegram topics. Both public dates (for invited members) and community-only dates are supported. A match opens a separate Telegram topic for each participant, even if the pair already has a normal DM. The suggested exact meeting point becomes visible only to the matched pair; they agree on the final place in chat. Previous rounds remain in **My dates** after reopening.
+Dates have their own opt-in, photo, rounds, responses, matches, time votes, chat and Telegram topics. Date opt-in and photo upload live in **Character → Romance**; the owner can crop a square photo and preview it before and after upload. Both public dates (for invited members) and community-only dates are supported. A match opens a separate Telegram topic for each participant, even if the pair already has a normal DM. The suggested exact meeting point becomes visible only to the matched pair; they agree on the final place in chat. Previous rounds remain in **My dates** after reopening.
 
 Configure one **private** S3-compatible bucket for date photos using all five server variables below. For Nebius Object Storage, use the S3 API endpoint and region for your bucket; the values come from your Nebius account and are intentionally not hardcoded. The server uses signed path-style requests, so the browser needs no bucket CORS rule or direct S3 credentials.
 

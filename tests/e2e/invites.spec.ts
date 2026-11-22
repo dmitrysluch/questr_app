@@ -85,6 +85,13 @@ test('admin issues and revokes an invite, then grants a one-per-week inviter bud
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     const card = page.locator('.admin-user').filter({ hasText: friendName });
     await expect(card).toBeVisible();
+    await card.getByRole('link', { name: 'View profile' }).click();
+    await expect(page.getByRole('heading', { name: 'Character profile' })).toBeVisible();
+    await expect(page.locator('.profile-card')).toContainText(friendName);
+    await page.getByRole('link', { name: /Users and roles/ }).click();
+    await page.getByRole('textbox', { name: 'Search characters' }).fill(friendName);
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(card).toBeVisible();
     await card.getByLabel('Create adventures').uncheck();
     await card.getByLabel('Can issue invites').check();
     await card.getByLabel('Maximum invite chain').selectOption('2');

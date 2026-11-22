@@ -236,6 +236,11 @@ export function dateRoutes(pool: Pool, config: Config, reviewer: ContentReviewer
     const row = (await pool.query('SELECT enabled,paused,revision FROM date_settings WHERE user_id=$1', [id])).rows[0];
     res.json({ settings: row });
   });
+  router.get('/me/photo', async (_req, res) => {
+    const photo = (await pool.query('SELECT object_key FROM date_photos WHERE user_id=$1', [current(res)])).rows[0];
+    if (!photo || !storage) throw new AppError(404, 'NOT_FOUND');
+    res.set('Cache-Control', 'private, no-store').type('image/jpeg').send(await storage.get(photo.object_key));
+  });
   router.put('/me/photo', async (req, res) => {
     if (!storage) throw new AppError(503, 'PHOTO_STORAGE_UNAVAILABLE');
     const { base64 } = z.object({ base64: z.string().max(5_600_000) }).strict().parse(req.body);

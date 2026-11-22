@@ -100,7 +100,7 @@ export interface InviteRecord {
 }
 export interface InviteBudget { maxUses: number; used: number; windowDays: number }
 export interface InviterAccount {
-  id: string; displayName: string; isAdmin: boolean; isInviter: boolean; inviteDepth: number; isEventCreator: boolean;
+  id: string; displayName: string; hasProfile: boolean; isAdmin: boolean; isInviter: boolean; inviteDepth: number; isEventCreator: boolean;
   budget: InviteBudget | null;
   eventBudget: InviteBudget | null;
 }
