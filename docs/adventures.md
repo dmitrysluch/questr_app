@@ -133,14 +133,14 @@ it does not relax the existing explicit-sexual-content policy.
 5. Creating an adventure queues a party topic for its host. Accepting an application
    queues a party topic for that participant. If they have not started the bot,
    the topic is created after their first `/start`. Then use “Open party chat”
-   or the bot's topic link. Text and Telegram photos in that topic are delivered
+   or the bot's topic link. Text, Telegram photos and documents in that topic are delivered
    to accepted members' own topics under the sender's QUESTR display name.
    Earlier party messages are not replayed to new members; someone who rejoins
    can still see messages already in their own Telegram topic. Raw
    Telegram messages are not forwarded; IDs/usernames are not shared. Text is
-   limited to 3000 characters and photo captions to 900 characters. Captions
-   use the existing text review; photo pixels are not reviewed in this invite-only
-   POC. Photos sent as documents and album grouping are not supported. Bot commands and
+   limited to 3000 characters and attachment captions to 900 characters. Captions
+   use the existing text review; photo pixels and document contents are not reviewed in this invite-only
+   POC. Multiple selected photos are delivered individually, without album grouping. Bot commands and
    their replies stay in the main chat. `/chats` shows adventure buttons: choose
    one to open the automatically created party topic or see its members.
    `/people` lists people once each, labelled with the latest shared adventure.
@@ -148,7 +148,7 @@ it does not relax the existing explicit-sexual-content policy.
    first text message in that Telegram topic. The bot confirms that it is waiting
    for the recipient's decision. The recipient gets the reviewed opener with
    **Accept** and **Decline** buttons. They must accept before either side can
-   exchange more messages, including photos. Either side can later use `/block <chat code>`.
+   exchange more messages, including photos and documents. Either side can later use `/block <chat code>`.
    Each pair of people has one private conversation and one topic in each person's
    bot chat, reused across all their shared adventures. A decline or block applies
    to the pair, so another adventure cannot restart the conversation.
@@ -163,8 +163,8 @@ it does not relax the existing explicit-sexual-content policy.
    closes. Existing extra private topics keep their Telegram history and reply with
    a link to the selected topic if someone writes in them.
 
-Before a public release, add image-content review before relaying photos. The
-current text reviewer does not inspect image pixels. The review-model choice
+Before a public release, add image and document-content review before relaying attachments. The
+current text reviewer does not inspect file contents. The review-model choice
 can be revisited separately; the current model and text policy remain in place.
 
 The Mini App button uses Telegram's `openTelegramLink` when available. For a

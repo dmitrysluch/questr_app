@@ -187,11 +187,25 @@ integration('a match gets distinct Telegram topics and messages relay only throu
   const hostThread = topics.find(row => row.user_id === host.id).thread_id;
   assert.ok(calls.some(call => call.method === 'sendMessage' && call.body.message_thread_id === Number(hostThread)
     && String(call.body.text).includes('A film about an old cinema')));
+  for (const [updateId, media] of [[887003, { photo: [{ file_id: 'date-photo-1' }], caption: 'The cafe' }],
+    [887004, { photo: [{ file_id: 'date-photo-2' }], media_group_id: 'date-album' }],
+    [887005, { document: { file_id: 'date-guide', file_name: 'guide.pdf' } }]] as const) {
+    await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+      .send({ update_id: updateId, message: { from: { id: 771002 }, chat: { id: 771002, type: 'private' },
+        message_thread_id: Number(guestThread), ...media } }).expect(200);
+    await bot.inbox();
+  }
+  const history = (await guest.agent.get(`/api/dates/${date.id}`).expect(200)).body.date.messages;
+  assert.deepEqual(history.slice(-3).map((message: any) => message.attachmentType), ['photo', 'photo', 'file']);
+  for (let i = 0; i < 20; i++) if (!await bot.outbox()) break;
+  assert.ok(calls.some(call => call.method === 'sendPhoto' && call.body.message_thread_id === Number(hostThread) && call.body.photo === 'date-photo-1'));
+  assert.ok(calls.some(call => call.method === 'sendPhoto' && call.body.message_thread_id === Number(hostThread) && call.body.photo === 'date-photo-2'));
+  assert.ok(calls.some(call => call.method === 'sendDocument' && call.body.message_thread_id === Number(hostThread) && call.body.document === 'date-guide'));
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages')).rows[0].n, 0);
   await pool.query('INSERT INTO bot_updates(update_id) VALUES($1)', [updateId + 1]);
   await pool.query('INSERT INTO bot_inbox(update_id,user_id,text,thread_id) VALUES($1,$2,$3,$4)', [updateId + 1, guest.id, '/chats', guestThread]);
   await bot.inbox();
-  assert.equal((await pool.query('SELECT count(*)::int AS n FROM date_messages WHERE match_id=$1', [match.id])).rows[0].n, 1);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM date_messages WHERE match_id=$1', [match.id])).rows[0].n, 4);
 });
 
 integration('a date report blocks the pair and gives admins a photo-removal path', async () => {

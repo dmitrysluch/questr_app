@@ -30,5 +30,5 @@ export interface DateDetail extends DateCard {
   match: null | { id: string; partnerId: string; partnerName: string; partnerPhotoUrl: string; votes: Record<string, string[]>;
     proposedWindowId: string | null; proposedBy: string | null; proposedStart: string | null; durationMinutes: number | null; confirmedAt: string | null;
     botUrl: string; botReady: boolean };
-  messages: Array<{ id: string; senderId: string; body: string; createdAt: string }>;
+  messages: Array<{ id: string; senderId: string; body: string; createdAt: string; attachmentType: 'photo' | 'file' | null }>;
 }

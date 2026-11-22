@@ -134,7 +134,9 @@ async function detail(db: Db, row: any, userId: string): Promise<DateDetail> {
     WHERE m.round_id=$1`, [row.round_id])).rows[0];
   const showMatch = match && (owner || match.partner_id === userId);
   const votes = showMatch ? (await db.query('SELECT user_id,window_id FROM date_time_votes WHERE match_id=$1', [match.id])).rows : [];
-  const messages = showMatch ? (await db.query('SELECT id,sender_id AS "senderId",body,created_at AS "createdAt" FROM date_messages WHERE match_id=$1 ORDER BY created_at,id LIMIT 200', [match.id])).rows : [];
+  const messages = showMatch ? (await db.query(`SELECT id,sender_id AS "senderId",body,created_at AS "createdAt",
+    CASE WHEN photo_file_id IS NOT NULL THEN 'photo' WHEN document_file_id IS NOT NULL THEN 'file' ELSE NULL END AS "attachmentType"
+    FROM date_messages WHERE match_id=$1 ORDER BY created_at,id LIMIT 200`, [match.id])).rows : [];
   const topic = showMatch ? (await db.query('SELECT thread_id FROM date_bot_topics WHERE match_id=$1 AND user_id=$2', [match.id, userId])).rows[0] : null;
   return { ...base, responses: responses.map(r => ({ id: r.id, userId: r.user_id, displayName: r.display_name, introMarkdown: r.intro_markdown,
     askMeTopics: r.ask_me_topics, message: r.message, status: r.status, photoUrl: `/api/dates/${row.id}/photo/${r.user_id}?roundId=${row.round_id}` })),

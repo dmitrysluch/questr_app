@@ -534,7 +534,7 @@ integration('joining a party does not expose messages sent before acceptance', a
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM bot_outbox WHERE kind='relay' AND user_id=$1", [guest.id])).rows[0].n, 0);
   assert.ok(!calls.some(call => call.method === 'sendMessage' && String(call.body.chat_id) === '8302' && call.body.text.includes('Before anyone joined.')));
 });
-integration('Telegram photos relay in party and accepted private topics while captions keep text checks', async () => {
+integration('Telegram photos, albums and files relay in party and accepted private topics while captions keep text checks', async () => {
   const host = await person('Host'), guest = await person('Guest');
   const event = await create(host);
   await apply(guest, event.id); await decide(host, event.id, guest.id, 'accept').expect(200);
@@ -552,10 +552,16 @@ integration('Telegram photos relay in party and accepted private topics while ca
     .set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
     .send({ update_id: updateId, message: { from: { id: 7102, username: 'PRIVATE_HANDLE' }, chat: { id: 7102, type: 'private' },
       message_thread_id: threadId, photo: [{ file_id: 'small-photo' }, { file_id: 'large-photo' }], caption } }).expect(200);
+  const document = async (updateId: number, threadId: number, caption = '') => request(app).post('/api/telegram/webhook')
+    .set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+    .send({ update_id: updateId, message: { from: { id: 7102, username: 'PRIVATE_HANDLE' }, chat: { id: 7102, type: 'private' },
+      message_thread_id: threadId, document: { file_id: `document-${updateId}`, file_name: 'guide.pdf', mime_type: 'application/pdf' }, caption } }).expect(200);
 
   await photo(9701, 7302, 'Photo before approval'); await bot.inbox();
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [dm.id])).rows[0].n, 0);
   assert.match((await pool.query("SELECT body FROM bot_outbox WHERE dedupe_key='update:9701:reply'")).rows[0].body, /first private message must be text/i);
+  await document(9711, 7302, 'File before approval'); await bot.inbox();
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM dm_messages WHERE conversation_id=$1', [dm.id])).rows[0].n, 0);
 
   await photo(9702, 7202, 'Look at *vinyl*.'); await bot.inbox();
   const stored = (await pool.query('SELECT body,photo_file_id FROM event_messages WHERE telegram_update_id=9702')).rows[0];
@@ -570,11 +576,31 @@ integration('Telegram photos relay in party and accepted private topics while ca
   await pool.query("UPDATE dm_conversations SET status='accepted' WHERE id=$1", [dm.id]);
   await photo(9705, 7302); await bot.inbox();
   assert.deepEqual((await pool.query('SELECT body,photo_file_id FROM dm_messages WHERE telegram_update_id=9705')).rows[0], { body: '', photo_file_id: 'large-photo' });
+  await document(9706, 7202, 'Adventure file'); await bot.inbox();
+  await document(9707, 7302, 'Private file'); await bot.inbox();
+  assert.equal((await pool.query('SELECT document_file_id FROM event_messages WHERE telegram_update_id=9706')).rows[0].document_file_id, 'document-9706');
+  assert.equal((await pool.query('SELECT document_file_id FROM dm_messages WHERE telegram_update_id=9707')).rows[0].document_file_id, 'document-9707');
+  for (const updateId of [9708, 9709]) {
+    await request(app).post('/api/telegram/webhook').set('X-Telegram-Bot-Api-Secret-Token', 'test-secret')
+      .send({ update_id: updateId, message: { from: { id: 7102 }, chat: { id: 7102, type: 'private' }, message_thread_id: 7202,
+        media_group_id: 'album-1', photo: [{ file_id: `album-photo-${updateId}` }] } }).expect(200);
+    await bot.inbox();
+  }
+  await document(9710, 7202, 'x'.repeat(901)); await bot.inbox();
+  assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=9710')).rowCount, 0);
+  await document(9712, 7202, 'I want to have sex with you.'); await bot.inbox();
+  assert.equal((await pool.query('SELECT 1 FROM event_messages WHERE telegram_update_id=9712')).rowCount, 0);
   while (await bot.outbox()) { /* Deliver permitted photos and other pending notices. */ }
   const delivered = calls.filter(call => call.method === 'sendPhoto' && String(call.body.chat_id) === '7101');
-  assert.equal(delivered.length, 2);
+  assert.equal(delivered.length, 4);
   assert.ok(delivered.some(call => call.body.message_thread_id === 7201 && call.body.photo === 'large-photo' && call.body.caption === '*Guest*:\nLook at \\*vinyl\\*\\.'));
   assert.ok(delivered.some(call => call.body.message_thread_id === 7301 && call.body.photo === 'large-photo' && call.body.caption === '*Guest*:\n'));
+  assert.ok(delivered.some(call => call.body.photo === 'album-photo-9708'));
+  assert.ok(delivered.some(call => call.body.photo === 'album-photo-9709'));
+  const files = calls.filter(call => call.method === 'sendDocument' && String(call.body.chat_id) === '7101');
+  assert.equal(files.length, 2);
+  assert.ok(files.some(call => call.body.message_thread_id === 7201 && call.body.document === 'document-9706' && call.body.caption === '*Guest*:\nAdventure file'));
+  assert.ok(files.some(call => call.body.message_thread_id === 7301 && call.body.document === 'document-9707' && call.body.caption === '*Guest*:\nPrivate file'));
   assert.ok(!JSON.stringify(calls).includes('PRIVATE_HANDLE'));
   assert.ok(calls.every(call => call.method !== 'getFile'));
 });

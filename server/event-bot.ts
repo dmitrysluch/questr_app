@@ -22,6 +22,7 @@ class TelegramError extends Error {
 const hex = (id: string) => id.replaceAll('-', '');
 const uuid = (id: string) => /^[a-f0-9]{32}$/i.test(id) ? `${id.slice(0,8)}-${id.slice(8,12)}-${id.slice(12,16)}-${id.slice(16,20)}-${id.slice(20)}`.toLowerCase() : null;
 const buttonLabel = (value: string) => value.length > 56 ? `${value.slice(0, 53)}…` : value;
+const hasAttachment = (row: { photo_file_id?: string | null; document_file_id?: string | null }) => !!(row.photo_file_id || row.document_file_id);
 /** Durable, at-most-one active processor per inbox/outbox row. The Bot API has
  * no idempotency keys: ambiguous network failures are kept as failed for review,
  * rather than automatically risking a duplicate delivery. */
@@ -325,12 +326,12 @@ export class EventBot {
     if (dm.status === 'pending') { await reply(botText(locale, 'dmWaiting')); return true; }
     if (dm.status !== 'draft' && dm.status !== 'accepted') { await reply(botText(locale, 'dmUnavailable')); return true; }
     if (dm.status === 'draft' && (!dm.event_id || dm.requested_by !== row.user_id || !await can(db, row.user_id, 'dm.send_opener', { type: 'profile', id: other, eventId: dm.event_id })) || dm.status === 'accepted' && !await can(db, row.user_id, 'dm.message', { type: 'profile', id: other })) { await reply(botText(locale, 'dmUnavailable')); return true; }
-    if (dm.status === 'draft' && row.photo_file_id) { await reply(botText(locale, 'photoOpenerTextOnly')); return true; }
-    if (row.photo_file_id && row.text.length > 900) throw new AppError(400, 'PHOTO_CAPTION_TOO_LONG');
+    if (dm.status === 'draft' && hasAttachment(row)) { await reply(botText(locale, 'photoOpenerTextOnly')); return true; }
+    if (hasAttachment(row) && row.text.length > 900) throw new AppError(400, 'PHOTO_CAPTION_TOO_LONG');
     if (dm.status === 'draft' && hasPublicLink(row.text)) throw new AppError(400, 'APPLICATION_LINK_NOT_ALLOWED');
     await this.adventures.review(row.text);
     if (dm.status === 'draft') await consumeCapability(db, row.user_id, 'dm.send_opener', { type: 'profile', id: other, eventId: dm.event_id }, dm.id);
-    const message = (await db.query('INSERT INTO dm_messages(conversation_id,sender_id,telegram_update_id,body,photo_file_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [dm.id, row.user_id, row.update_id, row.text, row.photo_file_id])).rows[0];
+    const message = (await db.query('INSERT INTO dm_messages(conversation_id,sender_id,telegram_update_id,body,photo_file_id,document_file_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [dm.id, row.user_id, row.update_id, row.text, row.photo_file_id, row.document_file_id])).rows[0];
     if (!message) return true;
     const name = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [row.user_id])).rows[0].display_name;
     if (dm.status === 'draft') {
@@ -351,13 +352,13 @@ export class EventBot {
       dateMatchId: mapping.match_id, kind: 'reply', inTopic: true, body });
     const access = await dateChatAllowed(db, mapping.match_id, row.user_id);
     if (!access) { await reply(botText(locale, 'chatClosed')); return true; }
-    if (row.photo_file_id) { await reply(botText(locale, 'photoOpenerTextOnly')); return true; }
+    if (!hasAttachment(row) && !row.text.trim()) { await reply(botText(locale, 'messageLength')); return true; }
     const body = row.text.trim();
-    if (!body || body.length > 2000) throw new AppError(400, 'MESSAGE_TOO_LONG');
+    if (body.length > (hasAttachment(row) ? 900 : 2000)) throw new AppError(400, hasAttachment(row) ? 'PHOTO_CAPTION_TOO_LONG' : 'MESSAGE_TOO_LONG');
     await this.adventures.review(body);
-    const inserted = (await db.query(`INSERT INTO date_messages(match_id,sender_id,body,request_id,telegram_update_id)
-      VALUES($1,$2,$3,$4,$5) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id`,
-      [mapping.match_id, row.user_id, body, randomUUID(), row.update_id])).rows[0];
+    const inserted = (await db.query(`INSERT INTO date_messages(match_id,sender_id,body,request_id,telegram_update_id,photo_file_id,document_file_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id`,
+      [mapping.match_id, row.user_id, body, randomUUID(), row.update_id, row.photo_file_id, row.document_file_id])).rows[0];
     if (!inserted) return true;
     const name = (await db.query('SELECT display_name FROM profiles WHERE user_id=$1', [row.user_id])).rows[0].display_name;
     await queueBot(db, { key: `date:message:${inserted.id}`, userId: access.other, dateMatchId: mapping.match_id,
@@ -471,10 +472,10 @@ export class EventBot {
           else try { await this.call('answerCallbackQuery', { callback_query_id: row.callback_query_id, text: botText(locale, 'unavailable') }); } catch { /* Unknown callback. */ }
         }
         else if (user?.status !== 'active') { await reply(botText(locale, 'finishCharacter')); }
-        else if (row.thread_id && !row.photo_file_id && row.text.startsWith('/')) {
+        else if (row.thread_id && !hasAttachment(row) && row.text.startsWith('/')) {
           await this.menuChats(db, row, locale, false, true);
         }
-        else if (/^\/start(?:@questr_game)? quest_[a-f0-9]{32}$/.test(row.text)) {
+        else if (!hasAttachment(row) && /^\/start(?:@questr_game)? quest_[a-f0-9]{32}$/.test(row.text)) {
           const raw = row.text.split('quest_')[1];
           const eventId = `${raw.slice(0,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}-${raw.slice(16,20)}-${raw.slice(20)}`;
           const event = await this.adventures.detail(row.user_id, eventId);
@@ -486,24 +487,24 @@ export class EventBot {
           else if (event.myStatus === 'pending') await reply(botText(locale, 'topicPending', { title: event.title }));
           else if (event.canApply) await reply(botText(locale, 'applyInApp', { title: event.title }));
           else await reply(botText(locale, 'notAccepting'));
-        } else if (!row.photo_file_id && await this.command(db, row, locale)) {
+        } else if (!hasAttachment(row) && await this.command(db, row, locale)) {
           // Command replies are queued by the command handler.
-        } else if (row.thread_id && (row.photo_file_id || !row.text.startsWith('/'))) {
+        } else if (row.thread_id && (hasAttachment(row) || !row.text.startsWith('/'))) {
           if (await this.dateText(db, row, locale) || await this.dmText(db, row, locale)) {
             // A private topic has its own consent and delivery rules.
           } else {
           const mapping = (await db.query('SELECT event_id FROM event_bot_topics WHERE user_id=$1 AND thread_id=$2', [row.user_id, row.thread_id])).rows[0];
-          if (!mapping) await reply(botText(locale, row.photo_file_id ? 'chooseTopic' : 'offTopicText'));
+          if (!mapping) await reply(botText(locale, hasAttachment(row) ? 'chooseTopic' : 'offTopicText'));
           else {
             const event = await this.adventures.detail(row.user_id, mapping.event_id);
             if (event.canChat) {
               if (row.text.length > 3000) throw new AppError(400, 'MESSAGE_TOO_LONG');
-              if (row.photo_file_id && row.text.length > 900) throw new AppError(400, 'PHOTO_CAPTION_TOO_LONG');
+              if (hasAttachment(row) && row.text.length > 900) throw new AppError(400, 'PHOTO_CAPTION_TOO_LONG');
               await this.adventures.review(row.text);
               await transaction(this.pool, async sendDb => {
                 await sendDb.query('SELECT id FROM events WHERE id=$1 FOR SHARE', [event.id]);
                 if (!await can(sendDb, row.user_id, 'events.group_chat', { type: 'event', id: event.id })) throw new AppError(403, 'PERMISSION_DENIED');
-                const message = (await sendDb.query('INSERT INTO event_messages(event_id,sender_id,telegram_update_id,body,photo_file_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [event.id, row.user_id, row.update_id, row.text, row.photo_file_id])).rows[0];
+                const message = (await sendDb.query('INSERT INTO event_messages(event_id,sender_id,telegram_update_id,body,photo_file_id,document_file_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(telegram_update_id) DO NOTHING RETURNING id', [event.id, row.user_id, row.update_id, row.text, row.photo_file_id, row.document_file_id])).rows[0];
                 if (!message) return;
                 const name = (await sendDb.query('SELECT display_name FROM profiles WHERE user_id=$1', [row.user_id])).rows[0].display_name;
                 const recipients = (await sendDb.query("SELECT user_id FROM event_memberships WHERE event_id=$1 AND status='accepted' AND user_id<>$2", [event.id, row.user_id])).rows;
@@ -512,7 +513,7 @@ export class EventBot {
             } else await reply(botText(locale, event.myStatus === 'pending' ? 'alreadyPending' : 'chatClosed'), event.id);
           }
           }
-        } else await reply(botText(locale, row.photo_file_id ? 'chooseTopic' : 'offTopicText'));
+        } else await reply(botText(locale, hasAttachment(row) ? 'chooseTopic' : 'offTopicText'));
         await db.query("UPDATE bot_inbox SET state='done',attempts=attempts+1 WHERE update_id=$1", [row.update_id]);
       } catch (error) {
         await db.query('ROLLBACK TO SAVEPOINT process_bot_update');
@@ -560,10 +561,11 @@ export class EventBot {
       }
       let relayBody: string | null = null;
       let relayPhotoId: string | null = null;
+      let relayDocumentId: string | null = null;
       if (allowed && row.kind === 'relay') {
-        const message = (await db.query('SELECT sender_id,body,photo_file_id FROM event_messages WHERE id=$1', [row.message_id])).rows[0];
+        const message = (await db.query('SELECT sender_id,body,photo_file_id,document_file_id FROM event_messages WHERE id=$1', [row.message_id])).rows[0];
         allowed = !!message && await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id }) && await can(db, message.sender_id, 'events.group_chat', { type: 'event', id: row.event_id });
-        if (allowed) { relayBody = message.body; relayPhotoId = message.photo_file_id; }
+        if (allowed) { relayBody = message.body; relayPhotoId = message.photo_file_id; relayDocumentId = message.document_file_id; }
       }
       if (allowed && row.kind === 'reminder') allowed = await can(db, row.user_id, 'events.group_chat', { type: 'event', id: row.event_id });
       if (row.kind === 'topic_init') {
@@ -592,11 +594,11 @@ export class EventBot {
             && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other })
             && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id });
           if (row.kind === 'dm_relay') {
-            const message = (await db.query('SELECT sender_id,body,photo_file_id FROM dm_messages WHERE id=$1 AND conversation_id=$2', [row.dm_message_id, row.dm_id])).rows[0];
+            const message = (await db.query('SELECT sender_id,body,photo_file_id,document_file_id FROM dm_messages WHERE id=$1 AND conversation_id=$2', [row.dm_message_id, row.dm_id])).rows[0];
             allowed = dm.status === 'accepted' && !!message && message.sender_id === other
               && await can(db, row.user_id, 'dm.message', { type: 'profile', id: other })
               && await can(db, other, 'dm.message', { type: 'profile', id: row.user_id });
-            if (allowed) { relayBody = message.body; relayPhotoId = message.photo_file_id; }
+            if (allowed) { relayBody = message.body; relayPhotoId = message.photo_file_id; relayDocumentId = message.document_file_id; }
           }
           // A reply may explain why a closed topic no longer accepts messages.
         }
@@ -611,9 +613,9 @@ export class EventBot {
           allowed = !!access;
         }
         if (allowed && row.kind === 'date_relay') {
-          const message = (await db.query('SELECT sender_id,body FROM date_messages WHERE id=$1 AND match_id=$2', [row.date_message_id, row.date_match_id])).rows[0];
+          const message = (await db.query('SELECT sender_id,body,photo_file_id,document_file_id FROM date_messages WHERE id=$1 AND match_id=$2', [row.date_message_id, row.date_match_id])).rows[0];
           allowed = !!message && message.sender_id === access?.other;
-          if (allowed) relayBody = message.body;
+          if (allowed) { relayBody = message.body; relayPhotoId = message.photo_file_id; relayDocumentId = message.document_file_id; }
         }
       }
       if (allowed && row.date_other_user_id) {
@@ -642,6 +644,8 @@ export class EventBot {
         const markdown = author && relayBody !== null ? relayMarkdown(author, relayBody) : null;
         const sent = relayPhotoId ? await this.call('sendPhoto', { chat_id: account.telegram_user_id, message_thread_id: thread,
           photo: relayPhotoId, caption: markdown ?? row.body, parse_mode: markdown ? 'MarkdownV2' : undefined, reply_markup: keyboard })
+          : relayDocumentId ? await this.call('sendDocument', { chat_id: account.telegram_user_id, message_thread_id: thread,
+            document: relayDocumentId, caption: markdown ?? row.body, parse_mode: markdown ? 'MarkdownV2' : undefined, reply_markup: keyboard })
           : await this.call('sendMessage', { chat_id: account.telegram_user_id, message_thread_id: thread,
             text: markdown ?? row.body, parse_mode: markdown ? 'MarkdownV2' : undefined,
             link_preview_options: { is_disabled: true }, reply_markup: keyboard });
