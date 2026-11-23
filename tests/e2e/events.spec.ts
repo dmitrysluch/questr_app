@@ -19,6 +19,7 @@ test('romance settings require consent and can be removed from the character pag
   await character(page, 'Romance tester');
   await page.goto('/');
   await page.getByRole('button', { name: 'Character', exact: true }).click();
+  await page.getByRole('button', { name: 'Romance', exact: true }).click();
   const settings = page.locator('.romance-settings');
   await expect(settings).toContainText('Off. No romance signal is shown.');
   await settings.getByRole('button', { name: 'Set up romance' }).click();

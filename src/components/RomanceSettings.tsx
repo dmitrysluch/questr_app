@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.ts';
 import { errorText, t } from '../i18n.ts';
 import { romanceCategories, type RomanceCategory, type RomanceSettings as Settings } from '../../shared/romance.ts';
-import { PixelEmoji } from './PixelEmoji.tsx';
 import { DatePreferences } from './DatePreferences.tsx';
 
-export function RomanceSettings() {
+export function RomanceSettings({ published }: { published: boolean }) {
   const [saved, setSaved] = useState<Settings | null>(null);
   const [gender, setGender] = useState<RomanceCategory | ''>('');
   const [interestedIn, setInterestedIn] = useState<RomanceCategory[]>([]);
@@ -45,8 +44,7 @@ export function RomanceSettings() {
     } catch (reason) { setError(reason); }
     finally { setBusy(false); }
   }
-  return <section className="romance-settings paper-card" aria-labelledby="romance-title">
-    <h2 id="romance-title"><PixelEmoji emoji="💗" />{t('romance.title')}</h2>
+  return <section className="romance-settings paper-card" aria-label={t('romance.title')}>
     {!saved ? <p>{error ? errorText(error) : t('common.loading')}</p> : <>
       <p className="romance-status">{saved.enabled ? t('romance.enabled') : t('romance.disabled')}</p>
       {!editing ? <div className="romance-actions"><button type="button" className="outline-button" onClick={() => setEditing(true)}>{t(saved.enabled ? 'romance.change' : 'romance.enable')}</button>{saved.enabled && <button type="button" className="text-button" disabled={busy} onClick={() => void disable()}>{t('romance.disable')}</button>}</div> : <>
@@ -56,7 +54,7 @@ export function RomanceSettings() {
         <label className="checkbox-label romance-consent"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />{t('romance.consent')}</label>
         <div className="romance-actions"><button type="button" className="pixel-button small" disabled={busy || !gender || !interestedIn.length || !consent} onClick={() => void save()}>{t('romance.save')}</button><button type="button" className="text-button" disabled={busy} onClick={() => { load(saved); setError(null); }}>{t('common.cancel')}</button></div>
       </>}
-      {saved.enabled && <DatePreferences key={saved.revision} />}
+      {saved.enabled && (published ? <DatePreferences key={saved.revision} /> : <p className="romance-privacy">{t('dates.afterPublish')}</p>)}
     </>}
     {!!error && !!saved && <p role="alert" className="romance-error">{errorText(error)}</p>}
   </section>;

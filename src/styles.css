@@ -652,9 +652,9 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .event-map-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 12px 0; }
 .google-place-widget { min-width: min(100%, 320px); margin: 12px 0; }
 .google-place-widget gmp-place-autocomplete { width: 100%; }
-.romance-settings { margin: 20px 0; padding: 18px; }
-.romance-settings h2 { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; font-size: 18px; }
-.romance-settings h2 .pixel-emoji { width: 22px; height: 22px; flex-basis: 22px; }
+.romance-heading h1 { display: flex; align-items: center; gap: 11px; }
+.romance-heading .pixel-emoji { width: 29px; height: 29px; flex-basis: 29px; }
+.romance-settings { margin: 0; padding: 18px; }
 .romance-status, .romance-privacy { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .romance-settings fieldset { border: 0; margin: 18px 0; padding: 0; }
 .romance-settings legend { font-weight: 700; margin-bottom: 9px; }

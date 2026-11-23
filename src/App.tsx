@@ -24,6 +24,7 @@ import { InviteRedeemer } from './components/InviteRedeemer.tsx';
 import { EmailInvite } from './components/EmailInvite.tsx';
 import { ContentWarning } from './components/ContentReview.tsx';
 import { RomanceSettings } from './components/RomanceSettings.tsx';
+import { PixelEmoji } from './components/PixelEmoji.tsx';
 import { AdminProfile } from './components/AdminProfile.tsx';
 import { LanguagePicker, DiscoverySettings } from './components/Discovery.tsx';
 import type { BioReview } from '../shared/content-policy.ts';
@@ -44,6 +45,7 @@ const steps: { id: Draft['currentStep']; label: TranslationKey }[] = [
   { id: 'avatar', label: 'steps.avatar' },
   { id: 'bio', label: 'steps.bio' },
   { id: 'discovery', label: 'steps.discovery' },
+  { id: 'romance', label: 'steps.romance' },
   { id: 'review', label: 'steps.review' },
 ];
 
@@ -64,12 +66,6 @@ export function App() {
   const [exitTarget, setExitTarget] = useState<'character' | 'adventures' | 'dates' | 'invites' | 'communities' | 'admin-listings' | null>(null);
   const [telegramNeeded, setTelegramNeeded] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  useEffect(() => {
-    if (route !== '#character/dates' || !showProfile) return;
-    const frame = requestAnimationFrame(() => (document.getElementById('date-preferences')
-      ?? document.getElementById('romance-title'))?.scrollIntoView({ block: 'start' }));
-    return () => cancelAnimationFrame(frame);
-  }, [route, showProfile]);
   const [termsOpen, setTermsOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nextName, setNextName] = useState('');
@@ -202,9 +198,18 @@ export function App() {
       } finally { setCheckingBio(false); }
       track('profile_published', { first_publish: !state?.profile, has_intro: Boolean(result.profile.introMarkdown.trim()), tag_count: result.profile.tags.length, ask_me_count: result.profile.askMeTopics.length, language_count: result.profile.spokenLanguages.length });
       setState(old => old ? { ...old, profile: result.profile, user: { ...old.user, status: 'active' } } : old);
-      setShowProfile(true); window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (!state?.profile) {
+        edit({ currentStep: 'romance' }); await flush();
+        location.hash = 'character/romance'; setShowProfile(false);
+      } else setShowProfile(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   }
+  useEffect(() => {
+    if (!draft || !state || !['#character/romance', '#character/dates'].includes(route)) return;
+    void go('romance');
+    // The route is an entry point; changing editor tabs should not reopen it.
+  }, [route, !!draft, state?.user.status]);
   const currentStep = draft?.currentStep ?? 'welcome';
   const stepIndex = steps.findIndex(s => s.id === currentStep);
   const visibleError = error ?? saveError;
@@ -260,10 +265,9 @@ export function App() {
           <ProfileCard profile={state.profile} />
           <InviteRedeemer initialCode={sharedInviteCode ?? ''} onRedeemed={loadState} />
           <EmailInvite onVerified={loadState} />
-          <RomanceSettings />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
 
-          <div className="page-actions"><button className="outline-button" onClick={() => void go('avatar')} disabled={busy}>{t('avatar.customize')}</button><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
+          <div className="page-actions"><button className="outline-button" onClick={() => void go('avatar')} disabled={busy}>{t('avatar.customize')}</button><button className="outline-button" onClick={() => void go('romance')} disabled={busy}>{t('steps.romance')}</button><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
         </section> : currentStep === 'avatar' ? <section>
           <PageHeading title="avatar.title" />
           <div className="avatar-layout">
@@ -301,9 +305,13 @@ export function App() {
             <div className="profile-languages"><LanguagePicker label={t('languages.spoken')} value={draft.spokenLanguages} onChange={spokenLanguages => edit({ spokenLanguages })} /></div>
             <DiscoverySettings initial={state.discovery} spokenLanguages={draft.spokenLanguages} inline required={!state.profile} onDirtyChange={setDiscoveryDirty} onValueChange={setDiscoveryPending} onSaved={discovery => { setDiscoveryDirty(false); setDiscoveryPending(null); setState(old => old ? { ...old, discovery } : old); }} />
           </div>
-          <div className="page-actions"><button className="text-button" onClick={() => void go('bio')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right">{currentStep === 'discovery' && <SaveStatus state={saveState} />}<button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t(checkingBio ? 'content.checking' : 'bio.preview')}<ArrowRight size={17} /></button></div></div>
+          <div className="page-actions"><button className="text-button" onClick={() => void go('bio')} disabled={busy}><ArrowLeft size={16} />{t('common.back')}</button><div className="action-right">{currentStep === 'discovery' && <SaveStatus state={saveState} />}<button className="pixel-button" disabled={busy} onClick={() => void go('romance')}>{t('steps.romance')}<ArrowRight size={17} /></button></div></div>
         </section>
-        </> : <section>
+        </> : currentStep === 'romance' ? <section>
+          <div className="page-heading romance-heading"><h1><PixelEmoji emoji="💗" />{t('steps.romance')}</h1></div>
+          <RomanceSettings published={!!state.profile} />
+          <div className="page-actions"><button className="text-button" disabled={busy} onClick={() => void go('discovery')}><ArrowLeft size={16} />{t('common.back')}</button><button className="pixel-button" disabled={busy} onClick={() => void go('review')}>{t(checkingBio ? 'content.checking' : 'bio.preview')}<ArrowRight size={17} /></button></div>
+        </section> : <section>
           <PageHeading title="review.title" />
           <ContentWarning text={draft.introMarkdown} review={currentReview} />
           {draft.askMeTopics.map((topic, index) => <ContentWarning key={`${topic}:${index}`} text={topic} review={currentTopicReviews?.[index]} />)}

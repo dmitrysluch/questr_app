@@ -14,7 +14,7 @@ test('date setup lives in character romance settings and photos can be cropped a
   await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Dates' }).click();
   await expect(page.getByRole('heading', { name: 'Dates' })).toBeVisible();
   await page.getByRole('link', { name: 'Open Romance settings' }).click();
-  await expect(page.getByRole('heading', { name: 'Romance' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Romance', level: 1 })).toBeVisible();
   const romance = (await (await page.request.get('/api/me/romance')).json()).romance;
   await page.request.put('/api/me/romance', { data: { revision: romance.revision, gender: 'woman', interestedIn: ['man'], consent: true } });
   await page.reload();

@@ -278,21 +278,20 @@ export function createApp(pool: Pool, config: Config, interviewer?: Interviewer,
   });
 
   async function romanceSettings(userId: string) {
-    const { rows } = await pool.query(`SELECT p.revision,r.gender_code,r.interested_in,r.consent_version
-      FROM profiles p JOIN users u ON u.id=p.user_id AND u.status='active'
-      LEFT JOIN romance_preferences r ON r.user_id=p.user_id WHERE p.user_id=$1`, [userId]);
+    const { rows } = await pool.query(`SELECT r.revision,r.gender_code,r.interested_in,r.consent_version
+      FROM users u LEFT JOIN romance_preferences r ON r.user_id=u.id
+      WHERE u.id=$1 AND ((u.status='active' AND EXISTS(SELECT 1 FROM profiles p WHERE p.user_id=u.id))
+        OR (u.status='onboarding' AND EXISTS(SELECT 1 FROM profile_drafts d WHERE d.user_id=u.id)))`, [userId]);
     if (!rows[0]) throw new AppError(403, 'PROFILE_REQUIRED');
     const row = rows[0];
-    return { enabled: !!row.gender_code, gender: row.gender_code ?? null, interestedIn: row.interested_in ?? [], revision: row.revision, consentVersion: row.consent_version ?? null };
+    return { enabled: !!row.gender_code, gender: row.gender_code ?? null, interestedIn: row.interested_in ?? [], revision: row.revision ?? 0, consentVersion: row.consent_version ?? null };
   }
   async function disableRomance(userId: string) {
     await transaction(pool, async db => {
       await requireCapability(db, userId, 'profile.edit', { type: 'profile', id: userId });
-      const profile = (await db.query(`SELECT p.revision FROM profiles p JOIN users u ON u.id=p.user_id AND u.status='active'
-        WHERE p.user_id=$1 FOR UPDATE OF p`, [userId])).rows[0];
-      if (!profile) throw new AppError(403, 'PROFILE_REQUIRED');
-      const deleted = await db.query('DELETE FROM romance_preferences WHERE user_id=$1', [userId]);
-      if (deleted.rowCount) await db.query('UPDATE profiles SET revision=revision+1,updated_at=now() WHERE user_id=$1', [userId]);
+      const account = (await db.query("SELECT status FROM users WHERE id=$1 AND status IN ('onboarding','active') FOR UPDATE", [userId])).rows[0];
+      if (!account) throw new AppError(403, 'PROFILE_REQUIRED');
+      await db.query('DELETE FROM romance_preferences WHERE user_id=$1', [userId]);
     });
   }
   app.get('/api/me/romance', async (_req, res) => {
@@ -303,14 +302,14 @@ export function createApp(pool: Pool, config: Config, interviewer?: Interviewer,
     const userId = currentUser(res).id;
     await transaction(pool, async db => {
       await requireCapability(db, userId, 'profile.edit', { type: 'profile', id: userId });
-      const profile = (await db.query(`SELECT p.revision FROM profiles p JOIN users u ON u.id=p.user_id AND u.status='active'
-        WHERE p.user_id=$1 FOR UPDATE OF p`, [userId])).rows[0];
+      const account = (await db.query("SELECT status FROM users WHERE id=$1 AND status IN ('onboarding','active') FOR UPDATE", [userId])).rows[0];
+      if (!account) throw new AppError(403, 'PROFILE_REQUIRED');
       if (!(await db.query("SELECT 1 FROM user_consents WHERE user_id=$1 AND kind='adult'", [userId])).rowCount) throw new AppError(403, 'ADULT_CONSENT_REQUIRED');
-      if (!profile || profile.revision !== input.revision) throw new AppError(409, 'PROFILE_CONFLICT');
+      const current = (await db.query('SELECT revision FROM romance_preferences WHERE user_id=$1 FOR UPDATE', [userId])).rows[0];
+      if ((current?.revision ?? 0) !== input.revision) throw new AppError(409, 'PROFILE_CONFLICT');
       await db.query(`INSERT INTO romance_preferences(user_id,gender_code,interested_in,consent_version) VALUES($1,$2,$3,$4)
         ON CONFLICT(user_id) DO UPDATE SET gender_code=EXCLUDED.gender_code,interested_in=EXCLUDED.interested_in,
-        consent_version=EXCLUDED.consent_version,consented_at=now(),updated_at=now()`, [userId, input.gender, input.interestedIn, romanceConsentVersion]);
-      await db.query('UPDATE profiles SET revision=revision+1,updated_at=now() WHERE user_id=$1', [userId]);
+        consent_version=EXCLUDED.consent_version,consented_at=now(),updated_at=now(),revision=romance_preferences.revision+1`, [userId, input.gender, input.interestedIn, romanceConsentVersion]);
     });
     res.json({ romance: await romanceSettings(userId) });
   });
