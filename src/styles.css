@@ -662,7 +662,6 @@ input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent);
 .romance-choice { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--line); background: var(--paper); font-size: 12px; cursor: pointer; }
 .romance-choice:has(input:checked) { border-color: #a6746a; background: #f7eeea; }
 .romance-choice input { margin: 0; accent-color: #a6746a; }
-.romance-consent { margin: 15px 0; font-size: 12px; }
 .romance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
 .romance-error { color: #9a4545; font-size: 12px; }
 .dates-page, .date-detail { max-width: 760px; margin: 0 auto; }

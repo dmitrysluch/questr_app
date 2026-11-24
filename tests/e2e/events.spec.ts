@@ -15,19 +15,20 @@ async function character(page: Page, name: string, profile: { tags?: ProfileTag[
   return state.user.id as string;
 }
 async function noOverflow(page: Page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
-test('romance settings require consent and can be removed from the character page', async ({ page }) => {
+test('saving romance opts in to mutual hearts and settings can be removed', async ({ page }) => {
   await character(page, 'Romance tester');
   await page.goto('/');
   await page.getByRole('button', { name: 'Character', exact: true }).click();
-  await page.getByRole('button', { name: 'Romance', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit character' }).click();
+  await page.getByRole('navigation', { name: 'Character creation' }).getByRole('button', { name: 'Romance' }).click();
   const settings = page.locator('.romance-settings');
   await expect(settings).toContainText('Off. No romance signal is shown.');
   await settings.getByRole('button', { name: 'Set up romance' }).click();
   await settings.getByRole('group', { name: 'My gender category' }).getByRole('radio', { name: 'Man', exact: true }).check();
   await settings.getByRole('group', { name: 'I would like a signal with' }).getByRole('checkbox', { name: 'Women', exact: true }).check();
-  const save = settings.getByRole('button', { name: 'Save romance settings' });
-  await expect(save).toBeDisabled();
-  await settings.getByRole('checkbox', { name: 'I agree to use my private choices for mutual romance signals.' }).check();
+  const save = settings.getByRole('button', { name: 'Turn on romance' });
+  await expect(save).toBeEnabled();
+  await expect(settings.getByRole('checkbox', { name: /mutual romance signals/ })).toHaveCount(0);
   await save.click();
   await expect(settings).toContainText('On. A heart appears');
   const owner = await (await page.request.get('/api/me/romance')).json();

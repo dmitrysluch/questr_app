@@ -50,8 +50,8 @@ test('romance has its own character tab during creation and editing, with dates 
   await settings.getByRole('button', { name: 'Set up romance' }).click();
   await settings.getByRole('radio', { name: 'Woman', exact: true }).check();
   await settings.getByRole('checkbox', { name: 'Men', exact: true }).check();
-  await settings.getByRole('checkbox', { name: 'I agree to use my private choices for mutual romance signals.' }).check();
-  await settings.getByRole('button', { name: 'Save romance settings' }).click();
+  await expect(settings.getByRole('checkbox', { name: /mutual romance signals/ })).toHaveCount(0);
+  await settings.getByRole('button', { name: 'Turn on romance' }).click();
   await expect(settings).toContainText('Publish your character to set up dates');
   await page.reload();
   await expect(settings).toContainText('On. A heart appears');
@@ -61,7 +61,9 @@ test('romance has its own character tab during creation and editing, with dates 
   await expect(settings.getByRole('button', { name: 'Join dates' })).toBeVisible();
   await page.getByRole('navigation', { name: 'Workspace' }).getByRole('button', { name: 'Character' }).click();
   await expect(page.locator('.romance-settings')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Romance', exact: true }).click();
+  await expect(page.locator('.main-content > section > .page-actions button')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Edit character' }).click();
+  await tabs.getByRole('button', { name: 'Romance' }).click();
   await expect(settings.getByRole('button', { name: 'Join dates' })).toBeVisible();
 });
 

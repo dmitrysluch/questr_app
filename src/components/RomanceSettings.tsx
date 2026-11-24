@@ -8,7 +8,6 @@ export function RomanceSettings({ published }: { published: boolean }) {
   const [saved, setSaved] = useState<Settings | null>(null);
   const [gender, setGender] = useState<RomanceCategory | ''>('');
   const [interestedIn, setInterestedIn] = useState<RomanceCategory[]>([]);
-  const [consent, setConsent] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -16,7 +15,6 @@ export function RomanceSettings({ published }: { published: boolean }) {
     setSaved(settings);
     setGender(settings.gender ?? '');
     setInterestedIn(settings.interestedIn);
-    setConsent(false);
     setEditing(false);
   }
   useEffect(() => {
@@ -28,10 +26,10 @@ export function RomanceSettings({ published }: { published: boolean }) {
     setInterestedIn(current => current.includes(category) ? current.filter(item => item !== category) : [...current, category]);
   }
   async function save() {
-    if (!saved || !gender || !interestedIn.length || !consent) return;
+    if (!saved || !gender || !interestedIn.length) return;
     setBusy(true); setError(null);
     try {
-      const result = await api<{ romance: Settings }>('/me/romance', { method: 'PUT', body: { revision: saved.revision, gender, interestedIn, consent: true } });
+      const result = await api<{ romance: Settings }>('/me/romance', { method: 'PUT', body: { revision: saved.revision, gender, interestedIn } });
       load(result.romance);
     } catch (reason) { setError(reason); }
     finally { setBusy(false); }
@@ -51,8 +49,7 @@ export function RomanceSettings({ published }: { published: boolean }) {
         <fieldset><legend>{t('romance.gender')}</legend><div className="romance-options">{romanceCategories.map(category => <label key={category} className="romance-choice"><input type="radio" name="romance-gender" checked={gender === category} onChange={() => setGender(category)} />{t(`romance.self.${category}`)}</label>)}</div></fieldset>
         <fieldset><legend>{t('romance.interestedIn')}</legend><div className="romance-options"><label className="romance-choice"><input type="checkbox" checked={interestedIn.length === romanceCategories.length} onChange={event => setInterestedIn(event.target.checked ? [...romanceCategories] : [])} />{t('romance.everyone')}</label>{romanceCategories.map(category => <label key={category} className="romance-choice"><input type="checkbox" checked={interestedIn.includes(category)} onChange={() => toggle(category)} />{t(`romance.category.${category}`)}</label>)}</div></fieldset>
         <p className="romance-privacy">{t('romance.privacy')}</p>
-        <label className="checkbox-label romance-consent"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />{t('romance.consent')}</label>
-        <div className="romance-actions"><button type="button" className="pixel-button small" disabled={busy || !gender || !interestedIn.length || !consent} onClick={() => void save()}>{t('romance.save')}</button><button type="button" className="text-button" disabled={busy} onClick={() => { load(saved); setError(null); }}>{t('common.cancel')}</button></div>
+        <div className="romance-actions"><button type="button" className="pixel-button small" disabled={busy || !gender || !interestedIn.length} onClick={() => void save()}>{t(saved.enabled ? 'romance.save' : 'romance.turnOn')}</button><button type="button" className="text-button" disabled={busy} onClick={() => { load(saved); setError(null); }}>{t('common.cancel')}</button></div>
       </>}
       {saved.enabled && (published ? <DatePreferences key={saved.revision} /> : <p className="romance-privacy">{t('dates.afterPublish')}</p>)}
     </>}

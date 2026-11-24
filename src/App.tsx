@@ -267,7 +267,7 @@ export function App() {
           <EmailInvite onVerified={loadState} />
           <DiscoverySettings initial={state.discovery} spokenLanguages={state.profile.spokenLanguages} onSaved={discovery => setState(old => old ? { ...old, discovery } : old)} />
 
-          <div className="page-actions"><button className="outline-button" onClick={() => void go('avatar')} disabled={busy}>{t('avatar.customize')}</button><button className="outline-button" onClick={() => void go('romance')} disabled={busy}>{t('steps.romance')}</button><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
+          <div className="page-actions"><button className="pixel-button" onClick={() => void go('bio')} disabled={busy}><PenLine size={16} />{t('profile.edit')}</button></div>
         </section> : currentStep === 'avatar' ? <section>
           <PageHeading title="avatar.title" />
           <div className="avatar-layout">

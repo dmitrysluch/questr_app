@@ -421,7 +421,7 @@ integration('calendar exports only authorized meeting points and Telegram remind
   assert.equal((await pool.query("SELECT state FROM bot_outbox WHERE kind='reminder' AND user_id=$1 AND event_id=$2", [guest.id, event.id])).rows[0].state, 'discarded');
   assert.ok(!(await guest.agent.get(`/api/events/${event.id}/calendar.ics`).expect(200)).text.includes('SECRET'));
 });
-integration('romance choices are private, consented, revision-protected and deleted on withdrawal', async () => {
+integration('saving romance opts in, keeps choices private and supports withdrawal', async () => {
   const personA = await person();
   const original = (await personA.agent.get('/api/me/romance').expect(200)).body.romance;
   assert.equal(original.enabled, false);
@@ -429,10 +429,11 @@ integration('romance choices are private, consented, revision-protected and dele
   await personA.agent.put('/api/profile/romance').send({ revision: original.revision, openToRomance: true }).expect(409);
   const stranger = await person('Stranger');
   assert.equal((await stranger.agent.get('/api/me/romance').expect(200)).body.romance.enabled, false);
-  await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman'] }).expect(400);
+  await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman'], consent: false }).expect(400);
   await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman', 'woman'], consent: true }).expect(400);
-  const updated = (await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman'], consent: true }).expect(200)).body.romance;
+  const updated = (await personA.agent.put('/api/me/romance').send({ revision: original.revision, gender: 'man', interestedIn: ['woman'] }).expect(200)).body.romance;
   assert.equal(updated.enabled, true);
+  assert.equal(updated.consentVersion, 'romance-v1');
   assert.equal(updated.gender, 'man');
   assert.deepEqual(updated.interestedIn, ['woman']);
   assert.equal('gender' in (await personA.agent.get('/api/me').expect(200)).body.profile, false);

@@ -9,7 +9,8 @@ export const romanceInputSchema = z.object({
   gender: romanceCategorySchema,
   interestedIn: z.array(romanceCategorySchema).min(1).max(romanceCategories.length)
     .refine(items => new Set(items).size === items.length, 'Choose each category once'),
-  consent: z.literal(true),
+  // Older clients may still send this field. Saving the settings is the opt-in.
+  consent: z.literal(true).optional(),
 }).strict();
 export interface RomanceSettings {
   enabled: boolean;
